@@ -20,6 +20,8 @@ class NotificationReaderService : NotificationListenerService() {
         super.onCreate()
         instance = this
         AudioPipeline.start(this)
+        // Eagerly warm up the TTS engine so first synthesis has zero lag
+        SherpaEngine.warmUp(this)
     }
 
     override fun onDestroy() {

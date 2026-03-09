@@ -25,22 +25,26 @@ jobs:
           curl -L "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar"
 
-      # Assemble SherpaTTS engine APK from the split zip files in the repo
-      # (uploaded by maintainer as Sherpa_base1.zip + Sherpa_base2.zip + Sherpa_base3.zip)
-      - name: Assemble SherpaTTS APK from repo
+      # Download and extract the Kokoro TTS model into assets
+      # This bundles the model into the APK so no internet is needed at runtime
+      - name: Bundle Kokoro model in assets
         run: |
-          cat Sherpa_base1.zip Sherpa_base2.zip Sherpa_base3.zip > SherpaTTS-arm64-v8a.apk
-          echo "SherpaTTS APK assembled from repo zip parts ($(wc -c < SherpaTTS-arm64-v8a.apk) bytes)"
+          MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2"
+          ASSET_DIR="app/src/main/assets/kokoro-model"
+          echo "Downloading Kokoro model from $MODEL_URL"
+          curl -L "$MODEL_URL" -o kokoro-model.tar.bz2
+          echo "Extracting model to $ASSET_DIR"
+          mkdir -p "$ASSET_DIR"
+          tar -xjf kokoro-model.tar.bz2 -C "$ASSET_DIR" --strip-components=1
+          rm kokoro-model.tar.bz2
+          echo "Model files bundled:"
+          ls -la "$ASSET_DIR"
+          echo "Total size: $(du -sh "$ASSET_DIR" | cut -f1)"
 
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
       - uses: actions/upload-artifact@v4
         with:
-          name: KokoroReader-v3
+          name: KokoroReader-v4
           path: app/build/outputs/apk/release/app-release-unsigned.apk
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SherpaTTS-arm64-v8a
-          path: SherpaTTS-arm64-v8a.apk
           retention-days: 30

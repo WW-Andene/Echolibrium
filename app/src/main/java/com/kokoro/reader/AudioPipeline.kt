@@ -73,6 +73,34 @@ object AudioPipeline {
         queue.offer(item)
     }
 
+    // ── Standalone test (works without NotificationReaderService) ────────────
+
+    /**
+     * Quick test from the UI — starts pipeline if needed and speaks the text.
+     * Does NOT require the NotificationReaderService to be running.
+     */
+    fun testSpeak(ctx: Context, text: String, profile: VoiceProfile, rules: List<Pair<String, String>>) {
+        start(ctx)
+        val signal = SignalMap(
+            sourceType     = SourceType.PERSONAL,
+            senderType     = SenderType.HUMAN,
+            warmth         = WarmthLevel.MEDIUM,
+            register       = Register.CASUAL,
+            stakesLevel    = StakesLevel.LOW,
+            urgencyType    = UrgencyType.NONE,
+            intensityLevel = 0.3f,
+            trajectory     = Trajectory.FLAT
+        )
+        val modulated = VoiceModulator.modulate(profile, signal)
+        enqueue(Item(
+            rawText   = text,
+            profile   = profile,
+            modulated = modulated,
+            signal    = signal,
+            rules     = rules
+        ))
+    }
+
     // ── Processing loop ───────────────────────────────────────────────────────
 
     private fun loop(ctx: Context) {

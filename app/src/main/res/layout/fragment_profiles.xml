@@ -6,7 +6,13 @@
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="VOICE PROFILES" android:textSize="20sp" android:textStyle="bold"
-            android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
+            android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
+
+        <!-- Engine status indicator -->
+        <TextView android:id="@+id/tv_engine_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="⏳ Initializing voice engine…"
+            android:textSize="11sp" android:textColor="#ffaa00" android:fontFamily="monospace"
+            android:layout_marginBottom="14dp"/>
 
         <!-- Profile selector -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -34,10 +40,35 @@
                 android:layout_height="wrap_content" android:orientation="horizontal"/>
         </HorizontalScrollView>
 
-        <!-- Voice picker with filters -->
+        <!-- Voice picker — VERTICAL grid with filters -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// BASE VOICE" style="@style/SectionLabel"/>
+            android:text="// SELECT VOICE" style="@style/SectionLabel"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="11 voices bundled — tap to select"
+            android:textSize="11sp" android:textColor="#446644" android:fontFamily="monospace"
+            android:layout_marginBottom="8dp"/>
 
+        <!-- Selected voice display -->
+        <LinearLayout android:id="@+id/selected_voice_banner" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="horizontal"
+            android:background="#0d2a0d" android:padding="12dp"
+            android:gravity="center_vertical" android:layout_marginBottom="10dp">
+            <TextView android:id="@+id/tv_selected_voice_icon" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="♀" android:textSize="24sp"
+                android:layout_marginEnd="12dp"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical">
+                <TextView android:id="@+id/tv_selected_voice_name" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="Heart"
+                    android:textSize="16sp" android:textColor="#00ff88" android:fontFamily="monospace"
+                    android:textStyle="bold"/>
+                <TextView android:id="@+id/tv_selected_voice_detail" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="🇺🇸 American · Female"
+                    android:textSize="11sp" android:textColor="#669966" android:fontFamily="monospace"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Gender & language filters -->
         <LinearLayout android:id="@+id/gender_filter_row" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="horizontal"
             android:layout_marginBottom="6dp"/>
@@ -45,11 +76,30 @@
             android:layout_height="wrap_content" android:orientation="horizontal"
             android:layout_marginBottom="8dp"/>
 
-        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp">
-            <LinearLayout android:id="@+id/voice_grid" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:orientation="horizontal"/>
-        </HorizontalScrollView>
+        <!-- Voice grid (VERTICAL — shows proper card grid) -->
+        <LinearLayout android:id="@+id/voice_grid" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- Preview & Save (MOVED UP — most used actions first) -->
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// PREVIEW" style="@style/SectionLabel"/>
+        <EditText android:id="@+id/txt_preview" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:background="#111111"
+            android:textColor="#cccccc" android:fontFamily="monospace" android:textSize="13sp"
+            android:padding="12dp" android:layout_marginBottom="10dp"
+            android:text="Hello! This is how I sound with these settings."
+            android:inputType="textMultiLine" android:minLines="2"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="24dp">
+            <Button android:id="@+id/btn_test" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="▶ TEST"
+                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+                android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
+            <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="💾 SAVE"
+                android:backgroundTint="#1a1a2a" android:textColor="#8888ff" android:fontFamily="monospace"/>
+        </LinearLayout>
 
         <!-- Pitch & Speed -->
         <TextView android:id="@+id/label_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -165,26 +215,6 @@
             android:layout_height="wrap_content" android:orientation="vertical"
             android:background="#111111" android:padding="16dp"
             android:layout_marginBottom="16dp" android:visibility="gone"/>
-
-        <!-- Preview & Save -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// PREVIEW" style="@style/SectionLabel"/>
-        <EditText android:id="@+id/txt_preview" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:background="#111111"
-            android:textColor="#cccccc" android:fontFamily="monospace" android:textSize="13sp"
-            android:padding="12dp" android:layout_marginBottom="10dp"
-            android:text="Hello! This is how I sound with these settings."
-            android:inputType="textMultiLine" android:minLines="2"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="24dp">
-            <Button android:id="@+id/btn_test" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="▶ TEST"
-                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
-                android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
-            <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="💾 SAVE"
-                android:backgroundTint="#1a1a2a" android:textColor="#8888ff" android:fontFamily="monospace"/>
-        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>

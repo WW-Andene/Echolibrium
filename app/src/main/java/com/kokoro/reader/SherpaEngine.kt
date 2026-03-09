@@ -11,8 +11,9 @@ import java.io.File
 /**
  * Singleton wrapper around sherpa-onnx OfflineTts.
  *
- * Initialization is lazy — the model is large (~120MB), loading takes a few seconds.
- * Keep the instance alive as long as the service is running.
+ * The model is bundled in the APK's assets and extracted on first launch.
+ * Use [warmUp] to eagerly initialize on a background thread so the first
+ * synthesis call has no perceivable lag.
  *
  * Thread-safe: synthesize() is called from the AudioPipeline background thread.
  */
@@ -27,13 +28,38 @@ object SherpaEngine {
     @Volatile var isReady = false
         private set
 
+    /**
+     * Callback fired (on any thread) when engine becomes ready.
+     * Useful for updating UI status.
+     */
+    @Volatile var onReadyCallback: (() -> Unit)? = null
+
+    // ── Eager warm-up ─────────────────────────────────────────────────────────
+
+    /**
+     * Extracts the model from assets (if needed) and initializes the engine
+     * on a background thread. Call this early (e.g. on service start or fragment
+     * creation) to eliminate the lag on the first synthesis.
+     */
+    fun warmUp(ctx: Context) {
+        if (isReady && tts != null) { onReadyCallback?.invoke(); return }
+        Thread {
+            // Step 1: ensure model files are extracted from assets
+            VoiceDownloadManager.ensureModelSync(ctx)
+            // Step 2: load the engine
+            if (initialize(ctx)) {
+                onReadyCallback?.invoke()
+            }
+        }.apply { isDaemon = true; start() }
+    }
+
     // ── Initialize ────────────────────────────────────────────────────────────
 
     @Synchronized
     fun initialize(ctx: Context): Boolean {
         if (isReady && tts != null) return true
         if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.w(TAG, "Model not downloaded yet")
+            Log.w(TAG, "Model not extracted yet")
             return false
         }
 
@@ -58,7 +84,7 @@ object SherpaEngine {
             val config = OfflineTtsConfig(model = modelConfig)
             tts = OfflineTts(config = config)
             isReady = true
-            Log.d(TAG, "SherpaEngine ready")
+            Log.d(TAG, "SherpaEngine ready — no lag on next synthesis")
             true
 
         } catch (e: Exception) {

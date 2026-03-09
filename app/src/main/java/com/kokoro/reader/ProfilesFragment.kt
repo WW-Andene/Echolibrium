@@ -137,7 +137,7 @@ class ProfilesFragment : Fragment() {
     private fun renderVoiceGrid() {
         voiceGrid.removeAllViews()
 
-        // ── Model download status banner ──────────────────────────────────
+        // ── Model download status banner (shown above voices, not blocking Piper list) ──
         if (!VoiceDownloadManager.isModelReady(requireContext())) {
             voiceGrid.addView(buildDownloadBanner())
         }
@@ -194,66 +194,34 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun renderKokoroVoiceRows(voices: List<KokoroVoice>) {
-        val chunkSize = 3
-        voices.chunked(chunkSize).forEach { rowVoices ->
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            }
-            rowVoices.forEach { v ->
-                val active = currentProfile.voiceName == v.id
-                val card = LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = android.view.Gravity.CENTER
-                    setPadding(10, 14, 10, 14)
-                    val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    lp.setMargins(0, 0, 4, 4); layoutParams = lp
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
-                        setStroke(if (active) 2 else 0, 0xFF00ff88.toInt())
-                        cornerRadius = 4f
-                    }
-                    setOnClickListener {
-                        currentProfile = currentProfile.copy(voiceName = v.id)
-                        renderVoiceGrid()
-                    }
-                }
-                card.addView(TextView(requireContext()).apply {
-                    text = v.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
-                    setTextColor(v.genderColor)
-                })
-                card.addView(TextView(requireContext()).apply {
-                    text = v.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) 0xFF00ff88.toInt() else 0xFFcccccc.toInt())
-                })
-                card.addView(TextView(requireContext()).apply {
-                    text = "${v.flagEmoji} ${v.nationality}"; textSize = 9f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) 0xFF00cc66.toInt() else 0xFF446644.toInt())
-                })
-                card.addView(TextView(requireContext()).apply {
-                    text = v.id; textSize = 8f; gravity = android.view.Gravity.CENTER
-                    setTextColor(0xFF333333.toInt())
-                })
-                row.addView(card)
-            }
-            repeat(chunkSize - rowVoices.size) {
-                row.addView(android.view.View(requireContext()).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                })
-            }
-            voiceGrid.addView(row)
-        }
+        renderVoiceCardRows(voices.map { v ->
+            VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
+                "${v.flagEmoji} ${v.nationality}", v.id, 0xFF00ff88.toInt())
+        })
     }
 
     private fun renderPiperVoiceRows(voices: List<PiperVoice>) {
+        renderVoiceCardRows(voices.map { v ->
+            VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
+                "${v.flagEmoji} ${v.nationality}", "${v.quality} · ${v.name}", 0xFF00ccff.toInt())
+        })
+    }
+
+    private data class VoiceCardData(
+        val voiceId: String, val genderIcon: String, val genderColor: Int,
+        val displayName: String, val subtitle: String, val detail: String,
+        val accentColor: Int
+    )
+
+    private fun renderVoiceCardRows(cards: List<VoiceCardData>) {
         val chunkSize = 3
-        voices.chunked(chunkSize).forEach { rowVoices ->
+        cards.chunked(chunkSize).forEach { rowCards ->
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             }
-            rowVoices.forEach { v ->
-                val active = currentProfile.voiceName == v.id
+            rowCards.forEach { c ->
+                val active = currentProfile.voiceName == c.voiceId
                 val card = LinearLayout(requireContext()).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = android.view.Gravity.CENTER
@@ -262,33 +230,33 @@ class ProfilesFragment : Fragment() {
                     lp.setMargins(0, 0, 4, 4); layoutParams = lp
                     background = android.graphics.drawable.GradientDrawable().apply {
                         setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
-                        setStroke(if (active) 2 else 0, 0xFF00ccff.toInt())
+                        setStroke(if (active) 2 else 0, c.accentColor)
                         cornerRadius = 4f
                     }
                     setOnClickListener {
-                        currentProfile = currentProfile.copy(voiceName = v.id)
+                        currentProfile = currentProfile.copy(voiceName = c.voiceId)
                         renderVoiceGrid()
                     }
                 }
                 card.addView(TextView(requireContext()).apply {
-                    text = v.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
-                    setTextColor(v.genderColor)
+                    text = c.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
+                    setTextColor(c.genderColor)
                 })
                 card.addView(TextView(requireContext()).apply {
-                    text = v.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) 0xFF00ccff.toInt() else 0xFFcccccc.toInt())
+                    text = c.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (active) c.accentColor else 0xFFcccccc.toInt())
                 })
                 card.addView(TextView(requireContext()).apply {
-                    text = "${v.flagEmoji} ${v.nationality}"; textSize = 9f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) 0xFF0088cc.toInt() else 0xFF446644.toInt())
+                    text = c.subtitle; textSize = 9f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (active) c.accentColor else 0xFF446644.toInt())
                 })
                 card.addView(TextView(requireContext()).apply {
-                    text = "${v.quality} · ${v.name}"; textSize = 8f; gravity = android.view.Gravity.CENTER
+                    text = c.detail; textSize = 8f; gravity = android.view.Gravity.CENTER
                     setTextColor(0xFF333333.toInt())
                 })
                 row.addView(card)
             }
-            repeat(chunkSize - rowVoices.size) {
+            repeat(chunkSize - rowCards.size) {
                 row.addView(android.view.View(requireContext()).apply {
                     layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
                 })

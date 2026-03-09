@@ -59,9 +59,9 @@ object VoiceCommandListener {
     }
 
     fun stop() {
+        isListening = false
         mainHandler.post {
             try {
-                isListening = false
                 recognizer?.cancel()
                 recognizer?.destroy()
                 recognizer = null

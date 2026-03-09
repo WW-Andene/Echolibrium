@@ -33,7 +33,7 @@ class ProfilesFragment : Fragment() {
     private lateinit var seekStutterInt: SeekBar;  private lateinit var tvStutterInt: TextView
     private lateinit var seekStutterPos: SeekBar;  private lateinit var tvStutterPos: TextView
     private lateinit var seekStutterFreq: SeekBar; private lateinit var tvStutterFreq: TextView
-    private lateinit var seekStutterPause: SeekBar;private lateinit var tvStutterPause: TextView
+    private lateinit var seekStutterPause: SeekBar; private lateinit var tvStutterPause: TextView
     private lateinit var seekIntonInt: SeekBar;    private lateinit var tvIntonInt: TextView
     private lateinit var seekIntonVar: SeekBar;    private lateinit var tvIntonVar: TextView
     private lateinit var voiceGrid: LinearLayout

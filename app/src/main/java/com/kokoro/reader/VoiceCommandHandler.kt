@@ -99,10 +99,8 @@ object VoiceCommandHandler {
     }
 
     private fun handleTime(ctx: Context) {
-        val cal = java.util.Calendar.getInstance()
-        val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
-        val minute = cal.get(java.util.Calendar.MINUTE)
-        speak(ctx, "It is %d:%02d.".format(hour, minute))
+        val timeStr = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+        speak(ctx, "It is $timeStr.")
         Log.d(TAG, "Handled: time command")
     }
 

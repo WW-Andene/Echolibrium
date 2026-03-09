@@ -106,9 +106,13 @@ object AudioPipeline {
     private fun loop(ctx: Context) {
         Log.d(TAG, "Pipeline loop started")
         while (running) {
-            val item = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
             try {
+                val item = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
                 processItem(ctx, item)
+            } catch (e: InterruptedException) {
+                Log.d(TAG, "Pipeline loop interrupted")
+                Thread.currentThread().interrupt()
+                break
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing item", e)
             }

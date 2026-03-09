@@ -91,8 +91,8 @@ class NotificationReaderService : NotificationListenerService() {
 
         val extras  = sbn.notification?.extras ?: return
         val appName = getAppName(sbn.packageName)
-        val title   = extras.getString("android.title") ?: ""
-        val text    = extras.getCharSequence("android.text")?.toString() ?: ""
+        val title   = extras.getString(Notification.EXTRA_TITLE) ?: ""
+        val text    = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         if (title.isBlank() && text.isBlank()) return
 
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)

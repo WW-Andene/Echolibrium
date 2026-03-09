@@ -44,8 +44,10 @@ data class GimmickConfig(
     }
 
     fun toTransform() = VoiceTransform.Gimmick(
-        type, frequency,
-        VoiceTransform.GimmickPosition.valueOf(position)
+        type = type,
+        signalCondition = "always",
+        frequencyCap = frequency,
+        position = VoiceTransform.GimmickPosition.valueOf(position)
     )
 
     companion object {

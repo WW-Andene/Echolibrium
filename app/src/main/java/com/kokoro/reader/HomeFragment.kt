@@ -44,9 +44,13 @@ class HomeFragment : Fragment() {
         // Deep-link to SherpaTTS settings to download voices
         updateSherpaTtsButton(btnSherpaTts)
         btnSherpaTts.setOnClickListener {
+            val pm = requireContext().packageManager
             val launchIntent = try {
-                requireContext().packageManager.getLaunchIntentForPackage(SHERPA_TTS_PACKAGE)
+                pm.getLaunchIntentForPackage(SHERPA_TTS_PACKAGE)
             } catch (e: Exception) { null }
+                ?: try {
+                    pm.getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts")
+                } catch (e: Exception) { null }
 
             if (launchIntent != null) {
                 startActivity(launchIntent)
@@ -110,8 +114,15 @@ class HomeFragment : Fragment() {
 
     private fun updateSherpaTtsButton(btn: Button) {
         val installed = try {
-            requireContext().packageManager.getLaunchIntentForPackage(SHERPA_TTS_PACKAGE) != null
-        } catch (e: Exception) { false }
+            requireContext().packageManager.getPackageInfo(SHERPA_TTS_PACKAGE, 0)
+            true
+        } catch (e: Exception) {
+            // Also check the alternate package name (TTS engine vs standalone app)
+            try {
+                requireContext().packageManager.getPackageInfo("com.k2fsa.sherpa.onnx.tts", 0)
+                true
+            } catch (e2: Exception) { false }
+        }
 
         if (installed) {
             btn.text = "🎙 Open SherpaTTS — Download Voices"

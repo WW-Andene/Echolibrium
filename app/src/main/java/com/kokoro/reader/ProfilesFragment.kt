@@ -63,6 +63,8 @@ class ProfilesFragment : Fragment() {
         setupCollapsibleSection(v, R.id.label_breathiness, R.id.section_breathiness, "// BREATHINESS")
         setupCollapsibleSection(v, R.id.label_stuttering, R.id.section_stuttering, "// STUTTERING")
         setupCollapsibleSection(v, R.id.label_intonation, R.id.section_intonation, "// INTONATION")
+        setupCollapsibleSection(v, R.id.label_gimmicks, R.id.gimmicks_container,
+            "// GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)")
     }
 
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
@@ -138,80 +140,160 @@ class ProfilesFragment : Fragment() {
         // ── Model download status banner ──────────────────────────────────
         if (!VoiceDownloadManager.isModelReady(requireContext())) {
             voiceGrid.addView(buildDownloadBanner())
-            return
         }
 
         // ── Filter Kokoro voices ──────────────────────────────────────────
-        val filtered = KokoroVoices.ALL.filter { v ->
+        val kokoroFiltered = KokoroVoices.ALL.filter { v ->
             val gOk = genderFilter   == "All" || v.gender   == genderFilter
             val lOk = languageFilter == "All" || v.language == languageFilter
             gOk && lOk
         }
 
-        if (filtered.isEmpty()) {
+        // ── Filter Piper voices ───────────────────────────────────────────
+        val piperFiltered = PiperVoiceCatalog.ALL.filter { v ->
+            val gOk = genderFilter   == "All" || v.gender   == genderFilter
+            val lOk = languageFilter == "All" || v.language == languageFilter
+            gOk && lOk
+        }
+
+        if (kokoroFiltered.isEmpty() && piperFiltered.isEmpty()) {
             voiceGrid.addView(TextView(requireContext()).apply {
                 text = "No voices match filter."; setTextColor(0xFF446644.toInt()); textSize = 12f
             }); return
         }
 
-        // Group by language
-        filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-            voiceGrid.addView(TextView(requireContext()).apply {
-                text = "${lang.uppercase()}  (${voices.size})"
-                textSize = 10f; setTextColor(0xFF446644.toInt())
-                setPadding(4, 14, 0, 6)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            })
-
-            val chunkSize = 3
-            voices.chunked(chunkSize).forEach { rowVoices ->
-                val row = LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.HORIZONTAL
+        // ── Kokoro voices (grouped by language) ──────────────────────────
+        if (kokoroFiltered.isNotEmpty()) {
+            kokoroFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
+                voiceGrid.addView(TextView(requireContext()).apply {
+                    text = "KOKORO · ${lang.uppercase()}  (${voices.size})"
+                    textSize = 10f; setTextColor(0xFF446644.toInt())
+                    setPadding(4, 14, 0, 6)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                }
-                rowVoices.forEach { v ->
-                    val active = currentProfile.voiceName == v.id
-                    val card = LinearLayout(requireContext()).apply {
-                        orientation = LinearLayout.VERTICAL
-                        gravity = android.view.Gravity.CENTER
-                        setPadding(10, 14, 10, 14)
-                        val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        lp.setMargins(0, 0, 4, 4); layoutParams = lp
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
-                            setStroke(if (active) 2 else 0, 0xFF00ff88.toInt())
-                            cornerRadius = 4f
-                        }
-                        setOnClickListener {
-                            currentProfile = currentProfile.copy(voiceName = v.id)
-                            renderVoiceGrid()
-                        }
-                    }
-                    card.addView(TextView(requireContext()).apply {
-                        text = v.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
-                        setTextColor(v.genderColor)
-                    })
-                    card.addView(TextView(requireContext()).apply {
-                        text = v.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
-                        setTextColor(if (active) 0xFF00ff88.toInt() else 0xFFcccccc.toInt())
-                    })
-                    card.addView(TextView(requireContext()).apply {
-                        text = "${v.flagEmoji} ${v.nationality}"; textSize = 9f; gravity = android.view.Gravity.CENTER
-                        setTextColor(if (active) 0xFF00cc66.toInt() else 0xFF446644.toInt())
-                    })
-                    card.addView(TextView(requireContext()).apply {
-                        text = v.id; textSize = 8f; gravity = android.view.Gravity.CENTER
-                        setTextColor(0xFF333333.toInt())
-                    })
-                    row.addView(card)
-                }
-                repeat(chunkSize - rowVoices.size) {
-                    row.addView(android.view.View(requireContext()).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                    })
-                }
-                voiceGrid.addView(row)
+                })
+                renderKokoroVoiceRows(voices)
             }
+        }
+
+        // ── Piper voices (grouped by language) ───────────────────────────
+        if (piperFiltered.isNotEmpty()) {
+            piperFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
+                // De-duplicate by name (show only recommended quality per voice name)
+                val deduped = voices.groupBy { it.name }.map { (_, variants) ->
+                    variants.find { it.quality == "medium" } ?: variants.first()
+                }
+                voiceGrid.addView(TextView(requireContext()).apply {
+                    text = "PIPER · ${lang.uppercase()}  (${deduped.size})"
+                    textSize = 10f; setTextColor(0xFF446644.toInt())
+                    setPadding(4, 14, 0, 6)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                })
+                renderPiperVoiceRows(deduped)
+            }
+        }
+    }
+
+    private fun renderKokoroVoiceRows(voices: List<KokoroVoice>) {
+        val chunkSize = 3
+        voices.chunked(chunkSize).forEach { rowVoices ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
+            rowVoices.forEach { v ->
+                val active = currentProfile.voiceName == v.id
+                val card = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(10, 14, 10, 14)
+                    val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    lp.setMargins(0, 0, 4, 4); layoutParams = lp
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
+                        setStroke(if (active) 2 else 0, 0xFF00ff88.toInt())
+                        cornerRadius = 4f
+                    }
+                    setOnClickListener {
+                        currentProfile = currentProfile.copy(voiceName = v.id)
+                        renderVoiceGrid()
+                    }
+                }
+                card.addView(TextView(requireContext()).apply {
+                    text = v.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
+                    setTextColor(v.genderColor)
+                })
+                card.addView(TextView(requireContext()).apply {
+                    text = v.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (active) 0xFF00ff88.toInt() else 0xFFcccccc.toInt())
+                })
+                card.addView(TextView(requireContext()).apply {
+                    text = "${v.flagEmoji} ${v.nationality}"; textSize = 9f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (active) 0xFF00cc66.toInt() else 0xFF446644.toInt())
+                })
+                card.addView(TextView(requireContext()).apply {
+                    text = v.id; textSize = 8f; gravity = android.view.Gravity.CENTER
+                    setTextColor(0xFF333333.toInt())
+                })
+                row.addView(card)
+            }
+            repeat(chunkSize - rowVoices.size) {
+                row.addView(android.view.View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                })
+            }
+            voiceGrid.addView(row)
+        }
+    }
+
+    private fun renderPiperVoiceRows(voices: List<PiperVoice>) {
+        val chunkSize = 3
+        voices.chunked(chunkSize).forEach { rowVoices ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
+            rowVoices.forEach { v ->
+                val active = currentProfile.voiceName == v.id
+                val card = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(10, 14, 10, 14)
+                    val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    lp.setMargins(0, 0, 4, 4); layoutParams = lp
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
+                        setStroke(if (active) 2 else 0, 0xFF00ccff.toInt())
+                        cornerRadius = 4f
+                    }
+                    setOnClickListener {
+                        currentProfile = currentProfile.copy(voiceName = v.id)
+                        renderVoiceGrid()
+                    }
+                }
+                card.addView(TextView(requireContext()).apply {
+                    text = v.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
+                    setTextColor(v.genderColor)
+                })
+                card.addView(TextView(requireContext()).apply {
+                    text = v.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (active) 0xFF00ccff.toInt() else 0xFFcccccc.toInt())
+                })
+                card.addView(TextView(requireContext()).apply {
+                    text = "${v.flagEmoji} ${v.nationality}"; textSize = 9f; gravity = android.view.Gravity.CENTER
+                    setTextColor(if (active) 0xFF0088cc.toInt() else 0xFF446644.toInt())
+                })
+                card.addView(TextView(requireContext()).apply {
+                    text = "${v.quality} · ${v.name}"; textSize = 8f; gravity = android.view.Gravity.CENTER
+                    setTextColor(0xFF333333.toInt())
+                })
+                row.addView(card)
+            }
+            repeat(chunkSize - rowVoices.size) {
+                row.addView(android.view.View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                })
+            }
+            voiceGrid.addView(row)
         }
     }
 

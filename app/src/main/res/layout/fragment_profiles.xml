@@ -156,12 +156,15 @@
                 android:fontFamily="monospace" android:textSize="11sp"/>
         </LinearLayout>
 
-        <!-- Gimmicks -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)"
-            style="@style/SectionLabel"/>
+        <!-- Gimmicks (collapsible) -->
+        <TextView android:id="@+id/label_gimmicks" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)"
+            style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
         <LinearLayout android:id="@+id/gimmicks_container" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="16dp"/>
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="16dp" android:visibility="gone"/>
 
         <!-- Preview & Save -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

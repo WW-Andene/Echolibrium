@@ -37,13 +37,20 @@ class HomeFragment : Fragment() {
         }
 
         // Deep-link to SherpaTTS settings to download voices
+        updateSherpaTtsButton(btnSherpaTts)
         btnSherpaTts.setOnClickListener {
-            val ttsSettings = Intent("com.android.settings.TTS_SETTINGS")
-            val intent = try {
-                requireContext().packageManager
-                    .getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts.engine") ?: ttsSettings
-            } catch (e: Exception) { ttsSettings }
-            startActivity(intent)
+            val pkg = "com.k2fsa.sherpa.onnx.tts.engine"
+            val launchIntent = try {
+                requireContext().packageManager.getLaunchIntentForPackage(pkg)
+            } catch (e: Exception) { null }
+
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+            } else {
+                // SherpaTTS not installed — open the GitHub releases page
+                startActivity(Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models")))
+            }
         }
 
         switchEnabled.isChecked = prefs.getBoolean("service_enabled", true)
@@ -91,7 +98,26 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        view?.let { updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission)) }
+        view?.let {
+            updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission))
+            updateSherpaTtsButton(it.findViewById(R.id.btn_sherpa_settings))
+        }
+    }
+
+    private fun updateSherpaTtsButton(btn: Button) {
+        val installed = try {
+            requireContext().packageManager.getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts.engine") != null
+        } catch (e: Exception) { false }
+
+        if (installed) {
+            btn.text = "🎙 Open SherpaTTS — Download Voices"
+            btn.setBackgroundColor(0xFF1a2a3a.toInt())
+            btn.setTextColor(0xFF00ccff.toInt())
+        } else {
+            btn.text = "⚠ SherpaTTS not installed — Tap to download"
+            btn.setBackgroundColor(0xFF2a2a1a.toInt())
+            btn.setTextColor(0xFFffcc00.toInt())
+        }
     }
 
     private fun updateStatus(tv: TextView, btn: Button) {

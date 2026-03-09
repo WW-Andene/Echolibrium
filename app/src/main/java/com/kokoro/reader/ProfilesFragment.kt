@@ -800,13 +800,13 @@ class ProfilesFragment : Fragment() {
         renderVoiceGrid()
     }
 
-    /** Convert slider position (0..sliderMax) to actual value (0..valueMax) using square-root curve */
+    /** Convert slider position (0..sliderMax) to actual value (0..valueMax) using quadratic curve */
     private fun progressiveFromSlider(sliderPos: Int, sliderMax: Int, valueMax: Int): Int {
         val t = sliderPos.toFloat() / sliderMax
         return (t * t * valueMax).toInt().coerceIn(0, valueMax)
     }
 
-    /** Convert actual value (0..valueMax) to slider position (0..sliderMax) using inverse square-root curve */
+    /** Convert actual value (0..valueMax) to slider position (0..sliderMax) using square-root curve */
     private fun progressiveToSlider(value: Int, valueMax: Int): Int {
         val t = (value.toFloat() / valueMax).coerceIn(0f, 1f)
         return (kotlin.math.sqrt(t) * 200f).toInt().coerceIn(0, 200)

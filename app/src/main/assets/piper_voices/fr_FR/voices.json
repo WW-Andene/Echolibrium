@@ -1,0 +1,44 @@
+{
+  "language": "French",
+  "locale": "fr_FR",
+  "source": "https://github.com/OHF-Voice/piper1-gpl",
+  "download_base": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR",
+  "voices": [
+    {
+      "name": "gilles",
+      "gender": "Male",
+      "qualities": ["low"],
+      "recommended": "low"
+    },
+    {
+      "name": "mls",
+      "gender": "Unknown",
+      "qualities": ["medium"],
+      "recommended": "medium"
+    },
+    {
+      "name": "mls_1840",
+      "gender": "Unknown",
+      "qualities": ["low"],
+      "recommended": "low"
+    },
+    {
+      "name": "siwis",
+      "gender": "Female",
+      "qualities": ["low", "medium"],
+      "recommended": "medium"
+    },
+    {
+      "name": "tom",
+      "gender": "Male",
+      "qualities": ["medium"],
+      "recommended": "medium"
+    },
+    {
+      "name": "upmc",
+      "gender": "Unknown",
+      "qualities": ["medium"],
+      "recommended": "medium"
+    }
+  ]
+}

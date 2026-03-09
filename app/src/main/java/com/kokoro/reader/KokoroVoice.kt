@@ -42,6 +42,13 @@ object KokoroVoices {
     // Filter helpers
     fun byGender(g: String) = if (g == "All") ALL else ALL.filter { it.gender == g }
     fun byLanguage(l: String) = if (l == "All") ALL else ALL.filter { it.language == l }
-    fun languages() = listOf("All") + ALL.map { it.language }.distinct().sorted()
+
+    /** All language labels from both Kokoro and Piper catalogs */
+    fun languages(): List<String> {
+        val kokoroLangs = ALL.map { it.language }.distinct()
+        val piperLangs = PiperVoiceCatalog.languages()
+        return listOf("All") + (kokoroLangs + piperLangs).distinct().sorted()
+    }
+
     fun genders()   = listOf("All", "Female", "Male")
 }

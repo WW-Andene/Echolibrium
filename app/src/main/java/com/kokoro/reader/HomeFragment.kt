@@ -42,9 +42,9 @@ class HomeFragment : Fragment() {
                 val intent = requireContext().packageManager
                     .getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts.engine")
                 if (intent != null) startActivity(intent)
-                else startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                else startActivity(Intent(Settings.ACTION_TTS_SETTINGS))
             } catch (e: Exception) {
-                startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                startActivity(Intent(Settings.ACTION_TTS_SETTINGS))
             }
         }
 

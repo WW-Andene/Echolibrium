@@ -35,107 +35,61 @@ data class ModulatedVoice(
 object VoiceModulator {
 
     fun modulate(profile: VoiceProfile, signal: SignalMap): ModulatedVoice {
+        val traj  = trajectoryMultiplier(signal.trajectory)
+        val inten = signal.intensityLevel  // 0..1 smooth float
 
-        val traj = trajectoryMultiplier(signal.trajectory)
-        val intensity = signal.intensityLevel
+        // Continuous signal strengths (0..1) — no hard switches
+        val distressStrength = when (signal.warmth) {
+            WarmthLevel.DISTRESSED -> 1.0f
+            WarmthLevel.LOW        -> 0.1f
+            else -> 0f
+        }
+        val urgencyStrength = when (signal.urgencyType) {
+            UrgencyType.EXPIRING  -> 1.0f
+            UrgencyType.BLOCKING  -> 0.8f
+            UrgencyType.REAL      -> 0.6f
+            UrgencyType.SOFT      -> 0.2f
+            UrgencyType.NONE      -> 0f
+        }
+        val emotionalStrength = when (signal.stakesType) {
+            StakesType.EMOTIONAL  -> 1.0f
+            StakesType.FINANCIAL  -> 0.6f
+            StakesType.PHYSICAL   -> 0.5f
+            StakesType.TECHNICAL  -> 0.1f
+            StakesType.FAKE       -> 0f
+            StakesType.NONE       -> 0f
+        }
+        val fakeStrength = if (signal.stakesType == StakesType.FAKE) 0.8f else 0f
 
-        // ── Pitch ─────────────────────────────────────────────────────────────
-        val pitch = when {
-            signal.urgencyType == UrgencyType.EXPIRING ->
-                add(profile.pitch, 0.15f * intensity * traj)
-            signal.emojiAngry || signal.register == Register.DRAMATIC ->
-                add(profile.pitch, 0.1f * intensity * traj)
-            signal.warmth == WarmthLevel.DISTRESSED ->
-                add(profile.pitch, 0.2f * intensity * traj) // voice rises under distress
-            signal.stakesType == StakesType.FAKE ->
-                profile.pitch * 0.95f // slightly flatten for fake stakes
-            else -> profile.pitch
-        }.coerceIn(0.5f, 2.0f)
+        // ── Pitch — smooth lerp from baseline ────────────────────────────────
+        val pitchDelta = lerp(0f, 0.25f, (urgencyStrength * 0.5f + distressStrength * 0.5f) * inten * traj)
+        val pitch = (profile.pitch + pitchDelta - fakeStrength * 0.05f).coerceIn(0.5f, 2.0f)
 
         // ── Speed ─────────────────────────────────────────────────────────────
-        val speed = when {
-            signal.urgencyType == UrgencyType.EXPIRING ->
-                multiply(profile.speed, intensity * traj * 0.4f) // rush
-            signal.urgencyType == UrgencyType.REAL ->
-                multiply(profile.speed, intensity * traj * 0.3f)
-            signal.trajectory == Trajectory.COLLAPSED ->
-                profile.speed * 0.85f  // collapsed = slow, heavy
-            signal.stakesType == StakesType.FAKE ->
-                profile.speed * 0.9f   // game notifs, slightly slower/duller
-            else -> profile.speed
-        }.coerceIn(0.5f, 3.0f)
+        val speedUp   = urgencyStrength * 0.35f * inten * traj
+        val speedDown = if (signal.trajectory == Trajectory.COLLAPSED) 0.18f else 0f
+        val speed = (profile.speed + speedUp - speedDown - fakeStrength * 0.12f).coerceIn(0.5f, 3.0f)
 
         // ── Breathiness ───────────────────────────────────────────────────────
-        val messageBreathe = when {
-            signal.warmth == WarmthLevel.DISTRESSED -> 0.7f
-            signal.trajectory == Trajectory.COLLAPSED -> 0.5f
-            signal.emojiSad -> 0.4f
-            signal.register == Register.RAW -> 0.3f
-            else -> 0f
-        }
-        val breathIntensity = when {
-            profile.breathIntensity > 0 && messageBreathe > 0 ->
-                // both have it → multiply
-                (profile.breathIntensity * (1f + messageBreathe * traj)).toInt()
-            messageBreathe > 0 ->
-                // only message has it → add
-                (profile.breathIntensity + messageBreathe * 30f * traj).toInt()
-            else -> profile.breathIntensity
-        }.coerceIn(0, 100)
+        val msgBreath = lerp(0f, 0.8f, distressStrength * inten * traj) +
+                        lerp(0f, 0.3f, if (signal.emojiSad) inten else 0f)
+        val breathIntensity = blendAdd(profile.breathIntensity.toFloat(), profile.breathIntensity > 0, msgBreath * 35f, traj).toInt().coerceIn(0, 100)
 
         // ── Stutter ───────────────────────────────────────────────────────────
-        val messageStutter = when {
-            signal.urgencyType == UrgencyType.EXPIRING -> 0.8f
-            signal.trajectory == Trajectory.BUILDING && signal.intensityLevel > 0.5f -> 0.6f
-            signal.warmth == WarmthLevel.DISTRESSED -> 0.5f
-            signal.register == Register.RAW -> 0.3f
-            else -> 0f
-        }
-        val stutterIntensity = when {
-            profile.stutterIntensity > 0 && messageStutter > 0 ->
-                // both → multiply
-                (profile.stutterIntensity * (1f + messageStutter * traj)).toInt()
-            messageStutter > 0 ->
-                // only message → add
-                (profile.stutterIntensity + messageStutter * 25f * traj).toInt()
-            else -> profile.stutterIntensity
-        }.coerceIn(0, 100)
-
-        val stutterFrequency = when {
-            profile.stutterFrequency > 0 && messageStutter > 0 ->
-                (profile.stutterFrequency * (1f + messageStutter * traj)).toInt()
-            messageStutter > 0 ->
-                (profile.stutterFrequency + messageStutter * 20f * traj).toInt()
-            else -> profile.stutterFrequency
-        }.coerceIn(0, 100)
+        val msgStutter = lerp(0f, 0.9f, urgencyStrength * inten * traj) +
+                         lerp(0f, 0.6f, distressStrength * inten * traj) +
+                         lerp(0f, 0.3f, if (signal.register == Register.RAW) inten else 0f)
+        val msgStutterClamped = msgStutter.coerceIn(0f, 1f)
+        val stutterIntensity  = blendAdd(profile.stutterIntensity.toFloat(), profile.stutterIntensity > 0, msgStutterClamped * 30f, traj).toInt().coerceIn(0, 100)
+        val stutterFrequency  = blendAdd(profile.stutterFrequency.toFloat(), profile.stutterFrequency > 0, msgStutterClamped * 25f, traj).toInt().coerceIn(0, 100)
 
         // ── Intonation ────────────────────────────────────────────────────────
-        val messageIntonation = when {
-            signal.trajectory == Trajectory.BUILDING -> 0.6f
-            signal.trajectory == Trajectory.PEAKED -> 0.8f
-            signal.trajectory == Trajectory.COLLAPSED -> 0.3f
-            signal.stakesType == StakesType.EMOTIONAL -> 0.5f
-            signal.stakesType == StakesType.FAKE -> -0.3f // flatten fake stakes
-            signal.register == Register.FORMAL -> -0.2f  // flatten formal
-            else -> 0f
-        }
-        val intonationIntensity = when {
-            profile.intonationIntensity > 0 && messageIntonation > 0 ->
-                (profile.intonationIntensity * (1f + messageIntonation * traj)).toInt()
-            messageIntonation > 0 ->
-                (profile.intonationIntensity + messageIntonation * 30f * traj).toInt()
-            messageIntonation < 0 ->
-                (profile.intonationIntensity * (1f + messageIntonation)).toInt()
-            else -> profile.intonationIntensity
-        }.coerceIn(0, 100)
-
-        val intonationVariation = when {
-            signal.trajectory == Trajectory.PEAKED ->
-                (profile.intonationVariation + 0.2f * traj).coerceIn(0f, 1f)
-            signal.stakesType == StakesType.FAKE || signal.register == Register.FORMAL ->
-                (profile.intonationVariation * 0.6f).coerceIn(0f, 1f)
-            else -> profile.intonationVariation
-        }
+        val msgInton = lerp(0f, 0.8f, (emotionalStrength * 0.7f + inten * 0.3f) * traj) -
+                       lerp(0f, 0.4f, fakeStrength)  // flatten fake stakes
+        val intonationIntensity = (profile.intonationIntensity + msgInton * 35f)
+            .coerceIn(0f, 100f).toInt()
+        val intonationVariation = (profile.intonationVariation + msgInton * 0.2f)
+            .coerceIn(0f, 1f)
 
         return ModulatedVoice(
             pitch               = pitch,
@@ -152,7 +106,18 @@ object VoiceModulator {
         )
     }
 
-    private fun trajectoryMultiplier(t: Trajectory) = when (t) {
+    // Linear interpolation
+    private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
+
+    // Addition if only one side has signal, multiplication if both resonate
+    private fun blendAdd(base: Float, baseHasIt: Boolean, msgSignal: Float, traj: Float): Float {
+        return if (baseHasIt && msgSignal > 0f)
+            base * (1f + msgSignal / 35f * traj)  // resonance
+        else
+            base + msgSignal * traj               // addition
+    }
+
+        private fun trajectoryMultiplier(t: Trajectory) = when (t) {
         Trajectory.FLAT      -> 1.0f
         Trajectory.BUILDING  -> 1.3f
         Trajectory.PEAKED    -> 1.6f

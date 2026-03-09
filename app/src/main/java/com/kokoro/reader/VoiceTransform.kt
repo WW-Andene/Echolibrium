@@ -16,8 +16,8 @@ object VoiceTransform {
     )
 
     private val GIMMICK_SOUNDS = mapOf(
-        "giggle" to listOf("hehe", "hehehe", "haha"),
-        "sigh"   to listOf("hhhhhh...", "hhhhh...", "haah..."),
+        "giggle" to listOf("heh heh", "ha ha ha", "heh heh heh"),
+        "sigh"   to listOf("haah...", "haaah...", "haahm..."),
         "huh"    to listOf("huh?", "hm?", "huh..."),
         "mmm"    to listOf("mmm.", "mhmm."),
         "woah"   to listOf("woah!", "oh wow!", "woah..."),
@@ -26,7 +26,7 @@ object VoiceTransform {
         "gasp"   to listOf("*gasp*", "oh!", "oh-"),
         "yawn"   to listOf("haaah...", "aaah...", "haahm."),
         "hmm"    to listOf("hmm.", "hmmm...", "hmm,"),
-        "laugh"  to listOf("hah!", "ha.", "hahah."),
+        "laugh"  to listOf("ha ha ha!", "bah ha ha", "ha ha"),
         "tsk"    to listOf("tsk.", "tsk tsk.", "tch."),
     )
 
@@ -53,19 +53,20 @@ object VoiceTransform {
     }
 
     // Maps gimmick type to the signal condition that should gate it
+    // Conditions are broad enough to actually fire — frequency cap handles expressiveness
     private fun String.toGimmickSignal() = when (this) {
-        "sigh"   -> "warmth_distressed"   // sadness, apology, collapse
-        "giggle" -> "warmth_high"         // warm, happy, love emoji
-        "huh"    -> "sender_unknown"      // confusion, unknown
-        "mmm"    -> "intent_request"      // someone needs something
-        "woah"   -> "traj_peaked"         // peaked intensity
-        "ugh"    -> "urgency_real"        // genuine urgency or demand
-        "aww"    -> "emoji_sad"           // sad emoji or emotional
-        "gasp"   -> "stakes_high"         // high stakes anything
-        "yawn"   -> "stakes_low"          // nothing happening
-        "hmm"    -> "always"              // general uncertainty
+        "sigh"   -> "always"              // personality decides when to sigh — freq cap gates it
+        "giggle" -> "always"              // personality decides when to giggle — freq cap gates it
+        "huh"    -> "always"              // uncertainty reflex
+        "mmm"    -> "always"              // considering reflex
+        "woah"   -> "intensity_high"      // only on genuinely intense messages
+        "ugh"    -> "stakes_high"         // real stakes only (financial, emotional)
+        "aww"    -> "always"              // personality decides
+        "gasp"   -> "urgency_expiring"    // only on calls/expiring urgency
+        "yawn"   -> "stakes_low"          // boring content
+        "hmm"    -> "always"              // general
         "laugh"  -> "stakes_fake"         // game / fake stakes
-        "tsk"    -> "flooded"             // too many notifications
+        "tsk"    -> "always"              // personality decides
         else     -> "always"
     }
 
@@ -86,17 +87,22 @@ object VoiceTransform {
         return listOfNotNull(pre, text, post).joinToString(" ")
     }
 
+    // ── Smoothing curve — maps linear 0-100 slider to gradual 0.0-1.0 ─────────
+    // Quadratic: low values are subtle, high values are dramatic
+    private fun smooth(v: Int): Float = (v / 100f) * (v / 100f)  // x^2
+
     // ── Breathiness ───────────────────────────────────────────────────────────
     fun applyBreathiness(text: String, intensity: Int, curvePosition: Float, pause: Int): String {
-        if (intensity == 0) return text
+        if (intensity < 5) return text  // dead zone — below 5 is inaudible
         return text.split(" ").joinToString(" ") { breathWord(it, intensity, curvePosition, pause) }
     }
 
     private fun breathWord(word: String, intensity: Int, curvePos: Float, pause: Int): String {
         if (word.isBlank()) return word
-        val hCount = (intensity / 10).coerceIn(1, 10)
+        // Smooth curve: intensity 5→10 gives 1h, 50 gives 2h, 100 gives 4h (gradual)
+        val hCount = (smooth(intensity) * 4f + 0.5f).toInt().coerceIn(1, 4)
         val hStr = "h".repeat(hCount)
-        val pauseStr = " ".repeat((pause / 25).coerceIn(0, 4))
+        val pauseStr = " ".repeat((smooth(pause) * 3f).toInt().coerceIn(0, 3))
         return when {
             curvePos < 0.2f -> "$hStr$pauseStr$word"
             curvePos < 0.4f -> { val m = word.take(1); "$hStr$m$pauseStr${word.drop(1)}" }
@@ -117,17 +123,20 @@ object VoiceTransform {
 
     // ── Stuttering ────────────────────────────────────────────────────────────
     fun applyStuttering(text: String, intensity: Int, position: Float, frequency: Int, pause: Int): String {
-        if (intensity == 0 || frequency == 0) return text
+        if (intensity < 5 || frequency < 5) return text  // dead zone
+        // Smooth the frequency so low values stutter very rarely
+        val smoothFreq = (smooth(frequency) * 100f).toInt().coerceIn(0, 100)
         return text.split(" ").joinToString(" ") { word ->
-            if (word.length > 2 && Random.nextInt(100) < frequency)
+            if (word.length > 2 && Random.nextInt(100) < smoothFreq)
                 stutterWord(word, intensity, position, pause)
             else word
         }
     }
 
     private fun stutterWord(word: String, intensity: Int, position: Float, pause: Int): String {
-        val repeats = (intensity / 25).coerceIn(1, 4)
-        val pauseStr = "-".repeat((pause / 30).coerceIn(0, 3))
+        // Smooth curve: intensity 1-20 = 1 repeat, 50 = 2, 80+ = 3
+        val repeats = (smooth(intensity) * 3f + 1f).toInt().coerceIn(1, 4)
+        val pauseStr = "-".repeat((smooth(pause) * 3f).toInt().coerceIn(0, 3))
         val idx = (word.length * position).roundToInt().coerceIn(0, word.length - 1)
         val sylLen = if (idx + 2 <= word.length) 2 else 1
         val syllable = word.substring(idx, idx + sylLen)
@@ -137,7 +146,7 @@ object VoiceTransform {
 
     // ── Intonation ────────────────────────────────────────────────────────────
     fun applyIntonation(text: String, intensity: Int, variation: Float): String {
-        if (intensity == 0) return text
+        if (intensity < 5) return text  // dead zone
         return text.split(" ").mapIndexed { i, word ->
             val stressed = i % (3 - (variation * 2).roundToInt()).coerceAtLeast(1) == 0
             if (stressed) intonateWord(word, intensity, variation) else word

@@ -13,10 +13,26 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
+
+      # Download pre-built sherpa-onnx Android AAR
+      # Check latest release at: https://github.com/k2-fsa/sherpa-onnx/releases
+      - name: Download sherpa-onnx AAR
+        run: |
+          mkdir -p app/libs
+          VERSION="1.10.31"
+          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${VERSION}/sherpa-onnx-v${VERSION}-android.zip"
+          echo "Downloading sherpa-onnx from $URL"
+          curl -L "$URL" -o sherpa-android.zip
+          unzip -q sherpa-android.zip
+          # Find the AAR file in the extracted directory
+          find . -name "*.aar" | head -5
+          cp $(find . -name "sherpa_onnx.aar" | head -1) app/libs/sherpa_onnx.aar
+          echo "AAR placed at app/libs/sherpa_onnx.aar"
+
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
       - uses: actions/upload-artifact@v4
         with:
-          name: KokoroReader-v2
+          name: KokoroReader-v3
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30

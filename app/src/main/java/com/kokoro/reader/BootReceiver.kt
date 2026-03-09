@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import android.text.TextUtils
 import android.util.Log
 
@@ -35,7 +36,7 @@ class BootReceiver : BroadcastReceiver() {
         if (!TextUtils.isEmpty(flat) && flat.contains(cn.flattenToString())) {
             Log.d(TAG, "Notification access granted — requesting service rebind")
             try {
-                NotificationReaderService.requestRebind(cn)
+                NotificationListenerService.requestRebind(cn)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to request rebind", e)
             }

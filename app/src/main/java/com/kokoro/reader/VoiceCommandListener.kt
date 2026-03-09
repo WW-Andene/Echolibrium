@@ -25,14 +25,14 @@ object VoiceCommandListener {
     private const val TAG = "VoiceCommandListener"
     private const val RESTART_DELAY_MS = 500L
 
-    @Volatile private var recognizer: SpeechRecognizer? = null
+    private var recognizer: SpeechRecognizer? = null
     @Volatile var isListening = false
         private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** Callback for UI status updates — fired on main thread */
-    @Volatile var onStatusChanged: ((Boolean) -> Unit)? = null
+    /** Callback for UI status updates — set from UI thread, invoked on main thread */
+    var onStatusChanged: ((Boolean) -> Unit)? = null
 
     fun start(ctx: Context) {
         if (isListening) return

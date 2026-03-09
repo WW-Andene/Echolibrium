@@ -26,14 +26,14 @@ class NotificationReaderService : NotificationListenerService() {
         var instance: NotificationReaderService? = null
 
         /** Last spoken text — used by "can you repeat?" voice command */
-        var lastSpokenText: String = ""
+        @Volatile var lastSpokenText: String = ""
             private set
 
         /** Timestamp of last notification — used by "how long ago?" voice command */
-        var lastNotificationTime: Long = 0L
+        @Volatile var lastNotificationTime: Long = 0L
             private set
 
-        fun recordSpoken(text: String) {
+        @Synchronized fun recordSpoken(text: String) {
             lastSpokenText = text
             lastNotificationTime = System.currentTimeMillis()
         }

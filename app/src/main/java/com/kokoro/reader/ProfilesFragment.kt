@@ -48,7 +48,7 @@ class ProfilesFragment : Fragment() {
         activeProfileId = prefs.getString("active_profile_id", "") ?: ""
         if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
 
-
+        setupCollapsibleSections(v)
         setupProfileSpinner()
         buildPresets()
         buildFilterButtons()
@@ -56,6 +56,26 @@ class ProfilesFragment : Fragment() {
         setupButtons()
         buildGimmicksEditor()
         loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
+    }
+
+    private fun setupCollapsibleSections(v: View) {
+        setupCollapsibleSection(v, R.id.label_pitch_speed, R.id.section_pitch_speed, "// PITCH & SPEED")
+        setupCollapsibleSection(v, R.id.label_breathiness, R.id.section_breathiness, "// BREATHINESS")
+        setupCollapsibleSection(v, R.id.label_stuttering, R.id.section_stuttering, "// STUTTERING")
+        setupCollapsibleSection(v, R.id.label_intonation, R.id.section_intonation, "// INTONATION")
+    }
+
+    private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
+        val label = v.findViewById<TextView>(labelId)
+        val section = v.findViewById<View>(sectionId)
+        label.contentDescription = "$title, collapsed. Tap to expand."
+        label.setOnClickListener {
+            val expanded = section.visibility == View.VISIBLE
+            section.visibility = if (expanded) View.GONE else View.VISIBLE
+            label.text = "${if (expanded) "▸" else "▾"} $title"
+            label.contentDescription = if (expanded) "$title, collapsed. Tap to expand."
+                else "$title, expanded. Tap to collapse."
+        }
     }
 
     private fun bindViews(v: View) {
@@ -220,10 +240,17 @@ class ProfilesFragment : Fragment() {
                     setBackgroundColor(0xFF1a3a1a.toInt()); setTextColor(0xFF00ff88.toInt())
                     setOnClickListener {
                         VoiceDownloadManager.onProgress { pct ->
-                            activity?.runOnUiThread { renderVoiceGrid() }
+                            // Update only the progress text and bar, not the whole grid
+                            activity?.runOnUiThread {
+                                if (!isAdded) return@runOnUiThread
+                                updateDownloadProgress(pct)
+                            }
                         }
                         VoiceDownloadManager.onStateChange { _ ->
-                            activity?.runOnUiThread { buildFilterButtons(); renderVoiceGrid() }
+                            activity?.runOnUiThread {
+                                if (!isAdded) return@runOnUiThread
+                                buildFilterButtons(); renderVoiceGrid()
+                            }
                         }
                         VoiceDownloadManager.downloadModel(ctx)
                         renderVoiceGrid()
@@ -232,23 +259,32 @@ class ProfilesFragment : Fragment() {
             }
             VoiceDownloadManager.State.DOWNLOADING -> {
                 val pct = VoiceDownloadManager.progressPercent
-                card.addView(TextView(ctx).apply {
+                val statusText = TextView(ctx).apply {
+                    tag = "download_status"
                     text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
                     textSize = 13f; setTextColor(0xFF00ff88.toInt())
-                })
+                }
+                card.addView(statusText)
                 val bar = android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    tag = "download_bar"
                     max = 100; progress = if (pct >= 0) pct else 100
                     isIndeterminate = pct < 0
                     val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24)
                     lp.setMargins(0, 12, 0, 0); layoutParams = lp
                 }
                 card.addView(bar)
-                // Refresh every 500ms while downloading
-                voiceGrid.postDelayed({ if (isAdded) renderVoiceGrid() }, 500)
             }
             VoiceDownloadManager.State.READY -> { /* won't reach here */ }
         }
         return card
+    }
+
+    private fun updateDownloadProgress(pct: Int) {
+        val statusView = voiceGrid.findViewWithTag<TextView>("download_status") ?: return
+        val barView = voiceGrid.findViewWithTag<android.widget.ProgressBar>("download_bar") ?: return
+        statusView.text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
+        barView.isIndeterminate = pct < 0
+        if (pct >= 0) barView.progress = pct
     }
 
     private fun buildPresets() {

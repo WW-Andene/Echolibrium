@@ -4,26 +4,50 @@ import android.content.ComponentName
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
+import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
-import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class MainActivity : AppCompatActivity() {
+
+    private val tabIds = intArrayOf(R.id.nav_home, R.id.nav_profiles, R.id.nav_apps, R.id.nav_rules)
+    private var selectedTabId = R.id.nav_home
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        val nav = findViewById<BottomNavigationView>(R.id.bottom_nav)
-        nav.setOnItemSelectedListener {
-            loadFragment(when (it.itemId) {
-                R.id.nav_home     -> HomeFragment()
-                R.id.nav_profiles -> ProfilesFragment()
-                R.id.nav_apps     -> AppsFragment()
-                R.id.nav_rules    -> RulesFragment()
-                else -> HomeFragment()
-            }); true
+        for (id in tabIds) {
+            findViewById<View>(id).setOnClickListener { selectTab(id) }
         }
-        if (savedInstanceState == null) loadFragment(HomeFragment())
+        if (savedInstanceState == null) selectTab(R.id.nav_home)
     }
+
+    private fun selectTab(id: Int) {
+        selectedTabId = id
+        val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.green)
+        val inactiveColor = androidx.core.content.ContextCompat.getColor(this, R.color.nav_inactive)
+        for (tabId in tabIds) {
+            val tab = findViewById<LinearLayout>(tabId)
+            val color = if (tabId == id) activeColor else inactiveColor
+            for (i in 0 until tab.childCount) {
+                when (val child = tab.getChildAt(i)) {
+                    is ImageView -> child.setColorFilter(color)
+                    is TextView  -> child.setTextColor(color)
+                }
+            }
+        }
+        loadFragment(when (id) {
+            R.id.nav_home     -> HomeFragment()
+            R.id.nav_profiles -> ProfilesFragment()
+            R.id.nav_apps     -> AppsFragment()
+            R.id.nav_rules    -> RulesFragment()
+            else -> HomeFragment()
+        })
+    }
+
     private fun loadFragment(f: Fragment) =
         supportFragmentManager.beginTransaction().replace(R.id.fragment_container, f).commit()
 

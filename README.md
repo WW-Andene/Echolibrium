@@ -1,4 +1,4 @@
-# Kokoro Reader v2
+# Kokoro Reader v3
 
 Notification reader for Android with full voice personality system.
 
@@ -16,9 +16,18 @@ Notification reader for Android with full voice personality system.
 ## Build via GitHub Actions
 1. Push this repo to GitHub
 2. Actions → Build APK → Run workflow
-3. Download APK from Artifacts
-4. Install → Grant notification permission
+3. Download **both** APKs from Artifacts:
+   - `KokoroReader-v3` — the main app
+   - `SherpaTTS-arm64-v8a` — the TTS engine (required)
+4. Install SherpaTTS first, then Kokoro Reader
+5. Grant notification permission when prompted
+
+## Install
+1. Install **SherpaTTS** (`SherpaTTS-arm64-v8a.apk`) — this is the TTS engine that Kokoro Reader uses to speak
+2. Install **Kokoro Reader** (`KokoroReader-v3.apk`)
+3. Open Kokoro Reader → Grant notification listener permission
+4. Go to **Profiles** tab → Download the Kokoro voice model (~120 MB, one-time)
 
 ## Requirements
-- Android 8.0+
-- SherpaTTS installed and set as default TTS engine
+- Android 8.0+ (arm64 device)
+- SherpaTTS installed (bundled in build artifacts — see above)

@@ -25,10 +25,22 @@ jobs:
           curl -L "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar"
 
+      # Assemble SherpaTTS engine APK from the split zip files in the repo
+      # (uploaded by maintainer as Sherpa_base1.zip + Sherpa_base2.zip + Sherpa_base3.zip)
+      - name: Assemble SherpaTTS APK from repo
+        run: |
+          cat Sherpa_base1.zip Sherpa_base2.zip Sherpa_base3.zip > SherpaTTS-arm64-v8a.apk
+          echo "SherpaTTS APK assembled from repo zip parts ($(wc -c < SherpaTTS-arm64-v8a.apk) bytes)"
+
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: KokoroReader-v3
           path: app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SherpaTTS-arm64-v8a
+          path: SherpaTTS-arm64-v8a.apk
           retention-days: 30

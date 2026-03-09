@@ -780,10 +780,16 @@ class ProfilesFragment : Fragment() {
                 .setPositiveButton("Save") { _, _ ->
                     val alias = et.text.toString().trim()
                     currentProfile = currentProfile.copy(voiceAlias = alias)
+                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                    if (idx >= 0) profiles[idx] = currentProfile
+                    VoiceProfile.saveAll(profiles, prefs)
                     updateSelectedVoiceBanner()
                 }
                 .setNeutralButton("Clear") { _, _ ->
                     currentProfile = currentProfile.copy(voiceAlias = "")
+                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                    if (idx >= 0) profiles[idx] = currentProfile
+                    VoiceProfile.saveAll(profiles, prefs)
                     updateSelectedVoiceBanner()
                 }
                 .setNegativeButton("Cancel", null)

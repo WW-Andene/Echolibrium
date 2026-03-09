@@ -20,13 +20,9 @@ jobs:
         run: |
           mkdir -p app/libs
           VERSION="1.12.28"
-          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${VERSION}/sherpa-onnx-v${VERSION}-android.tar.bz2"
-          echo "Downloading sherpa-onnx from $URL"
-          curl -L "$URL" -o sherpa-android.tar.bz2
-          tar xjf sherpa-android.tar.bz2
-          # Find the AAR file in the extracted directory
-          find . -name "*.aar" | head -5
-          cp $(find . -name "sherpa_onnx.aar" | head -1) app/libs/sherpa_onnx.aar
+          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${VERSION}/sherpa-onnx-${VERSION}.aar"
+          echo "Downloading sherpa-onnx AAR from $URL"
+          curl -L "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar"
 
       - run: chmod +x gradlew

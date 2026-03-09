@@ -106,9 +106,13 @@ object AudioPipeline {
     private fun loop(ctx: Context) {
         Log.d(TAG, "Pipeline loop started")
         while (running) {
-            val item = queue.poll(1, TimeUnit.SECONDS) ?: continue
             try {
+                val item = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
                 processItem(ctx, item)
+            } catch (e: InterruptedException) {
+                Log.d(TAG, "Pipeline loop interrupted")
+                Thread.currentThread().interrupt()
+                break
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing item", e)
             }
@@ -148,12 +152,23 @@ object AudioPipeline {
 
             // Piper voice: use Piper/VITS engine
             piperVoice != null && PiperVoiceManager.isVoiceReady(ctx, voiceId) -> {
-                SherpaEngine.synthesizePiper(
-                    ctx     = ctx,
-                    text    = processed,
-                    voiceId = voiceId,
-                    speed   = item.modulated.speed
-                )
+                try {
+                    SherpaEngine.synthesizePiper(
+                        ctx     = ctx,
+                        text    = processed,
+                        voiceId = voiceId,
+                        speed   = item.modulated.speed
+                    )
+                } catch (e: Throwable) {
+                    // Catch native crashes from Piper engine and fall back to Kokoro
+                    Log.e(TAG, "Piper synthesis crashed for $voiceId, falling back to Kokoro", e)
+                    if (!SherpaEngine.initializeKokoro(ctx)) return
+                    SherpaEngine.synthesize(
+                        text  = processed,
+                        sid   = KokoroVoices.default().sid,
+                        speed = item.modulated.speed
+                    )
+                }
             }
 
             // Fallback: default Kokoro voice
@@ -208,15 +223,17 @@ object AudioPipeline {
         synchronized(trackLock) { currentTrack = track }
 
         try {
-            // Apply pitch shift via playback rate
-            // AudioTrack can adjust playback rate to shift pitch within limits
+            // Write PCM data first — MODE_STATIC requires data before playback config
+            track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+
+            // Apply pitch shift via playback rate AFTER write
+            // Setting playbackRate before write is unreliable on some devices in MODE_STATIC
             val shiftedRate = (sampleRate * pitch).toInt().coerceIn(
                 AUDIO_TRACK_MIN_SAMPLE_RATE_HZ,
                 AUDIO_TRACK_MAX_SAMPLE_RATE_HZ
             )
             track.playbackRate = shiftedRate
 
-            track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
             track.setNotificationMarkerPosition((samples.size - 1).coerceAtLeast(1))
 
             val latch = CountDownLatch(1)

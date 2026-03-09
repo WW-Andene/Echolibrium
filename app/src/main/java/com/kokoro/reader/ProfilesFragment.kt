@@ -33,7 +33,7 @@ class ProfilesFragment : Fragment() {
     private lateinit var seekStutterInt: SeekBar;  private lateinit var tvStutterInt: TextView
     private lateinit var seekStutterPos: SeekBar;  private lateinit var tvStutterPos: TextView
     private lateinit var seekStutterFreq: SeekBar; private lateinit var tvStutterFreq: TextView
-    private lateinit var seekStutterPause: SeekBar;private lateinit var tvStutterPause: TextView
+    private lateinit var seekStutterPause: SeekBar; private lateinit var tvStutterPause: TextView
     private lateinit var seekIntonInt: SeekBar;    private lateinit var tvIntonInt: TextView
     private lateinit var seekIntonVar: SeekBar;    private lateinit var tvIntonVar: TextView
     private lateinit var voiceGrid: LinearLayout
@@ -193,7 +193,12 @@ class ProfilesFragment : Fragment() {
                 tvSelectedVoiceIcon.setTextColor(piperVoice.genderColor)
                 tvSelectedVoiceName.text = piperVoice.displayName
                 val ctx = context
-                val status = if (ctx != null && PiperVoiceManager.isVoiceReady(ctx, piperVoice.id)) "ready" else "not downloaded"
+                val status = when {
+                    ctx != null && PiperVoiceManager.isVoiceReady(ctx, piperVoice.id) ->
+                        if (PiperVoiceManager.isBundled(piperVoice.id)) "bundled" else "ready"
+                    PiperVoiceManager.isBundled(piperVoice.id) -> "bundled · extracting"
+                    else -> "not downloaded"
+                }
                 tvSelectedVoiceDetail.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
                 selectedVoiceBanner.setBackgroundColor(0xFF0d1a2a.toInt())
             }
@@ -253,24 +258,47 @@ class ProfilesFragment : Fragment() {
                 val deduped = voices.groupBy { it.name }.map { (_, variants) ->
                     variants.find { it.quality == "medium" } ?: variants.first()
                 }
-                voiceGrid.addView(TextView(requireContext()).apply {
-                    text = "PIPER · ${lang.uppercase()}  (${deduped.size} voices)"
-                    textSize = 10f; setTextColor(0xFF446644.toInt())
-                    setPadding(4, 14, 0, 6)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                })
+                // Separate bundled voices from downloadable ones
+                val bundled = deduped.filter { PiperVoiceManager.isBundled(it.id) }
+                val downloadable = deduped.filter { !PiperVoiceManager.isBundled(it.id) }
                 val ctx = requireContext()
-                renderVoiceCardRows(deduped.map { v ->
-                    val ready = PiperVoiceManager.isVoiceReady(ctx, v.id)
-                    val state = PiperVoiceManager.getVoiceState(ctx, v.id)
-                    val statusText = when {
-                        ready -> "ready"
-                        state == PiperVoiceManager.VoiceState.DOWNLOADING -> "downloading…"
-                        else -> "tap to download"
-                    }
-                    VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                        "${v.flagEmoji} ${v.nationality}", statusText, 0xFF00ccff.toInt(), ready)
-                })
+
+                if (bundled.isNotEmpty()) {
+                    voiceGrid.addView(TextView(requireContext()).apply {
+                        text = "PIPER · ${lang.uppercase()}  (${bundled.size} bundled)"
+                        textSize = 10f; setTextColor(0xFF446644.toInt())
+                        setPadding(4, 14, 0, 6)
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    })
+                    renderVoiceCardRows(bundled.map { v ->
+                        val ready = PiperVoiceManager.isVoiceReady(ctx, v.id)
+                        val statusText = if (ready) "bundled" else "extracting…"
+                        VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
+                            "${v.flagEmoji} ${v.nationality}", statusText, 0xFF00ccff.toInt(),
+                            // Allow selection even if still extracting — will be ready shortly
+                            ready || PiperVoiceManager.isBundled(v.id))
+                    })
+                }
+
+                if (downloadable.isNotEmpty()) {
+                    voiceGrid.addView(TextView(requireContext()).apply {
+                        text = "PIPER · ${lang.uppercase()}  (${downloadable.size} downloadable)"
+                        textSize = 10f; setTextColor(0xFF446644.toInt())
+                        setPadding(4, 14, 0, 6)
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    })
+                    renderVoiceCardRows(downloadable.map { v ->
+                        val ready = PiperVoiceManager.isVoiceReady(ctx, v.id)
+                        val state = PiperVoiceManager.getVoiceState(ctx, v.id)
+                        val statusText = when {
+                            ready -> "ready"
+                            state == PiperVoiceManager.VoiceState.DOWNLOADING -> "downloading…"
+                            else -> "tap to download"
+                        }
+                        VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
+                            "${v.flagEmoji} ${v.nationality}", statusText, 0xFF00ccff.toInt(), ready)
+                    })
+                }
             }
         }
 
@@ -307,6 +335,18 @@ class ProfilesFragment : Fragment() {
                         if (c.isReady) {
                             currentProfile = currentProfile.copy(voiceName = c.voiceId)
                             renderVoiceGrid()
+                            // Pre-warm Piper engine for the selected voice to reduce test lag
+                            if (PiperVoiceCatalog.byId(c.voiceId) != null) {
+                                val appCtx = requireContext().applicationContext
+                                Thread {
+                                    SherpaEngine.synthesizePiper(
+                                        ctx     = appCtx,
+                                        text    = "",
+                                        voiceId = c.voiceId,
+                                        speed   = 1.0f
+                                    )
+                                }.apply { isDaemon = true; start() }
+                            }
                         } else {
                             // Piper voice not downloaded — trigger download
                             val piperVoice = PiperVoiceCatalog.byId(c.voiceId)

@@ -1,7 +1,13 @@
 package com.kokoro.reader
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import androidx.preference.PreferenceManager
 import org.json.JSONArray
 
@@ -13,7 +19,24 @@ class NotificationReaderService : NotificationListenerService() {
     private var lastCountDay = -1
 
     companion object {
+        private const val TAG = "NotiReaderService"
+        private const val CHANNEL_ID = "kokoro_foreground"
+        private const val FOREGROUND_ID = 1
+
         var instance: NotificationReaderService? = null
+
+        /** Last spoken text — used by "can you repeat?" voice command */
+        @Volatile var lastSpokenText: String = ""
+            private set
+
+        /** Timestamp of last notification — used by "how long ago?" voice command */
+        @Volatile var lastNotificationTime: Long = 0L
+            private set
+
+        @Synchronized fun recordSpoken(text: String) {
+            lastSpokenText = text
+            lastNotificationTime = System.currentTimeMillis()
+        }
     }
 
     override fun onCreate() {
@@ -22,12 +45,39 @@ class NotificationReaderService : NotificationListenerService() {
         AudioPipeline.start(this)
         // Eagerly warm up the TTS engine so first synthesis has zero lag
         SherpaEngine.warmUp(this)
+        // Start foreground notification to keep the service alive in background
+        startForegroundNotification()
+        Log.d(TAG, "Service created, foreground notification started")
     }
 
     override fun onDestroy() {
         instance = null
+        VoiceCommandListener.stop()
         AudioPipeline.shutdown()
         super.onDestroy()
+        Log.d(TAG, "Service destroyed")
+    }
+
+    /**
+     * Called when the listener is connected to the notification system.
+     * This confirms the notification access permission is active.
+     */
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        instance = this
+        Log.d(TAG, "Listener connected — notification access is active")
+        prefs.edit().putBoolean("listener_connected", true).apply()
+    }
+
+    /**
+     * Called when the listener is disconnected (e.g. user revoked access).
+     */
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        Log.w(TAG, "Listener disconnected — notification access may have been revoked")
+        prefs.edit().putBoolean("listener_connected", false).apply()
+        // Request rebind — Android will reconnect the service if permission is still granted
+        requestRebind(android.content.ComponentName(this, NotificationReaderService::class.java))
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -41,8 +91,8 @@ class NotificationReaderService : NotificationListenerService() {
 
         val extras  = sbn.notification?.extras ?: return
         val appName = getAppName(sbn.packageName)
-        val title   = extras.getString("android.title") ?: ""
-        val text    = extras.getCharSequence("android.text")?.toString() ?: ""
+        val title   = extras.getString(Notification.EXTRA_TITLE) ?: ""
+        val text    = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         if (title.isBlank() && text.isBlank()) return
 
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
@@ -68,6 +118,9 @@ class NotificationReaderService : NotificationListenerService() {
         val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
         val rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
+
+        // Record for "can you repeat?" / "how long ago?" voice commands
+        recordSpoken(rawText)
 
         AudioPipeline.enqueue(AudioPipeline.Item(
             rawText   = rawText,
@@ -137,4 +190,42 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     fun stopSpeaking() = AudioPipeline.stop()
+
+    // ── Foreground notification ──────────────────────────────────────────────
+
+    private fun startForegroundNotification() {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Kokoro Reader Background",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Keeps Kokoro Reader active in the background"
+            setShowBadge(false)
+        }
+        nm.createNotificationChannel(channel)
+
+        val openIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Kokoro Reader")
+            .setContentText("Listening for notifications")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(openIntent)
+            .setOngoing(true)
+            .build()
+
+        try {
+            startForeground(FOREGROUND_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service", e)
+        }
+    }
 }

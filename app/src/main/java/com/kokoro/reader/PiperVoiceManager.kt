@@ -25,11 +25,21 @@ object PiperVoiceManager {
     private const val ASSET_DIR = "piper-models"
     private const val PIPER_DIR = "piper"
 
+    /** Voice IDs that are bundled in APK assets and extracted on first launch */
+    val BUNDLED_VOICE_IDS = setOf(
+        "en_US-lessac-medium",
+        "en_US-ryan-medium",
+        "fr_FR-siwis-medium"
+    )
+
     enum class VoiceState { NOT_AVAILABLE, DOWNLOADING, READY, ERROR }
 
     private val voiceStates = mutableMapOf<String, VoiceState>()
 
     @Volatile var downloadCallback: ((String, VoiceState) -> Unit)? = null
+
+    /** Check if a voice is bundled in the APK assets */
+    fun isBundled(voiceId: String): Boolean = voiceId in BUNDLED_VOICE_IDS
 
     // ── Paths ─────────────────────────────────────────────────────────────────
 

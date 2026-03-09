@@ -130,6 +130,7 @@ data class VoiceProfile(
 
     // Base TTS
     val voiceName: String = "",
+    val voiceAlias: String = "",  // Per-profile nickname for the voice (doesn't change original voice name)
     val pitch: Float = 1.0f,
     val speed: Float = 1.0f,
 
@@ -156,7 +157,8 @@ data class VoiceProfile(
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("emoji", emoji)
-        put("voiceName", voiceName); put("pitch", pitch); put("speed", speed)
+        put("voiceName", voiceName); put("voiceAlias", voiceAlias)
+        put("pitch", pitch); put("speed", speed)
         put("breathIntensity", breathIntensity)
         put("breathCurvePosition", breathCurvePosition)
         put("breathPause", breathPause)
@@ -176,6 +178,7 @@ data class VoiceProfile(
             name = j.optString("name", "Profile"),
             emoji = j.optString("emoji", "🎙️"),
             voiceName = j.optString("voiceName", ""),
+            voiceAlias = j.optString("voiceAlias", ""),
             pitch = j.optDouble("pitch", 1.0).toFloat(),
             speed = j.optDouble("speed", 1.0).toFloat(),
             breathIntensity = j.optInt("breathIntensity", 0),

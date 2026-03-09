@@ -27,6 +27,7 @@ class ProfilesFragment : Fragment() {
     private lateinit var btnDelete: Button
     private lateinit var btnNew: Button
     private lateinit var btnResetSettings: Button
+    private lateinit var btnRenameVoice: Button
     private lateinit var seekPitch: SeekBar;  private lateinit var tvPitch: TextView
     private lateinit var seekSpeed: SeekBar;  private lateinit var tvSpeed: TextView
     private lateinit var seekBreathInt: SeekBar;   private lateinit var tvBreathInt: TextView
@@ -128,6 +129,7 @@ class ProfilesFragment : Fragment() {
         btnDelete       = v.findViewById(R.id.btn_delete)
         btnNew          = v.findViewById(R.id.btn_new_profile)
         btnResetSettings = v.findViewById(R.id.btn_reset_settings)
+        btnRenameVoice  = v.findViewById(R.id.btn_rename_voice)
         voiceGrid       = v.findViewById(R.id.voice_grid)
         presetsScroll   = v.findViewById(R.id.layout_presets)
         gimmicksContainer = v.findViewById(R.id.gimmicks_container)
@@ -182,20 +184,21 @@ class ProfilesFragment : Fragment() {
 
     private fun updateSelectedVoiceBanner() {
         val voiceId = currentProfile.voiceName
+        val alias = currentProfile.voiceAlias
         val kokoroVoice = KokoroVoices.byId(voiceId)
         val piperVoice = PiperVoiceCatalog.byId(voiceId)
         when {
             kokoroVoice != null -> {
                 tvSelectedVoiceIcon.text = kokoroVoice.genderIcon
                 tvSelectedVoiceIcon.setTextColor(kokoroVoice.genderColor)
-                tvSelectedVoiceName.text = kokoroVoice.displayName
+                tvSelectedVoiceName.text = if (alias.isNotBlank()) "$alias (${kokoroVoice.displayName})" else kokoroVoice.displayName
                 tvSelectedVoiceDetail.text = "${kokoroVoice.flagEmoji} ${kokoroVoice.nationality} · ${kokoroVoice.gender} · Kokoro"
                 selectedVoiceBanner.setBackgroundColor(0xFF0d2a0d.toInt())
             }
             piperVoice != null -> {
                 tvSelectedVoiceIcon.text = piperVoice.genderIcon
                 tvSelectedVoiceIcon.setTextColor(piperVoice.genderColor)
-                tvSelectedVoiceName.text = piperVoice.displayName
+                tvSelectedVoiceName.text = if (alias.isNotBlank()) "$alias (${piperVoice.displayName})" else piperVoice.displayName
                 val ctx = context
                 val status = when {
                     ctx != null && PiperVoiceManager.isVoiceReady(ctx, piperVoice.id) ->
@@ -209,7 +212,7 @@ class ProfilesFragment : Fragment() {
             else -> {
                 tvSelectedVoiceIcon.text = "?"
                 tvSelectedVoiceIcon.setTextColor(0xFF666666.toInt())
-                tvSelectedVoiceName.text = voiceId.ifEmpty { "None selected" }
+                tvSelectedVoiceName.text = if (alias.isNotBlank()) alias else voiceId.ifEmpty { "None selected" }
                 tvSelectedVoiceDetail.text = "Tap a voice below to select"
                 selectedVoiceBanner.setBackgroundColor(0xFF1a1a1a.toInt())
             }
@@ -764,6 +767,27 @@ class ProfilesFragment : Fragment() {
                     profiles.removeAll { it.id == currentProfile.id }
                     VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
                 }.setNegativeButton("Cancel", null).show()
+        }
+        btnRenameVoice.setOnClickListener {
+            val et = EditText(requireContext()).apply {
+                hint = "Voice nickname (leave empty to clear)"
+                setText(currentProfile.voiceAlias)
+            }
+            AlertDialog.Builder(requireContext())
+                .setTitle("Rename Voice")
+                .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
+                .setView(et)
+                .setPositiveButton("Save") { _, _ ->
+                    val alias = et.text.toString().trim()
+                    currentProfile = currentProfile.copy(voiceAlias = alias)
+                    updateSelectedVoiceBanner()
+                }
+                .setNeutralButton("Clear") { _, _ ->
+                    currentProfile = currentProfile.copy(voiceAlias = "")
+                    updateSelectedVoiceBanner()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 

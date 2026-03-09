@@ -28,9 +28,9 @@ jobs:
       # Bundle the Kokoro TTS model into assets (no internet needed at runtime)
       - name: Bundle Kokoro model in assets
         run: |
-          MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2"
+          MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
           ASSET_DIR="app/src/main/assets/kokoro-model"
-          echo "Downloading Kokoro model from $MODEL_URL"
+          echo "Downloading Kokoro multi-lang model from $MODEL_URL"
           curl -L "$MODEL_URL" -o kokoro-model.tar.bz2
           echo "Extracting model to $ASSET_DIR"
           mkdir -p "$ASSET_DIR"

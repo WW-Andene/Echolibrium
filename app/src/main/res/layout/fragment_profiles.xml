@@ -44,7 +44,7 @@
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// SELECT VOICE" style="@style/SectionLabel"/>
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="11 voices bundled — tap to select"
+            android:text="11 Kokoro + 3 Piper bundled — more downloadable"
             android:textSize="11sp" android:textColor="#446644" android:fontFamily="monospace"
             android:layout_marginBottom="8dp"/>
 

@@ -6,22 +6,33 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 
 /**
  * Singleton wrapper around sherpa-onnx OfflineTts.
  *
- * The model is bundled in the APK's assets and extracted on first launch.
+ * Supports two synthesis backends, both running locally:
+ *   • Kokoro — 11 voices in a single model, selected by speaker ID
+ *   • Piper/VITS — one model per voice, loaded on demand
+ *
+ * Models are bundled in the APK's assets and extracted on first launch.
  * Use [warmUp] to eagerly initialize on a background thread so the first
  * synthesis call has no perceivable lag.
  *
- * Thread-safe: synthesize() is called from the AudioPipeline background thread.
+ * Thread-safe: synthesize methods are called from the AudioPipeline background thread.
  */
 object SherpaEngine {
 
     private const val TAG = "SherpaEngine"
 
-    private var tts: OfflineTts? = null
+    // ── Kokoro engine (single model, 11 speakers) ─────────────────────────────
+    private var kokoroTts: OfflineTts? = null
+
+    // ── Piper engine (one model per voice, cached) ────────────────────────────
+    private var piperTts: OfflineTts? = null
+    private var piperLoadedVoiceId: String? = null
+
     var lastSampleRate: Int = 22050
         private set
 
@@ -29,7 +40,7 @@ object SherpaEngine {
         private set
 
     /**
-     * Callback fired (on any thread) when engine becomes ready.
+     * Callback fired (on any thread) when the Kokoro engine becomes ready.
      * Useful for updating UI status.
      */
     @Volatile var onReadyCallback: (() -> Unit)? = null
@@ -37,35 +48,36 @@ object SherpaEngine {
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
     /**
-     * Extracts the model from assets (if needed) and initializes the engine
-     * on a background thread. Call this early (e.g. on service start or fragment
-     * creation) to eliminate the lag on the first synthesis.
+     * Extracts models from assets (if needed) and initializes the Kokoro engine
+     * on a background thread. Also extracts bundled Piper voices.
      */
     fun warmUp(ctx: Context) {
-        if (isReady && tts != null) { onReadyCallback?.invoke(); return }
+        if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
         Thread {
-            // Step 1: ensure model files are extracted from assets
+            // Step 1: extract Kokoro model from assets
             VoiceDownloadManager.ensureModelSync(ctx)
-            // Step 2: load the engine
-            if (initialize(ctx)) {
+            // Step 2: extract bundled Piper voices from assets
+            PiperVoiceManager.extractBundledVoicesSync(ctx)
+            // Step 3: load the Kokoro engine
+            if (initializeKokoro(ctx)) {
                 onReadyCallback?.invoke()
             }
         }.apply { isDaemon = true; start() }
     }
 
-    // ── Initialize ────────────────────────────────────────────────────────────
+    // ── Kokoro initialization ─────────────────────────────────────────────────
 
     @Synchronized
-    fun initialize(ctx: Context): Boolean {
-        if (isReady && tts != null) return true
+    fun initializeKokoro(ctx: Context): Boolean {
+        if (isReady && kokoroTts != null) return true
         if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.w(TAG, "Model not extracted yet")
+            Log.w(TAG, "Kokoro model not extracted yet")
             return false
         }
 
         return try {
             val modelDir = VoiceDownloadManager.getModelDir(ctx)
-            Log.d(TAG, "Loading model from $modelDir")
+            Log.d(TAG, "Loading Kokoro model from $modelDir")
 
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model  = File(modelDir, "model.onnx").absolutePath,
@@ -82,37 +94,110 @@ object SherpaEngine {
             )
 
             val config = OfflineTtsConfig(model = modelConfig)
-            tts = OfflineTts(config = config)
+            kokoroTts = OfflineTts(config = config)
             isReady = true
-            Log.d(TAG, "SherpaEngine ready — no lag on next synthesis")
+            Log.d(TAG, "Kokoro engine ready")
             true
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize SherpaEngine", e)
-            tts = null
+            Log.e(TAG, "Failed to initialize Kokoro engine", e)
+            kokoroTts = null
             isReady = false
             false
         }
     }
 
-    // ── Synthesize ────────────────────────────────────────────────────────────
+    /** Kept for backward compat — delegates to initializeKokoro */
+    @Synchronized
+    fun initialize(ctx: Context): Boolean = initializeKokoro(ctx)
+
+    // ── Kokoro synthesis ──────────────────────────────────────────────────────
 
     /**
-     * Synthesize text → (PCM samples, sample rate)
-     * @param text   The text to speak (after all transforms applied)
-     * @param sid    Speaker ID (from KokoroVoice.sid)
-     * @param speed  Playback speed (1.0 = normal)
+     * Synthesize with Kokoro engine (11 bundled voices).
+     * @param sid Speaker ID (from KokoroVoice.sid)
      */
     @Synchronized
     fun synthesize(text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? {
-        val engine = tts ?: return null
+        val engine = kokoroTts ?: return null
         return try {
             val audio = engine.generate(text = text, sid = sid, speed = speed)
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
         } catch (e: Exception) {
-            Log.e(TAG, "Synthesis failed", e)
+            Log.e(TAG, "Kokoro synthesis failed", e)
             null
+        }
+    }
+
+    // ── Piper/VITS synthesis ──────────────────────────────────────────────────
+
+    /**
+     * Synthesize with a Piper/VITS voice. Loads the voice model on demand
+     * and caches it for reuse (avoids reload if same voice is used again).
+     */
+    @Synchronized
+    fun synthesizePiper(ctx: Context, text: String, voiceId: String, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        // Reuse cached engine if same voice
+        if (piperTts == null || piperLoadedVoiceId != voiceId) {
+            if (!loadPiperVoice(ctx, voiceId)) return null
+        }
+
+        val engine = piperTts ?: return null
+        return try {
+            val audio = engine.generate(text = text, sid = 0, speed = speed)
+            lastSampleRate = audio.sampleRate
+            Pair(audio.samples, audio.sampleRate)
+        } catch (e: Exception) {
+            Log.e(TAG, "Piper synthesis failed for $voiceId", e)
+            null
+        }
+    }
+
+    private fun loadPiperVoice(ctx: Context, voiceId: String): Boolean {
+        try {
+            // Release previous Piper engine
+            piperTts?.let { try { it.release() } catch (e: Exception) {} }
+            piperTts = null
+            piperLoadedVoiceId = null
+
+            val modelPath = PiperVoiceManager.getModelPath(ctx, voiceId)
+            val tokensPath = PiperVoiceManager.getTokensPath(ctx)
+            val dataDir = PiperVoiceManager.getEspeakDataDir(ctx)
+
+            if (!File(modelPath).exists()) {
+                Log.w(TAG, "Piper model not found: $modelPath")
+                return false
+            }
+            if (!File(tokensPath).exists()) {
+                Log.w(TAG, "Piper tokens.txt not found: $tokensPath")
+                return false
+            }
+
+            Log.d(TAG, "Loading Piper voice: $voiceId")
+
+            val vitsConfig = OfflineTtsVitsModelConfig(
+                model   = modelPath,
+                tokens  = tokensPath,
+                dataDir = dataDir
+            )
+
+            val modelConfig = OfflineTtsModelConfig(
+                vits       = vitsConfig,
+                numThreads = 2,
+                debug      = false,
+                provider   = "cpu"
+            )
+
+            val config = OfflineTtsConfig(model = modelConfig)
+            piperTts = OfflineTts(config = config)
+            piperLoadedVoiceId = voiceId
+            Log.d(TAG, "Piper voice loaded: $voiceId")
+            return true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load Piper voice $voiceId", e)
+            return false
         }
     }
 
@@ -120,9 +205,12 @@ object SherpaEngine {
 
     @Synchronized
     fun release() {
-        try { tts?.release() } catch (e: Exception) { /* ignore */ }
-        tts = null
+        try { kokoroTts?.release() } catch (e: Exception) { /* ignore */ }
+        try { piperTts?.release() } catch (e: Exception) { /* ignore */ }
+        kokoroTts = null
+        piperTts = null
+        piperLoadedVoiceId = null
         isReady = false
-        Log.d(TAG, "SherpaEngine released")
+        Log.d(TAG, "SherpaEngine released (Kokoro + Piper)")
     }
 }

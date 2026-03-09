@@ -30,7 +30,7 @@ jobs:
       - name: Assemble SherpaTTS APK from repo
         run: |
           cat Sherpa_base1.zip Sherpa_base2.zip Sherpa_base3.zip > SherpaTTS-arm64-v8a.apk
-          echo "SherpaTTS APK assembled from repo zip parts ($(stat -c%s SherpaTTS-arm64-v8a.apk) bytes)"
+          echo "SherpaTTS APK assembled from repo zip parts ($(wc -c < SherpaTTS-arm64-v8a.apk) bytes)"
 
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease

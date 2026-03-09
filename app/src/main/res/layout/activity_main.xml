@@ -13,32 +13,32 @@
             <ImageView android:layout_width="24dp" android:layout_height="24dp"
                 android:src="@drawable/ic_home" android:contentDescription="Home"
                 android:importantForAccessibility="no"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Home" android:textSize="12sp"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Home"/>
         </LinearLayout>
         <LinearLayout android:id="@+id/nav_profiles" style="@style/NavTab"
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
             <ImageView android:layout_width="24dp" android:layout_height="24dp"
                 android:src="@drawable/ic_voice" android:contentDescription="Voices"
                 android:importantForAccessibility="no"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Voices" android:textSize="12sp"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Voices"/>
         </LinearLayout>
         <LinearLayout android:id="@+id/nav_apps" style="@style/NavTab"
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
             <ImageView android:layout_width="24dp" android:layout_height="24dp"
                 android:src="@drawable/ic_apps" android:contentDescription="Apps"
                 android:importantForAccessibility="no"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Apps" android:textSize="12sp"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Apps"/>
         </LinearLayout>
         <LinearLayout android:id="@+id/nav_rules" style="@style/NavTab"
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
             <ImageView android:layout_width="24dp" android:layout_height="24dp"
                 android:src="@drawable/ic_rules" android:contentDescription="Words"
                 android:importantForAccessibility="no"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Words" android:textSize="12sp"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Words"/>
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

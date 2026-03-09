@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="#0d0d0d">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp">
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="KOKORO READER" android:textSize="22sp" android:textStyle="bold"
+            android:textColor="#00ff88" android:fontFamily="monospace" android:letterSpacing="0.12"
+            android:layout_marginBottom="14dp"/>
+
+        <TextView android:id="@+id/status_text" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="#111111"
+            android:fontFamily="monospace" android:textSize="13sp" android:layout_marginBottom="8dp"/>
+
+        <Button android:id="@+id/btn_permission" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:backgroundTint="#00ff88"
+            android:textColor="#000000" android:fontFamily="monospace" android:layout_marginBottom="8dp"/>
+
+        <Button android:id="@+id/btn_sherpa_settings" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="🎙 Open SherpaTTS — Download Voices"
+            android:backgroundTint="#1a2a3a" android:textColor="#00ccff"
+            android:fontFamily="monospace" android:layout_marginBottom="20dp"/>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// MASTER SWITCH" style="@style/SectionLabel"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="16dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="Enable notification reading"
+                android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
+            <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_enabled"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// DEFAULT READ MODE" style="@style/SectionLabel"/>
+        <Spinner android:id="@+id/spinner_read_mode" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:background="#111111"
+            android:padding="12dp" android:layout_marginBottom="8dp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="20dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="Always read app name"
+                android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
+            <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_app_name"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// DO NOT DISTURB" style="@style/SectionLabel"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="Enable quiet hours"
+                android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
+            <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_dnd"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+        <LinearLayout android:id="@+id/layout_dnd" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:background="#111111" android:padding="16dp"
+            android:layout_marginTop="3dp" android:visibility="gone">
+            <TextView android:id="@+id/txt_dnd_start" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="Silence from: 22:00"
+                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="13sp"
+                android:layout_marginBottom="6dp"/>
+            <SeekBar android:id="@+id/seek_dnd_start" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:progressTint="#ffaa00"
+                android:thumbTint="#ffaa00" android:layout_marginBottom="14dp"/>
+            <TextView android:id="@+id/txt_dnd_end" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="Until: 08:00"
+                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="13sp"
+                android:layout_marginBottom="6dp"/>
+            <SeekBar android:id="@+id/seek_dnd_end" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:progressTint="#ffaa00"
+                android:thumbTint="#ffaa00"/>
+        </LinearLayout>
+
+        <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="⏹  STOP SPEAKING"
+            android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
+            android:fontFamily="monospace" android:layout_marginTop="20dp"/>
+    </LinearLayout>
+</ScrollView>

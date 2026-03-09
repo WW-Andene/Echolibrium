@@ -47,6 +47,7 @@ class AppsFragment : Fragment() {
                 }
 
             activity?.runOnUiThread {
+                if (!isAdded) return@runOnUiThread
                 rules.addAll(newRules)
                 if (rules.isEmpty()) {
                     Toast.makeText(requireContext(), "No user apps found.", Toast.LENGTH_SHORT).show()
@@ -100,7 +101,7 @@ class AppsFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    updateRule(rules.find { it.packageName == rule.packageName }!!.copy(readMode = modeVals[pos]))
+                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = modeVals[pos])) }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
@@ -115,7 +116,7 @@ class AppsFragment : Fragment() {
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                     val pid = if (pos == 0) "" else profiles.getOrNull(pos - 1)?.id ?: ""
-                    updateRule(rules.find { it.packageName == rule.packageName }!!.copy(profileId = pid))
+                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(profileId = pid)) }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }

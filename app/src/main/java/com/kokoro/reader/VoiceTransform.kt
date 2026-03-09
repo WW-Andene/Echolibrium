@@ -37,7 +37,7 @@ object VoiceTransform {
             if (!condition.matches(signal)) continue
             if (Random.nextInt(100) >= cfg.frequency) continue
             val sound = GIMMICK_SOUNDS[cfg.type]?.random() ?: continue
-            val pos = GimmickPosition.valueOf(cfg.position)
+            val pos = try { GimmickPosition.valueOf(cfg.position) } catch (_: IllegalArgumentException) { GimmickPosition.RANDOM }
             result = when (pos) {
                 GimmickPosition.START -> "$sound $result"
                 GimmickPosition.END   -> "$result $sound"

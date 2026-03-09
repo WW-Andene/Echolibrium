@@ -44,7 +44,7 @@
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// SELECT VOICE" style="@style/SectionLabel"/>
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="11 Kokoro + 3 Piper bundled — more downloadable"
+            android:text="11 Kokoro + 3 Piper bundled — US, UK &amp; FR downloadable"
             android:textSize="11sp" android:textColor="#446644" android:fontFamily="monospace"
             android:layout_marginBottom="8dp"/>
 
@@ -96,10 +96,20 @@
                 android:layout_height="wrap_content" android:text="▶ TEST"
                 android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
                 android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
+            <Button android:id="@+id/btn_stop" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="⏹ STOP"
+                android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
+                android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="💾 SAVE"
                 android:backgroundTint="#1a1a2a" android:textColor="#8888ff" android:fontFamily="monospace"/>
         </LinearLayout>
+
+        <!-- Reset voice settings -->
+        <Button android:id="@+id/btn_reset_settings" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="↺ RESET VOICE SETTINGS"
+            android:backgroundTint="#1a1a1a" android:textColor="#ffaa00"
+            android:fontFamily="monospace" android:layout_marginBottom="16dp"/>
 
         <!-- Pitch & Speed -->
         <TextView android:id="@+id/label_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"

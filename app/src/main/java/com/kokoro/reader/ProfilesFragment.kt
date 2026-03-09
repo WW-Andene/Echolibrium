@@ -22,9 +22,11 @@ class ProfilesFragment : Fragment() {
     private lateinit var profileSpinner: Spinner
     private lateinit var txtPreview: EditText
     private lateinit var btnTest: Button
+    private lateinit var btnStop: Button
     private lateinit var btnSave: Button
     private lateinit var btnDelete: Button
     private lateinit var btnNew: Button
+    private lateinit var btnResetSettings: Button
     private lateinit var seekPitch: SeekBar;  private lateinit var tvPitch: TextView
     private lateinit var seekSpeed: SeekBar;  private lateinit var tvSpeed: TextView
     private lateinit var seekBreathInt: SeekBar;   private lateinit var tvBreathInt: TextView
@@ -121,9 +123,11 @@ class ProfilesFragment : Fragment() {
         profileSpinner  = v.findViewById(R.id.spinner_profile)
         txtPreview      = v.findViewById(R.id.txt_preview)
         btnTest         = v.findViewById(R.id.btn_test)
+        btnStop         = v.findViewById(R.id.btn_stop)
         btnSave         = v.findViewById(R.id.btn_save)
         btnDelete       = v.findViewById(R.id.btn_delete)
         btnNew          = v.findViewById(R.id.btn_new_profile)
+        btnResetSettings = v.findViewById(R.id.btn_reset_settings)
         voiceGrid       = v.findViewById(R.id.voice_grid)
         presetsScroll   = v.findViewById(R.id.layout_presets)
         gimmicksContainer = v.findViewById(R.id.gimmicks_container)
@@ -339,12 +343,7 @@ class ProfilesFragment : Fragment() {
                             if (PiperVoiceCatalog.byId(c.voiceId) != null) {
                                 val appCtx = requireContext().applicationContext
                                 Thread {
-                                    SherpaEngine.synthesizePiper(
-                                        ctx     = appCtx,
-                                        text    = "",
-                                        voiceId = c.voiceId,
-                                        speed   = 1.0f
-                                    )
+                                    SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
                                 }.apply { isDaemon = true; start() }
                             }
                         } else {
@@ -719,6 +718,28 @@ class ProfilesFragment : Fragment() {
             // Use AudioPipeline directly — works without notification service
             AudioPipeline.testSpeak(requireContext().applicationContext, text, p, rules)
         }
+        btnStop.setOnClickListener {
+            AudioPipeline.stop()
+            // Reset voice settings to defaults
+            loadProfileToUI(currentProfile.copy(
+                pitch = 1.0f, speed = 1.0f,
+                breathIntensity = 0, breathCurvePosition = 0f, breathPause = 0,
+                stutterIntensity = 0, stutterPosition = 0f, stutterFrequency = 0, stutterPause = 30,
+                intonationIntensity = 0, intonationVariation = 0.5f,
+                gimmicks = emptyList()
+            ))
+            Toast.makeText(context, "Stopped — voice settings reset", Toast.LENGTH_SHORT).show()
+        }
+        btnResetSettings.setOnClickListener {
+            loadProfileToUI(currentProfile.copy(
+                pitch = 1.0f, speed = 1.0f,
+                breathIntensity = 0, breathCurvePosition = 0f, breathPause = 0,
+                stutterIntensity = 0, stutterPosition = 0f, stutterFrequency = 0, stutterPause = 30,
+                intonationIntensity = 0, intonationVariation = 0.5f,
+                gimmicks = emptyList()
+            ))
+            Toast.makeText(context, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
+        }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
             val idx = profiles.indexOfFirst { it.id == p.id }
@@ -748,49 +769,61 @@ class ProfilesFragment : Fragment() {
 
     private fun loadProfileToUI(p: VoiceProfile) {
         currentProfile = p
-        seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).toInt() - 50).coerceIn(0, 150)
+        seekPitch.max = 200; seekPitch.progress = ((p.pitch - 0.50f) / 1.50f * 200f).toInt().coerceIn(0, 200)
         tvPitch.text = "Pitch: %.2f".format(p.pitch)
-        seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)
+        seekSpeed.max = 200; seekSpeed.progress = ((p.speed - 0.50f) / 2.50f * 200f).toInt().coerceIn(0, 200)
         tvSpeed.text = "Speed: %.2f".format(p.speed)
-        seekBreathInt.max = 100; seekBreathInt.progress = p.breathIntensity; tvBreathInt.text = "Intensity: ${p.breathIntensity}"
-        seekBreathCurve.max = 100; seekBreathCurve.progress = (p.breathCurvePosition * 100).toInt(); tvBreathCurve.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
-        seekBreathPause.max = 100; seekBreathPause.progress = p.breathPause; tvBreathPause.text = "Pause: ${p.breathPause}"
-        seekStutterInt.max = 100; seekStutterInt.progress = p.stutterIntensity; tvStutterInt.text = "Intensity: ${p.stutterIntensity}"
-        seekStutterPos.max = 100; seekStutterPos.progress = (p.stutterPosition*100).toInt(); tvStutterPos.text = "Position: ${(p.stutterPosition*100).toInt()}%"
-        seekStutterFreq.max = 100; seekStutterFreq.progress = p.stutterFrequency; tvStutterFreq.text = "Frequency: ${p.stutterFrequency}%"
-        seekStutterPause.max = 100; seekStutterPause.progress = p.stutterPause; tvStutterPause.text = "Pause: ${p.stutterPause}"
-        seekIntonInt.max = 100; seekIntonInt.progress = p.intonationIntensity; tvIntonInt.text = "Intensity: ${p.intonationIntensity}"
-        seekIntonVar.max = 100; seekIntonVar.progress = (p.intonationVariation*100).toInt(); tvIntonVar.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
+        seekBreathInt.max = 200; seekBreathInt.progress = progressiveToSlider(p.breathIntensity, 100); tvBreathInt.text = "Intensity: ${p.breathIntensity}"
+        seekBreathCurve.max = 200; seekBreathCurve.progress = progressiveToSlider((p.breathCurvePosition * 100).toInt(), 100); tvBreathCurve.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
+        seekBreathPause.max = 200; seekBreathPause.progress = progressiveToSlider(p.breathPause, 100); tvBreathPause.text = "Pause: ${p.breathPause}"
+        seekStutterInt.max = 200; seekStutterInt.progress = progressiveToSlider(p.stutterIntensity, 100); tvStutterInt.text = "Intensity: ${p.stutterIntensity}"
+        seekStutterPos.max = 200; seekStutterPos.progress = progressiveToSlider((p.stutterPosition*100).toInt(), 100); tvStutterPos.text = "Position: ${(p.stutterPosition*100).toInt()}%"
+        seekStutterFreq.max = 200; seekStutterFreq.progress = progressiveToSlider(p.stutterFrequency, 100); tvStutterFreq.text = "Frequency: ${p.stutterFrequency}%"
+        seekStutterPause.max = 200; seekStutterPause.progress = progressiveToSlider(p.stutterPause, 100); tvStutterPause.text = "Pause: ${p.stutterPause}"
+        seekIntonInt.max = 200; seekIntonInt.progress = progressiveToSlider(p.intonationIntensity, 100); tvIntonInt.text = "Intensity: ${p.intonationIntensity}"
+        seekIntonVar.max = 200; seekIntonVar.progress = progressiveToSlider((p.intonationVariation*100).toInt(), 100); tvIntonVar.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
 
-        attachSeek(seekPitch)      { tvPitch.text = "Pitch: %.2f".format((it+50)/100f) }
-        attachSeek(seekSpeed)      { tvSpeed.text = "Speed: %.2f".format((it+50)/100f) }
-        attachSeek(seekBreathInt)  { tvBreathInt.text = "Intensity: $it" }
-        attachSeek(seekBreathCurve){ tvBreathCurve.text = "Curve: $it%" }
-        attachSeek(seekBreathPause){ tvBreathPause.text = "Pause: $it" }
-        attachSeek(seekStutterInt) { tvStutterInt.text = "Intensity: $it" }
-        attachSeek(seekStutterPos) { tvStutterPos.text = "Position: $it%" }
-        attachSeek(seekStutterFreq){ tvStutterFreq.text = "Frequency: $it%" }
-        attachSeek(seekStutterPause){tvStutterPause.text = "Pause: $it" }
-        attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: $it" }
-        attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: $it%" }
+        attachSeek(seekPitch)      { tvPitch.text = "Pitch: %.2f".format(0.50f + it / 200f * 1.50f) }
+        attachSeek(seekSpeed)      { tvSpeed.text = "Speed: %.2f".format(0.50f + it / 200f * 2.50f) }
+        attachSeek(seekBreathInt)  { tvBreathInt.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" }
+        attachSeek(seekBreathCurve){ tvBreathCurve.text = "Curve: ${progressiveFromSlider(it, 200, 100)}%" }
+        attachSeek(seekBreathPause){ tvBreathPause.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" }
+        attachSeek(seekStutterInt) { tvStutterInt.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" }
+        attachSeek(seekStutterPos) { tvStutterPos.text = "Position: ${progressiveFromSlider(it, 200, 100)}%" }
+        attachSeek(seekStutterFreq){ tvStutterFreq.text = "Frequency: ${progressiveFromSlider(it, 200, 100)}%" }
+        attachSeek(seekStutterPause){tvStutterPause.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" }
+        attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" }
+        attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: ${progressiveFromSlider(it, 200, 100)}%" }
 
         buildCommentaryEditor()
         buildGimmicksEditor()
         renderVoiceGrid()
     }
 
+    /** Convert slider position (0..sliderMax) to actual value (0..valueMax) using square-root curve */
+    private fun progressiveFromSlider(sliderPos: Int, sliderMax: Int, valueMax: Int): Int {
+        val t = sliderPos.toFloat() / sliderMax
+        return (t * t * valueMax).toInt().coerceIn(0, valueMax)
+    }
+
+    /** Convert actual value (0..valueMax) to slider position (0..sliderMax) using inverse square-root curve */
+    private fun progressiveToSlider(value: Int, valueMax: Int): Int {
+        val t = (value.toFloat() / valueMax).coerceIn(0f, 1f)
+        return (kotlin.math.sqrt(t) * 200f).toInt().coerceIn(0, 200)
+    }
+
     private fun readProfileFromUI() = currentProfile.copy(
-        pitch               = (seekPitch.progress + 50) / 100f,
-        speed               = (seekSpeed.progress + 50) / 100f,
-        breathIntensity     = seekBreathInt.progress,
-        breathCurvePosition = seekBreathCurve.progress / 100f,
-        breathPause         = seekBreathPause.progress,
-        stutterIntensity    = seekStutterInt.progress,
-        stutterPosition     = seekStutterPos.progress / 100f,
-        stutterFrequency    = seekStutterFreq.progress,
-        stutterPause        = seekStutterPause.progress,
-        intonationIntensity = seekIntonInt.progress,
-        intonationVariation = seekIntonVar.progress / 100f
+        pitch               = 0.50f + seekPitch.progress / 200f * 1.50f,
+        speed               = 0.50f + seekSpeed.progress / 200f * 2.50f,
+        breathIntensity     = progressiveFromSlider(seekBreathInt.progress, 200, 100),
+        breathCurvePosition = progressiveFromSlider(seekBreathCurve.progress, 200, 100) / 100f,
+        breathPause         = progressiveFromSlider(seekBreathPause.progress, 200, 100),
+        stutterIntensity    = progressiveFromSlider(seekStutterInt.progress, 200, 100),
+        stutterPosition     = progressiveFromSlider(seekStutterPos.progress, 200, 100) / 100f,
+        stutterFrequency    = progressiveFromSlider(seekStutterFreq.progress, 200, 100),
+        stutterPause        = progressiveFromSlider(seekStutterPause.progress, 200, 100),
+        intonationIntensity = progressiveFromSlider(seekIntonInt.progress, 200, 100),
+        intonationVariation = progressiveFromSlider(seekIntonVar.progress, 200, 100) / 100f
     )
 
     private fun loadWordingRules(): List<Pair<String, String>> {

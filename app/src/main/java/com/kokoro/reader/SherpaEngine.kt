@@ -138,6 +138,8 @@ object SherpaEngine {
      */
     @Synchronized
     fun synthesizePiper(ctx: Context, text: String, voiceId: String, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        if (text.isBlank()) return null
+
         // Reuse cached engine if same voice
         if (piperTts == null || piperLoadedVoiceId != voiceId) {
             if (!loadPiperVoice(ctx, voiceId)) return null
@@ -203,6 +205,16 @@ object SherpaEngine {
             Log.e(TAG, "Failed to load Piper voice $voiceId", e)
             return false
         }
+    }
+
+    /**
+     * Pre-load a Piper voice model without synthesizing.
+     * Call from a background thread to eliminate first-synthesis lag.
+     */
+    @Synchronized
+    fun preloadPiperVoice(ctx: Context, voiceId: String): Boolean {
+        if (piperTts != null && piperLoadedVoiceId == voiceId) return true
+        return loadPiperVoice(ctx, voiceId)
     }
 
     // ── Release ───────────────────────────────────────────────────────────────

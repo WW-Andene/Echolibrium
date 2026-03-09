@@ -72,8 +72,9 @@ object AudioDsp {
     private fun applyFormantSmoothing(samples: FloatArray, sampleRate: Int): FloatArray {
         if (samples.isEmpty()) return samples
 
-        // ~5ms window — fast enough to preserve consonants, slow enough
-        // to smooth the vowel-to-vowel transitions that cause artifacts
+        // 5ms window: at 22050 Hz → ~110 samples, at 24000 Hz → ~120 samples
+        // Fast enough to preserve consonants, slow enough to smooth vowel-to-vowel
+        // transitions that cause artifacts in non-native phoneme synthesis
         val windowSamples = (sampleRate * 0.005).toInt().coerceAtLeast(1)
         val alpha = 1.0f / windowSamples  // IIR coefficient
 
@@ -86,10 +87,12 @@ object AudioDsp {
         }
 
         // Pass 2: re-shape original signal by the smoothed envelope
+        // Blend ratio: 70% original signal + 30% envelope-shaped
+        // Ratio clamped to [0.5, 2.0] — halve at most, double at most —
+        // to avoid over-amplifying silence or crushing peaks
         return FloatArray(samples.size) { i ->
             val originalAmp = abs(samples[i])
             if (originalAmp > 0.001f) {
-                // Blend: 70% original + 30% envelope-shaped
                 val ratio = envelope[i] / originalAmp
                 val blended = 0.7f + 0.3f * ratio.coerceIn(0.5f, 2.0f)
                 (samples[i] * blended).coerceIn(-1f, 1f)

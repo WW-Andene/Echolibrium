@@ -337,9 +337,10 @@ class ProfilesFragment : Fragment() {
                             renderVoiceGrid()
                             // Pre-warm Piper engine for the selected voice to reduce test lag
                             if (PiperVoiceCatalog.byId(c.voiceId) != null) {
+                                val appCtx = requireContext().applicationContext
                                 Thread {
                                     SherpaEngine.synthesizePiper(
-                                        ctx     = requireContext().applicationContext,
+                                        ctx     = appCtx,
                                         text    = "",
                                         voiceId = c.voiceId,
                                         speed   = 1.0f

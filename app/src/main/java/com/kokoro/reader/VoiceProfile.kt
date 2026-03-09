@@ -84,7 +84,10 @@ data class VoiceProfile(
     val intonationVariation: Float = 0.5f,
 
     // Gimmicks
-    val gimmicks: List<GimmickConfig> = emptyList()
+    val gimmicks: List<GimmickConfig> = emptyList(),
+
+    // Commentary pools — contextual lines before/after notification
+    val commentaryPools: List<CommentaryPool> = emptyList()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("emoji", emoji)
@@ -99,6 +102,7 @@ data class VoiceProfile(
         put("intonationIntensity", intonationIntensity)
         put("intonationVariation", intonationVariation)
         val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; put("gimmicks", ga)
+        val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; put("commentaryPools", ca)
     }
 
     companion object {
@@ -120,137 +124,254 @@ data class VoiceProfile(
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
                 (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
+            } ?: emptyList(),
+            commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
+                (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList()
         )
 
         // ── Personality presets ───────────────────────────────────────────────
+        // Helper: build pre+post pools with optional condition
+        private fun pools(
+            pre: List<String> = emptyList(), preFreq: Int = 40,
+            post: List<String> = emptyList(), postFreq: Int = 30,
+            condition: CommentaryCondition = CommentaryCondition("always")
+        ) = listOf(
+            CommentaryPool(position = "pre",  condition = condition, lines = pre,  frequency = preFreq),
+            CommentaryPool(position = "post", condition = condition, lines = post, frequency = postFreq)
+        ).filter { it.lines.isNotEmpty() }
+
         val PRESETS = listOf(
-            VoiceProfile(name = "Natural",   emoji = "😐",
+            VoiceProfile(name = "Natural", emoji = "😐",
                 pitch = 1.0f, speed = 1.0f),
 
-            VoiceProfile(name = "Excited",   emoji = "🎉",
+            VoiceProfile(name = "Excited", emoji = "🎉",
                 pitch = 1.45f, speed = 1.4f,
                 intonationIntensity = 70, intonationVariation = 0.85f,
                 stutterIntensity = 20, stutterFrequency = 15, stutterPosition = 0.0f,
-                gimmicks = listOf(
-                    GimmickConfig("woah", 40, "START"),
-                    GimmickConfig("laugh", 30, "END")
+                gimmicks = listOf(GimmickConfig("woah", 40, "START"), GimmickConfig("laugh", 30, "END")),
+                commentaryPools = pools(
+                    pre = listOf("Oh my god listen to this!", "You are NOT gonna believe it—", "Okay this is huge—"), preFreq = 50,
+                    post = listOf("I KNOW RIGHT?!", "Can you believe it?!", "Wild!"), postFreq = 40
+                ) + pools(
+                    pre = listOf("Ooh a message!"), preFreq = 60,
+                    condition = CommentaryCondition("keyword", "?")
+                ) + pools(
+                    pre = listOf("Someone's asking you something!"), preFreq = 55,
+                    condition = CommentaryCondition("time", "7-10")
                 )),
 
-            VoiceProfile(name = "Bored",     emoji = "😒",
+            VoiceProfile(name = "Bored", emoji = "😒",
                 pitch = 0.85f, speed = 0.75f,
                 intonationIntensity = 10, intonationVariation = 0.1f,
-                gimmicks = listOf(
-                    GimmickConfig("yawn", 50, "START"),
-                    GimmickConfig("hmm", 35, "END")
+                gimmicks = listOf(GimmickConfig("yawn", 50, "START"), GimmickConfig("hmm", 35, "END")),
+                commentaryPools = pools(
+                    pre = listOf("...this again.", "Oh look, another one.", "Sure."), preFreq = 45,
+                    post = listOf("Whatever.", "Cool.", "Not like I care."), postFreq = 40
+                ) + pools(
+                    pre = listOf("Oh great, the phone again."), preFreq = 70,
+                    condition = CommentaryCondition("flood", "5")
+                ) + pools(
+                    pre = listOf("Who texts at this hour."), preFreq = 60,
+                    condition = CommentaryCondition("time", "22-06")
                 )),
 
             VoiceProfile(name = "Depressed", emoji = "😔",
                 pitch = 0.72f, speed = 0.65f,
                 breathIntensity = 30, breathCurvePosition = 1.0f, breathPause = 20,
                 intonationIntensity = 5, intonationVariation = 0.05f,
-                gimmicks = listOf(
-                    GimmickConfig("sigh", 70, "START"),
-                    GimmickConfig("hmm", 30, "END")
+                gimmicks = listOf(GimmickConfig("sigh", 70, "START"), GimmickConfig("hmm", 30, "END")),
+                commentaryPools = pools(
+                    pre = listOf("Sure, why not.", "Not like anything matters anyway.", "Here we go..."), preFreq = 55,
+                    post = listOf("...figures.", "Of course.", "At least someone's happy."), postFreq = 35
+                ) + pools(
+                    pre = listOf("Even at night they won't let me rest."), preFreq = 65,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    post = listOf("I'll deal with it tomorrow. Or never."), postFreq = 50,
+                    condition = CommentaryCondition("flood", "5")
                 )),
 
-            VoiceProfile(name = "Flirty",    emoji = "😏",
+            VoiceProfile(name = "Flirty", emoji = "😏",
                 pitch = 1.25f, speed = 0.88f,
                 breathIntensity = 35, breathCurvePosition = 0.5f, breathPause = 30,
                 intonationIntensity = 55, intonationVariation = 0.7f,
-                gimmicks = listOf(
-                    GimmickConfig("giggle", 45, "END"),
-                    GimmickConfig("sigh", 25, "MID"),
-                    GimmickConfig("mmm", 30, "START")
+                gimmicks = listOf(GimmickConfig("giggle", 45, "END"), GimmickConfig("sigh", 25, "MID"), GimmickConfig("mmm", 30, "START")),
+                commentaryPools = pools(
+                    pre = listOf("Ooh, someone's thinking of you~", "Well well well~"), preFreq = 50,
+                    post = listOf("How charming.", "You're popular today~"), postFreq = 45
+                ) + pools(
+                    pre = listOf("A message~ how intimate~"), preFreq = 60,
+                    condition = CommentaryCondition("app", "whatsapp")
+                ) + pools(
+                    pre = listOf("Late night message~ spicy~"), preFreq = 70,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    post = listOf("Someone's curious about you~"), postFreq = 55,
+                    condition = CommentaryCondition("keyword", "?")
                 )),
 
-            VoiceProfile(name = "Gentle",    emoji = "🌸",
+            VoiceProfile(name = "Gentle", emoji = "🌸",
                 pitch = 1.12f, speed = 0.82f,
                 breathIntensity = 25, breathCurvePosition = 0.4f, breathPause = 40,
                 intonationIntensity = 30, intonationVariation = 0.4f,
-                gimmicks = listOf(
-                    GimmickConfig("mmm", 25, "START"),
-                    GimmickConfig("aww", 20, "END")
+                gimmicks = listOf(GimmickConfig("mmm", 25, "START"), GimmickConfig("aww", 20, "END")),
+                commentaryPools = pools(
+                    pre = listOf("Someone reached out to you.", "A message for you."), preFreq = 40,
+                    post = listOf("Take your time with that.", "How thoughtful."), postFreq = 35
+                ) + pools(
+                    pre = listOf("Someone's thinking of you this late."), preFreq = 45,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    post = listOf("They seem to need something."), postFreq = 40,
+                    condition = CommentaryCondition("keyword", "?")
                 )),
 
-            VoiceProfile(name = "Happy",     emoji = "😄",
+            VoiceProfile(name = "Happy", emoji = "😄",
                 pitch = 1.35f, speed = 1.15f,
                 intonationIntensity = 60, intonationVariation = 0.75f,
-                gimmicks = listOf(
-                    GimmickConfig("laugh", 35, "END"),
-                    GimmickConfig("woah", 20, "START"),
-                    GimmickConfig("aww", 20, "RANDOM")
+                gimmicks = listOf(GimmickConfig("laugh", 35, "END"), GimmickConfig("woah", 20, "START"), GimmickConfig("aww", 20, "RANDOM")),
+                commentaryPools = pools(
+                    pre = listOf("Oh yay, a notification!", "Ooh ooh ooh—"), preFreq = 45,
+                    post = listOf("Love it!", "This made my day!", "Woohoo!"), postFreq = 40
+                ) + pools(
+                    pre = listOf("Good morning sunshine!"), preFreq = 70,
+                    condition = CommentaryCondition("time", "7-10")
+                ) + pools(
+                    post = listOf("So many messages, everyone loves you!"), postFreq = 50,
+                    condition = CommentaryCondition("flood", "5")
                 )),
 
-            VoiceProfile(name = "Hangry",    emoji = "😤",
+            VoiceProfile(name = "Hangry", emoji = "😤",
                 pitch = 1.05f, speed = 1.25f,
                 intonationIntensity = 65, intonationVariation = 0.6f,
-                gimmicks = listOf(
-                    GimmickConfig("ugh", 55, "START"),
-                    GimmickConfig("tsk", 40, "END"),
-                    GimmickConfig("huh", 35, "MID")
+                gimmicks = listOf(GimmickConfig("ugh", 55, "START"), GimmickConfig("tsk", 40, "END"), GimmickConfig("huh", 35, "MID")),
+                commentaryPools = pools(
+                    pre = listOf("Seriously?", "NOW what?", "Can I not have ONE minute?"), preFreq = 60,
+                    post = listOf("FINE.", "Unbelievable.", "...I need food."), postFreq = 50
+                ) + pools(
+                    pre = listOf("Again?! That's like the tenth one!"), preFreq = 80,
+                    condition = CommentaryCondition("flood", "5")
+                ) + pools(
+                    pre = listOf("Who texts at this hour. Who DOES that."), preFreq = 75,
+                    condition = CommentaryCondition("time", "22-06")
                 )),
 
-            VoiceProfile(name = "Nervous",   emoji = "😰",
+            VoiceProfile(name = "Nervous", emoji = "😰",
                 pitch = 1.2f, speed = 1.1f,
                 stutterIntensity = 45, stutterFrequency = 40, stutterPosition = 0.0f, stutterPause = 60,
-                gimmicks = listOf(
-                    GimmickConfig("huh", 30, "MID"),
-                    GimmickConfig("hmm", 25, "RANDOM")
+                gimmicks = listOf(GimmickConfig("huh", 30, "MID"), GimmickConfig("hmm", 25, "RANDOM")),
+                commentaryPools = pools(
+                    pre = listOf("Oh no, what now—", "Is this bad? This might be bad.", "Don't panic—"), preFreq = 55,
+                    post = listOf("...okay that's fine. Fine.", "Should I be worried?"), postFreq = 50
+                ) + pools(
+                    pre = listOf("Why is the email app notifying me?!"), preFreq = 65,
+                    condition = CommentaryCondition("app", "gmail")
+                ) + pools(
+                    pre = listOf("A question? What question? What did I do?"), preFreq = 60,
+                    condition = CommentaryCondition("keyword", "?")
                 )),
 
-            VoiceProfile(name = "Whispery",  emoji = "🤫",
+            VoiceProfile(name = "Whispery", emoji = "🤫",
                 pitch = 1.1f, speed = 0.72f,
                 breathIntensity = 65, breathCurvePosition = 0.55f, breathPause = 50,
-                gimmicks = listOf(
-                    GimmickConfig("sigh", 20, "START")
+                gimmicks = listOf(GimmickConfig("sigh", 20, "START")),
+                commentaryPools = pools(
+                    pre = listOf("Psst...", "Hey, listen—", "Just between us—"), preFreq = 45,
+                    post = listOf("...don't tell anyone.", "Just thought you should know."), postFreq = 35
+                ) + pools(
+                    pre = listOf("Shh... everyone's asleep."), preFreq = 70,
+                    condition = CommentaryCondition("time", "22-06")
                 )),
 
-            VoiceProfile(name = "Robot",     emoji = "🤖",
+            VoiceProfile(name = "Robot", emoji = "🤖",
                 pitch = 0.5f, speed = 0.78f,
-                intonationIntensity = 0),
+                intonationIntensity = 0,
+                commentaryPools = pools(
+                    pre = listOf("Incoming transmission.", "Notification received.", "Alert."), preFreq = 60,
+                    post = listOf("End of message.", "Transmission complete.", "Awaiting response."), postFreq = 50
+                ) + pools(
+                    pre = listOf("High priority alert detected."), preFreq = 70,
+                    condition = CommentaryCondition("keyword", "!")
+                ) + pools(
+                    pre = listOf("Query incoming."), preFreq = 65,
+                    condition = CommentaryCondition("keyword", "?")
+                )),
 
-            VoiceProfile(name = "Drunk",     emoji = "🥴",
+            VoiceProfile(name = "Drunk", emoji = "🥴",
                 pitch = 0.88f, speed = 0.82f,
                 stutterIntensity = 35, stutterFrequency = 45, stutterPosition = 0.4f,
                 intonationIntensity = 55, intonationVariation = 0.95f,
-                gimmicks = listOf(
-                    GimmickConfig("huh", 40, "RANDOM"),
-                    GimmickConfig("hmm", 30, "MID"),
-                    GimmickConfig("laugh", 25, "END")
+                gimmicks = listOf(GimmickConfig("huh", 40, "RANDOM"), GimmickConfig("hmm", 30, "MID"), GimmickConfig("laugh", 25, "END")),
+                commentaryPools = pools(
+                    pre = listOf("Okay okay okay—", "Wait, wait, listen—", "DUDE."), preFreq = 55,
+                    post = listOf("I love you, man.", "...what were we talking about?", "Anyway—"), postFreq = 50
+                ) + pools(
+                    pre = listOf("Who's texting at this hour, we're all out!"), preFreq = 75,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    post = listOf("That's SO many messages bro."), postFreq = 65,
+                    condition = CommentaryCondition("flood", "5")
                 )),
 
-            VoiceProfile(name = "Elder",     emoji = "🧓",
+            VoiceProfile(name = "Elder", emoji = "🧓",
                 pitch = 0.78f, speed = 0.7f,
                 breathIntensity = 22, breathCurvePosition = 1.0f, breathPause = 15,
-                gimmicks = listOf(
-                    GimmickConfig("hmm", 40, "START"),
-                    GimmickConfig("yawn", 20, "END")
+                gimmicks = listOf(GimmickConfig("hmm", 40, "START"), GimmickConfig("yawn", 20, "END")),
+                commentaryPools = pools(
+                    pre = listOf("Now let me see here...", "Mm, what's this now.", "Oh my, a message."), preFreq = 50,
+                    post = listOf("How about that.", "Well I never.", "Kids these days."), postFreq = 45
+                ) + pools(
+                    pre = listOf("Who sends messages at this hour? No manners."), preFreq = 65,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    post = listOf("So many messages. Back in my day we called."), postFreq = 55,
+                    condition = CommentaryCondition("flood", "5")
                 )),
 
-            VoiceProfile(name = "Child",     emoji = "🧒",
+            VoiceProfile(name = "Child", emoji = "🧒",
                 pitch = 1.85f, speed = 1.2f,
                 intonationIntensity = 45, intonationVariation = 0.7f,
-                gimmicks = listOf(
-                    GimmickConfig("woah", 35, "START"),
-                    GimmickConfig("giggle", 40, "END")
+                gimmicks = listOf(GimmickConfig("woah", 35, "START"), GimmickConfig("giggle", 40, "END")),
+                commentaryPools = pools(
+                    pre = listOf("OOOOH!", "Look look look!", "Is it a present?!"), preFreq = 55,
+                    post = listOf("So cool!", "Again again!", "Do it again!"), postFreq = 50
+                ) + pools(
+                    pre = listOf("You got SO many messages today!"), preFreq = 70,
+                    condition = CommentaryCondition("flood", "5")
                 )),
 
-            VoiceProfile(name = "Dramatic",  emoji = "🎭",
+            VoiceProfile(name = "Dramatic", emoji = "🎭",
                 pitch = 1.0f, speed = 0.82f,
                 intonationIntensity = 90, intonationVariation = 0.95f,
-                gimmicks = listOf(
-                    GimmickConfig("gasp", 50, "START"),
-                    GimmickConfig("sigh", 35, "END")
+                gimmicks = listOf(GimmickConfig("gasp", 50, "START"), GimmickConfig("sigh", 35, "END")),
+                commentaryPools = pools(
+                    pre = listOf("Brace yourself.", "This... changes everything.", "Gather round."), preFreq = 65,
+                    post = listOf("The audacity.", "History will remember this day.", "...and scene."), postFreq = 55
+                ) + pools(
+                    pre = listOf("In the dead of night... a message arrives."), preFreq = 80,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    pre = listOf("They have QUESTIONS. Dark questions."), preFreq = 70,
+                    condition = CommentaryCondition("keyword", "?")
                 )),
 
             VoiceProfile(name = "Sarcastic", emoji = "🙄",
                 pitch = 1.15f, speed = 0.9f,
                 intonationIntensity = 70, intonationVariation = 0.8f,
-                gimmicks = listOf(
-                    GimmickConfig("hmm", 50, "START"),
-                    GimmickConfig("tsk", 40, "END"),
-                    GimmickConfig("huh", 35, "MID")
+                gimmicks = listOf(GimmickConfig("hmm", 50, "START"), GimmickConfig("tsk", 40, "END"), GimmickConfig("huh", 35, "MID")),
+                commentaryPools = pools(
+                    pre = listOf("Oh wow, shocking.", "Oh great, can't wait.", "Let me guess—"), preFreq = 60,
+                    post = listOf("Truly groundbreaking.", "Color me surprised.", "Riveting stuff."), postFreq = 55
+                ) + pools(
+                    pre = listOf("Oh yes, message me at night. Brilliant timing."), preFreq = 75,
+                    condition = CommentaryCondition("time", "22-06")
+                ) + pools(
+                    post = listOf("Yes, another one. Because why not."), postFreq = 70,
+                    condition = CommentaryCondition("flood", "5")
+                ) + pools(
+                    post = listOf("A question. How original."), postFreq = 60,
+                    condition = CommentaryCondition("keyword", "?")
                 )),
         )
 

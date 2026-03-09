@@ -127,6 +127,29 @@
                 android:progressTint="#ffcc00" android:thumbTint="#ffcc00"/>
         </LinearLayout>
 
+        <!-- Commentary pools -->
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// CONTEXTUAL COMMENTARY" style="@style/SectionLabel"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Lines said before/after the notification. Each pool fires only when its condition matches."
+            android:textSize="11sp" android:textColor="#446644" android:fontFamily="monospace"
+            android:layout_marginBottom="8dp"/>
+
+        <LinearLayout android:id="@+id/commentary_pools_container" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="6dp"/>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="16dp">
+            <Button android:id="@+id/btn_add_pre_comment" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="+ BEFORE pool"
+                android:backgroundTint="#1a3a2a" android:textColor="#00ff88"
+                android:fontFamily="monospace" android:textSize="11sp" android:layout_marginEnd="6dp"/>
+            <Button android:id="@+id/btn_add_post_comment" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="+ AFTER pool"
+                android:backgroundTint="#1a2a3a" android:textColor="#00ccff"
+                android:fontFamily="monospace" android:textSize="11sp"/>
+        </LinearLayout>
+
         <!-- Gimmicks -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)"

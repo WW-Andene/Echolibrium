@@ -57,9 +57,9 @@ object VoiceDownloadManager {
 
     fun downloadModel(ctx: Context) {
         if (state == State.DOWNLOADING) return
-        if (isModelReady(ctx)) { setState(State.READY); return }
+        if (isModelReady(ctx)) { updateState(State.READY); return }
 
-        setState(State.DOWNLOADING)
+        updateState(State.DOWNLOADING)
         progressPercent = 0
 
         Thread {
@@ -79,9 +79,9 @@ object VoiceDownloadManager {
 
                 if (isModelReady(ctx)) {
                     Log.d(TAG, "Model ready at ${getModelDir(ctx)}")
-                    setState(State.READY)
+                    updateState(State.READY)
                 } else {
-                    setState(State.ERROR)
+                    updateState(State.ERROR)
                     errorMessage = "Extraction incomplete — missing required files"
                 }
 
@@ -89,19 +89,19 @@ object VoiceDownloadManager {
                 tmpFile.delete()
                 errorMessage = e.message ?: "Unknown error"
                 Log.e(TAG, "Download failed", e)
-                setState(State.ERROR)
+                updateState(State.ERROR)
             }
         }.start()
     }
 
     fun deleteModel(ctx: Context) {
         getModelDir(ctx).deleteRecursively()
-        setState(State.NOT_DOWNLOADED)
+        updateState(State.NOT_DOWNLOADED)
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────
 
-    private fun setState(s: State) {
+    private fun updateState(s: State) {
         state = s
         stateCallback?.invoke(s)
     }

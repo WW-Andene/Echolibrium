@@ -14,9 +14,13 @@ class NotificationReaderService : NotificationListenerService() {
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private val queue = LinkedBlockingQueue<Pair<String, VoiceProfile>>()
+    private val queue = LinkedBlockingQueue<Triple<String, Float, Float>>() // text, pitch, speed
     private val isSpeaking = AtomicBoolean(false)
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
+
+    // Daily flood counter
+    private var dailyCount = 0
+    private var lastCountDay = -1
 
     companion object {
         var instance: NotificationReaderService? = null
@@ -57,18 +61,49 @@ class NotificationReaderService : NotificationListenerService() {
         val text    = extras.getCharSequence("android.text")?.toString() ?: ""
         if (title.isBlank() && text.isBlank()) return
 
+        // ── Flood counter ─────────────────────────────────────────────────────
+        val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
+        if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
+        dailyCount++
+
+        // ── Layer 0: extract signals ──────────────────────────────────────────
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val signal = SignalExtractor.extract(
+            packageName = sbn.packageName,
+            appName     = appName,
+            title       = title,
+            text        = text,
+            hourOfDay   = hour,
+            floodCount  = dailyCount
+        )
+
+        // ── Pick profile ──────────────────────────────────────────────────────
+        val profiles  = VoiceProfile.loadAll(prefs)
+        val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
+            ?: prefs.getString("active_profile_id", "")
+        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
+
+        // ── Layer 1: modulate voice shape from signal ─────────────────────────
+        val modulated = VoiceModulator.modulate(profile, signal)
+
+        // ── Build read mode text ──────────────────────────────────────────────
         val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
         val raw = buildMessage(appName, title, text, readMode)
         if (raw.isBlank()) return
 
-        val profiles = VoiceProfile.loadAll(prefs)
-        val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
-            ?: prefs.getString("active_profile_id", "")
-        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
+        // ── Layers 2–4: transform text ────────────────────────────────────────
         val wordingRules = loadWordingRules()
-        val processed = VoiceTransform.process(raw, profile, wordingRules)
+        val processed = VoiceTransform.process(raw, profile, modulated, signal, wordingRules)
 
-        queue.offer(Pair(processed, profile))
+        // ── Enqueue with modulated pitch/speed ────────────────────────────────
+        queue.offer(Triple(processed, modulated.pitch, modulated.speed))
+
+        // Expiring urgency (call) jumps the queue
+        if (signal.urgencyType == UrgencyType.EXPIRING) {
+            tts?.stop()
+            isSpeaking.set(false)
+        }
+
         if (!isSpeaking.get()) processQueue()
     }
 
@@ -85,10 +120,9 @@ class NotificationReaderService : NotificationListenerService() {
 
     private fun processQueue() {
         if (!ttsReady) return
-        val (msg, profile) = queue.poll() ?: return
-        tts?.voices?.find { it.name == profile.voiceName }?.let { tts?.voice = it }
-        tts?.setPitch(profile.pitch)
-        tts?.setSpeechRate(profile.speed)
+        val (msg, pitch, speed) = queue.poll() ?: return
+        tts?.setPitch(pitch)
+        tts?.setSpeechRate(speed)
         tts?.speak(msg, TextToSpeech.QUEUE_ADD, null, "n_${System.currentTimeMillis()}")
     }
 
@@ -119,10 +153,13 @@ class NotificationReaderService : NotificationListenerService() {
     fun stopSpeaking() { queue.clear(); tts?.stop(); isSpeaking.set(false) }
 
     fun testSpeak(text: String, profile: VoiceProfile, rules: List<Pair<String, String>>) {
-        val processed = VoiceTransform.process(text, profile, rules)
+        // For test: neutral signal so you hear the baseline voice
+        val signal    = SignalMap()
+        val modulated = VoiceModulator.modulate(profile, signal)
+        val processed = VoiceTransform.process(text, profile, modulated, signal, rules)
         tts?.voices?.find { it.name == profile.voiceName }?.let { tts?.voice = it }
-        tts?.setPitch(profile.pitch)
-        tts?.setSpeechRate(profile.speed)
+        tts?.setPitch(modulated.pitch)
+        tts?.setSpeechRate(modulated.speed)
         tts?.speak(processed, TextToSpeech.QUEUE_FLUSH, null, "test")
     }
 

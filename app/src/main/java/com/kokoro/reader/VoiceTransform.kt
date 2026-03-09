@@ -5,21 +5,22 @@ import kotlin.random.Random
 
 object VoiceTransform {
 
-    // ── Gimmick definitions ──────────────────────────────────────────────────
+    // ── Gimmick definitions ───────────────────────────────────────────────────
     enum class GimmickPosition { START, MID, END, RANDOM }
 
     data class Gimmick(
-        val type: String,       // giggle | sigh | huh | mmm | woah | ugh | aww | gasp | yawn | hmm
-        val frequency: Int,     // 0–100, chance per sentence
-        val position: GimmickPosition = GimmickPosition.RANDOM
+        val type: String,
+        val signalCondition: String,   // matches CommentaryCondition.type
+        val frequencyCap: Int,         // 0–100 ceiling (expressiveness dial)
+        val position: GimmickPosition = GimmickPosition.START
     )
 
     private val GIMMICK_SOUNDS = mapOf(
         "giggle" to listOf("hehe", "hehehe", "haha"),
         "sigh"   to listOf("hhhhhh...", "hhhhh...", "haah..."),
         "huh"    to listOf("huh?", "hm?", "huh..."),
-        "mmm"    to listOf("mmm.", "mhmm.", "mmhm."),
-        "woah"   to listOf("woah!", "woah...", "oh wow!"),
+        "mmm"    to listOf("mmm.", "mhmm."),
+        "woah"   to listOf("woah!", "oh wow!", "woah..."),
         "ugh"    to listOf("ugh.", "ugh!", "uuugh."),
         "aww"    to listOf("aww.", "awww...", "aw."),
         "gasp"   to listOf("*gasp*", "oh!", "oh-"),
@@ -29,31 +30,63 @@ object VoiceTransform {
         "tsk"    to listOf("tsk.", "tsk tsk.", "tch."),
     )
 
-    fun applyGimmicks(text: String, gimmicks: List<Gimmick>): String {
-        if (gimmicks.isEmpty()) return text
+    fun applyGimmicks(text: String, configs: List<GimmickConfig>, signal: SignalMap): String {
         var result = text
-        for (g in gimmicks) {
-            if (Random.nextInt(100) >= g.frequency) continue
-            val sound = GIMMICK_SOUNDS[g.type]?.random() ?: continue
-            val pos = if (g.position == GimmickPosition.RANDOM)
-                GimmickPosition.values().filter { it != GimmickPosition.RANDOM }.random()
-            else g.position
-
+        for (cfg in configs) {
+            val condition = CommentaryCondition(cfg.type.toGimmickSignal())
+            if (!condition.matches(signal)) continue
+            if (Random.nextInt(100) >= cfg.frequency) continue
+            val sound = GIMMICK_SOUNDS[cfg.type]?.random() ?: continue
+            val pos = GimmickPosition.valueOf(cfg.position)
             result = when (pos) {
-                GimmickPosition.START  -> "$sound $result"
-                GimmickPosition.END    -> "$result $sound"
-                GimmickPosition.MID    -> {
+                GimmickPosition.START -> "$sound $result"
+                GimmickPosition.END   -> "$result $sound"
+                GimmickPosition.MID   -> {
                     val words = result.split(" ")
                     val mid = words.size / 2
                     (words.take(mid) + listOf(sound) + words.drop(mid)).joinToString(" ")
                 }
-                else -> "$result $sound"
+                GimmickPosition.RANDOM -> if (Random.nextBoolean()) "$sound $result" else "$result $sound"
             }
         }
         return result
     }
 
-    // ── Breathiness ──────────────────────────────────────────────────────────
+    // Maps gimmick type to the signal condition that should gate it
+    private fun String.toGimmickSignal() = when (this) {
+        "sigh"   -> "warmth_distressed"   // sadness, apology, collapse
+        "giggle" -> "warmth_high"         // warm, happy, love emoji
+        "huh"    -> "sender_unknown"      // confusion, unknown
+        "mmm"    -> "intent_request"      // someone needs something
+        "woah"   -> "traj_peaked"         // peaked intensity
+        "ugh"    -> "urgency_real"        // genuine urgency or demand
+        "aww"    -> "emoji_sad"           // sad emoji or emotional
+        "gasp"   -> "stakes_high"         // high stakes anything
+        "yawn"   -> "stakes_low"          // nothing happening
+        "hmm"    -> "always"              // general uncertainty
+        "laugh"  -> "stakes_fake"         // game / fake stakes
+        "tsk"    -> "flooded"             // too many notifications
+        else     -> "always"
+    }
+
+    // ── Commentary ────────────────────────────────────────────────────────────
+    fun applyCommentary(text: String, profile: VoiceProfile, signal: SignalMap): String {
+        val pre = profile.commentaryPools
+            .filter { it.position == "pre" && it.condition.matches(signal) && it.lines.isNotEmpty() }
+            .filter { Random.nextInt(100) < it.frequency }
+            .flatMap { it.lines }
+            .randomOrNull()
+
+        val post = profile.commentaryPools
+            .filter { it.position == "post" && it.condition.matches(signal) && it.lines.isNotEmpty() }
+            .filter { Random.nextInt(100) < it.frequency }
+            .flatMap { it.lines }
+            .randomOrNull()
+
+        return listOfNotNull(pre, text, post).joinToString(" ")
+    }
+
+    // ── Breathiness ───────────────────────────────────────────────────────────
     fun applyBreathiness(text: String, intensity: Int, curvePosition: Float, pause: Int): String {
         if (intensity == 0) return text
         return text.split(" ").joinToString(" ") { breathWord(it, intensity, curvePosition, pause) }
@@ -82,7 +115,7 @@ object VoiceTransform {
         return word.map { c -> if (c in vowels) c.toString().repeat(r) else c.toString() }.joinToString("")
     }
 
-    // ── Stuttering ───────────────────────────────────────────────────────────
+    // ── Stuttering ────────────────────────────────────────────────────────────
     fun applyStuttering(text: String, intensity: Int, position: Float, frequency: Int, pause: Int): String {
         if (intensity == 0 || frequency == 0) return text
         return text.split(" ").joinToString(" ") { word ->
@@ -102,7 +135,7 @@ object VoiceTransform {
         return word.substring(0, idx) + stutter + word.substring(idx)
     }
 
-    // ── Intonation ───────────────────────────────────────────────────────────
+    // ── Intonation ────────────────────────────────────────────────────────────
     fun applyIntonation(text: String, intensity: Int, variation: Float): String {
         if (intensity == 0) return text
         return text.split(" ").mapIndexed { i, word ->
@@ -122,7 +155,7 @@ object VoiceTransform {
         return if (intensity > 60 && Random.nextFloat() < variation) "$stretched..." else stretched
     }
 
-    // ── Wording rules ────────────────────────────────────────────────────────
+    // ── Wording rules ─────────────────────────────────────────────────────────
     fun applyWordingRules(text: String, rules: List<Pair<String, String>>): String {
         var result = text
         for ((find, replace) in rules) {
@@ -131,13 +164,20 @@ object VoiceTransform {
         return result
     }
 
-    // ── Full pipeline ────────────────────────────────────────────────────────
-    fun process(text: String, profile: VoiceProfile, rules: List<Pair<String, String>>): String {
+    // ── Full pipeline ─────────────────────────────────────────────────────────
+    fun process(
+        text: String,
+        profile: VoiceProfile,
+        modulated: ModulatedVoice,
+        signal: SignalMap,
+        rules: List<Pair<String, String>>
+    ): String {
         var r = applyWordingRules(text, rules)
-        r = applyGimmicks(r, profile.gimmicks)
-        r = applyIntonation(r, profile.intonationIntensity, profile.intonationVariation)
-        r = applyStuttering(r, profile.stutterIntensity, profile.stutterPosition, profile.stutterFrequency, profile.stutterPause)
-        r = applyBreathiness(r, profile.breathIntensity, profile.breathCurvePosition, profile.breathPause)
+        r = applyCommentary(r, profile, signal)
+        r = applyGimmicks(r, profile.gimmicks, signal)
+        r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
+        r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition, modulated.stutterFrequency, modulated.stutterPause)
+        r = applyBreathiness(r, modulated.breathIntensity, modulated.breathCurvePosition, modulated.breathPause)
         return r
     }
 }

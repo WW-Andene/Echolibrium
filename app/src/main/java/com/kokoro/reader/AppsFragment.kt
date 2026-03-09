@@ -4,6 +4,7 @@ import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.*
 import android.widget.*
+import android.widget.Toast
 import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
@@ -26,18 +27,36 @@ class AppsFragment : Fragment() {
     }
 
     private fun loadInstalledApps() {
-        val pm = requireContext().packageManager
-        pm.getInstalledApplications(0)
-            .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
-            .sortedBy { pm.getApplicationLabel(it).toString() }
-            .forEach { info ->
-                val pkg = info.packageName
-                val label = pm.getApplicationLabel(info).toString()
-                if (rules.none { it.packageName == pkg })
-                    rules.add(AppRule(packageName = pkg, appLabel = label))
+        val btn = view?.findViewById<Button>(R.id.btn_load_apps) ?: return
+        btn.isEnabled = false
+        btn.text = "LOADING..."
+
+        Thread {
+            val pm = requireContext().packageManager
+            val apps = try {
+                @Suppress("DEPRECATION") pm.getInstalledApplications(0)
+            } catch (e: Exception) { emptyList() }
+
+            val newRules = apps
+                .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
+                .sortedBy { try { pm.getApplicationLabel(it).toString().lowercase() } catch (e: Exception) { it.packageName } }
+                .mapNotNull { info ->
+                    val pkg = info.packageName
+                    val label = try { pm.getApplicationLabel(info).toString() } catch (e: Exception) { pkg }
+                    if (rules.none { it.packageName == pkg }) AppRule(packageName = pkg, appLabel = label) else null
+                }
+
+            activity?.runOnUiThread {
+                rules.addAll(newRules)
+                if (rules.isEmpty()) {
+                    Toast.makeText(requireContext(), "No user apps found.", Toast.LENGTH_SHORT).show()
+                }
+                AppRule.saveAll(rules, prefs)
+                renderRules()
+                btn.isEnabled = true
+                btn.text = "RELOAD APPS"
             }
-        AppRule.saveAll(rules, prefs)
-        renderRules()
+        }.start()
     }
 
     private fun renderRules() {

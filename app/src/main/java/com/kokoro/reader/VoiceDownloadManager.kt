@@ -130,6 +130,7 @@ object VoiceDownloadManager {
 
         val totalBytes = conn.contentLengthLong.takeIf { it > 0 } ?: -1L
         var downloadedBytes = 0L
+        var lastReportedPct = -1
 
         try {
             conn.inputStream.use { input ->
@@ -140,7 +141,11 @@ object VoiceDownloadManager {
                         output.write(buf, 0, n)
                         downloadedBytes += n
                         if (totalBytes > 0) {
-                            onProgress(((downloadedBytes * 100) / totalBytes).toInt())
+                            val pct = ((downloadedBytes * 100) / totalBytes).toInt()
+                            if (pct != lastReportedPct) {
+                                lastReportedPct = pct
+                                onProgress(pct)
+                            }
                         }
                     }
                 }

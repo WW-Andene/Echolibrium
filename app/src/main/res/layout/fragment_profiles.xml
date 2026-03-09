@@ -52,11 +52,12 @@
         </HorizontalScrollView>
 
         <!-- Pitch & Speed -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// PITCH &amp; SPEED" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        <TextView android:id="@+id/label_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // PITCH &amp; SPEED" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="vertical" android:background="#111111" android:padding="16dp"
-            android:layout_marginBottom="14dp">
+            android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:id="@+id/tv_pitch" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Pitch: 1.00"
                 android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
@@ -70,10 +71,12 @@
         </LinearLayout>
 
         <!-- Breathiness -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// BREATHINESS" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp">
+        <TextView android:id="@+id/label_breathiness" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // BREATHINESS" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_breathiness" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp"
+            android:visibility="gone">
             <TextView android:id="@+id/tv_breath_int" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Intensity: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_breath_int" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -89,10 +92,12 @@
         </LinearLayout>
 
         <!-- Stuttering -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// STUTTERING" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp">
+        <TextView android:id="@+id/label_stuttering" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // STUTTERING" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_stuttering" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp"
+            android:visibility="gone">
             <TextView android:id="@+id/tv_stutter_int" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Intensity: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_stutter_int" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -112,10 +117,12 @@
         </LinearLayout>
 
         <!-- Intonation -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// INTONATION" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp">
+        <TextView android:id="@+id/label_intonation" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // INTONATION" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_intonation" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp"
+            android:visibility="gone">
             <TextView android:id="@+id/tv_intonation_int" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Intensity: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_intonation_int" android:layout_width="match_parent" android:layout_height="wrap_content"

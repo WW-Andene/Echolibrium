@@ -157,7 +157,7 @@ object SherpaEngine {
     private fun loadPiperVoice(ctx: Context, voiceId: String): Boolean {
         try {
             // Release previous Piper engine
-            piperTts?.let { try { it.release() } catch (e: Exception) {} }
+            piperTts?.let { try { it.release() } catch (e: Exception) { Log.w(TAG, "Error releasing previous Piper engine", e) } }
             piperTts = null
             piperLoadedVoiceId = null
 

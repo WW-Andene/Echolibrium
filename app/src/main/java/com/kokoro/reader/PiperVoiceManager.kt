@@ -158,7 +158,7 @@ object PiperVoiceManager {
         }
 
         if (conn.responseCode != 200) {
-            throw Exception("HTTP ${conn.responseCode}")
+            throw Exception("HTTP ${conn.responseCode} from $urlStr")
         }
 
         try {

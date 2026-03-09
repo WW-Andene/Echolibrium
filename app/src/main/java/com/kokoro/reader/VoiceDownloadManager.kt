@@ -2,34 +2,28 @@ package com.kokoro.reader
 
 import android.content.Context
 import android.util.Log
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
- * Downloads and extracts the Kokoro TTS model.
+ * Manages the Kokoro TTS model bundled in app assets.
  *
- * Model: kokoro-en-v0_19 (int8 quantized, ~120MB download)
- * After extraction, the model directory contains:
+ * The model is pre-packaged at build time in assets/kokoro-model/
+ * and extracted to context.filesDir/sherpa/kokoro-en-v0_19/ on first launch.
+ * No internet connection is required — the APK is fully autonomous.
+ *
+ * Model files after extraction:
  *   model.onnx, voices.bin, tokens.txt, espeak-ng-data/
- *
- * Stored in: context.filesDir/sherpa/kokoro-en-v0_19/
  */
 object VoiceDownloadManager {
 
-    private const val TAG = "VoiceDownload"
+    private const val TAG = "ModelManager"
 
-    // Model package — int8 is ~120MB vs ~400MB for float32
-    const val MODEL_NAME   = "kokoro-en-v0_19"
-    const val DOWNLOAD_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2"
-    const val MODEL_SIZE_MB = 120  // approximate, for display
+    const val MODEL_NAME    = "kokoro-en-v0_19"
+    private const val ASSET_DIR = "kokoro-model"
 
-    enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }
+    enum class State { NOT_EXTRACTED, EXTRACTING, READY, ERROR }
 
-    @Volatile var state: State = State.NOT_DOWNLOADED
+    @Volatile var state: State = State.NOT_EXTRACTED
     @Volatile var progressPercent: Int = 0
     @Volatile var errorMessage: String = ""
 
@@ -53,50 +47,66 @@ object VoiceDownloadManager {
             && File(dir, "espeak-ng-data").exists()
     }
 
-    // ── Download ──────────────────────────────────────────────────────────────
+    // ── Extract from assets ───────────────────────────────────────────────────
 
-    fun downloadModel(ctx: Context) {
-        if (state == State.DOWNLOADING) return
+    /**
+     * Extracts the bundled model from assets to internal storage.
+     * Safe to call multiple times — skips if already extracted.
+     * Runs on a background thread and reports progress via callbacks.
+     */
+    fun ensureModel(ctx: Context) {
+        if (state == State.EXTRACTING) return
         if (isModelReady(ctx)) { updateState(State.READY); return }
 
-        updateState(State.DOWNLOADING)
+        updateState(State.EXTRACTING)
         progressPercent = 0
 
         Thread {
-            val tmpFile = File(getSherpaDir(ctx), "download.tar.bz2.tmp")
             try {
-                Log.d(TAG, "Downloading from $DOWNLOAD_URL")
-                download(DOWNLOAD_URL, tmpFile) { pct ->
-                    progressPercent = pct
-                    progressCallback?.invoke(pct)
-                }
+                Log.d(TAG, "Extracting model from assets/$ASSET_DIR")
+                val destDir = getModelDir(ctx)
+                destDir.mkdirs()
 
-                Log.d(TAG, "Extracting to ${getSherpaDir(ctx)}")
-                progressCallback?.invoke(-1)  // signal "extracting"
-                extract(tmpFile, getSherpaDir(ctx))
-
-                tmpFile.delete()
+                copyAssetsRecursive(ctx, ASSET_DIR, destDir)
 
                 if (isModelReady(ctx)) {
-                    Log.d(TAG, "Model ready at ${getModelDir(ctx)}")
+                    Log.d(TAG, "Model ready at $destDir")
                     updateState(State.READY)
                 } else {
                     updateState(State.ERROR)
                     errorMessage = "Extraction incomplete — missing required files"
                 }
-
             } catch (e: Exception) {
-                tmpFile.delete()
                 errorMessage = e.message ?: "Unknown error"
-                Log.e(TAG, "Download failed", e)
+                Log.e(TAG, "Asset extraction failed", e)
                 updateState(State.ERROR)
             }
         }.start()
     }
 
+    /**
+     * Synchronous version — blocks until model is extracted.
+     * Use from background threads only.
+     */
+    fun ensureModelSync(ctx: Context): Boolean {
+        if (isModelReady(ctx)) { updateState(State.READY); return true }
+        return try {
+            val destDir = getModelDir(ctx)
+            destDir.mkdirs()
+            copyAssetsRecursive(ctx, ASSET_DIR, destDir)
+            val ready = isModelReady(ctx)
+            updateState(if (ready) State.READY else State.ERROR)
+            ready
+        } catch (e: Exception) {
+            Log.e(TAG, "Asset extraction failed", e)
+            updateState(State.ERROR)
+            false
+        }
+    }
+
     fun deleteModel(ctx: Context) {
         getModelDir(ctx).deleteRecursively()
-        updateState(State.NOT_DOWNLOADED)
+        updateState(State.NOT_EXTRACTED)
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────
@@ -106,73 +116,23 @@ object VoiceDownloadManager {
         stateCallback?.invoke(s)
     }
 
-    private fun download(urlStr: String, dest: File, onProgress: (Int) -> Unit) {
-        val url = URL(urlStr)
-        var conn = url.openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout    = 30_000
-        conn.connect()
+    private fun copyAssetsRecursive(ctx: Context, assetPath: String, dest: File) {
+        val assetManager = ctx.assets
+        val entries = assetManager.list(assetPath) ?: return
 
-        // Follow redirects manually (GitHub releases redirect)
-        var redirects = 0
-        while (conn.responseCode in 300..399 && redirects++ < 5) {
-            val location = conn.getHeaderField("Location") ?: break
-            conn.disconnect()
-            conn = URL(location).openConnection() as HttpURLConnection
-            conn.connectTimeout = 15_000
-            conn.readTimeout    = 30_000
-            conn.connect()
-        }
-
-        if (conn.responseCode != 200) {
-            throw Exception("HTTP ${conn.responseCode} from $urlStr")
-        }
-
-        val totalBytes = conn.contentLengthLong.takeIf { it > 0 } ?: -1L
-        var downloadedBytes = 0L
-        var lastReportedPct = -1
-
-        try {
-            conn.inputStream.use { input ->
+        if (entries.isEmpty()) {
+            // It's a file — copy it to dest
+            dest.parentFile?.mkdirs()
+            assetManager.open(assetPath).use { input ->
                 dest.outputStream().use { output ->
-                    val buf = ByteArray(32 * 1024)
-                    var n: Int
-                    while (input.read(buf).also { n = it } != -1) {
-                        output.write(buf, 0, n)
-                        downloadedBytes += n
-                        if (totalBytes > 0) {
-                            val pct = ((downloadedBytes * 100) / totalBytes).toInt()
-                            if (pct != lastReportedPct) {
-                                lastReportedPct = pct
-                                onProgress(pct)
-                            }
-                        }
-                    }
+                    input.copyTo(output, bufferSize = 32 * 1024)
                 }
             }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun extract(tarBz2: File, destDir: File) {
-        tarBz2.inputStream().buffered().use { raw ->
-            BZip2CompressorInputStream(raw).use { bz2 ->
-                TarArchiveInputStream(bz2).use { tar ->
-                    var entry = tar.nextTarEntry
-                    while (entry != null) {
-                        val outFile = File(destDir, entry.name)
-                        if (entry.isDirectory) {
-                            outFile.mkdirs()
-                        } else {
-                            outFile.parentFile?.mkdirs()
-                            outFile.outputStream().use { out ->
-                                tar.copyTo(out, bufferSize = 32 * 1024)
-                            }
-                        }
-                        entry = tar.nextTarEntry
-                    }
-                }
+        } else {
+            // It's a directory — recurse into each child
+            dest.mkdirs()
+            for (entry in entries) {
+                copyAssetsRecursive(ctx, "$assetPath/$entry", File(dest, entry))
             }
         }
     }

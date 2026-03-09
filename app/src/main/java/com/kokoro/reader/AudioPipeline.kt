@@ -73,6 +73,34 @@ object AudioPipeline {
         queue.offer(item)
     }
 
+    // ── Standalone test (works without NotificationReaderService) ────────────
+
+    /**
+     * Quick test from the UI — starts pipeline if needed and speaks the text.
+     * Does NOT require the NotificationReaderService to be running.
+     */
+    fun testSpeak(ctx: Context, text: String, profile: VoiceProfile, rules: List<Pair<String, String>>) {
+        start(ctx)
+        val signal = SignalMap(
+            sourceType     = SourceType.PERSONAL,
+            senderType     = SenderType.HUMAN,
+            warmth         = WarmthLevel.MEDIUM,
+            register       = Register.CASUAL,
+            stakesLevel    = StakesLevel.LOW,
+            urgencyType    = UrgencyType.NONE,
+            intensityLevel = 0.3f,
+            trajectory     = Trajectory.FLAT
+        )
+        val modulated = VoiceModulator.modulate(profile, signal)
+        enqueue(Item(
+            rawText   = text,
+            profile   = profile,
+            modulated = modulated,
+            signal    = signal,
+            rules     = rules
+        ))
+    }
+
     // ── Processing loop ───────────────────────────────────────────────────────
 
     private fun loop(ctx: Context) {
@@ -99,27 +127,57 @@ object AudioPipeline {
         )
         if (processed.isBlank()) return
 
-        // ── Step 2: Initialize engine (if not already) ────────────────────
-        if (!SherpaEngine.initialize(ctx)) {
-            Log.w(TAG, "SherpaEngine not ready — model may still be downloading")
-            return
+        // ── Step 2: Synthesize (route to Kokoro or Piper engine) ──────────
+        val voiceId = item.profile.voiceName
+        val kokoroVoice = KokoroVoices.byId(voiceId)
+        val piperVoice  = PiperVoiceCatalog.byId(voiceId)
+
+        val result: Pair<FloatArray, Int>? = when {
+            // Kokoro voice: use Kokoro engine with speaker ID
+            kokoroVoice != null -> {
+                if (!SherpaEngine.initializeKokoro(ctx)) {
+                    Log.w(TAG, "Kokoro engine not ready")
+                    return
+                }
+                SherpaEngine.synthesize(
+                    text  = processed,
+                    sid   = kokoroVoice.sid,
+                    speed = item.modulated.speed
+                )
+            }
+
+            // Piper voice: use Piper/VITS engine
+            piperVoice != null && PiperVoiceManager.isVoiceReady(ctx, voiceId) -> {
+                SherpaEngine.synthesizePiper(
+                    ctx     = ctx,
+                    text    = processed,
+                    voiceId = voiceId,
+                    speed   = item.modulated.speed
+                )
+            }
+
+            // Fallback: default Kokoro voice
+            else -> {
+                if (!SherpaEngine.initializeKokoro(ctx)) {
+                    Log.w(TAG, "Kokoro engine not ready (fallback)")
+                    return
+                }
+                Log.w(TAG, "Voice '$voiceId' not available, using default Kokoro")
+                SherpaEngine.synthesize(
+                    text  = processed,
+                    sid   = KokoroVoices.default().sid,
+                    speed = item.modulated.speed
+                )
+            }
         }
 
-        // ── Step 3: Synthesize ────────────────────────────────────────────
-        val voiceId = item.profile.voiceName
-        val voice   = KokoroVoices.byId(voiceId) ?: KokoroVoices.default()
-        val result  = SherpaEngine.synthesize(
-            text  = processed,
-            sid   = voice.sid,
-            speed = item.modulated.speed
-        ) ?: return
-
+        result ?: return
         val (rawPcm, sampleRate) = result
 
-        // ── Step 4: Apply DSP ─────────────────────────────────────────────
+        // ── Step 3: Apply DSP ─────────────────────────────────────────────
         val pcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated)
 
-        // ── Step 5: Play ──────────────────────────────────────────────────
+        // ── Step 4: Play ──────────────────────────────────────────────────
         playPcm(pcm, sampleRate, item.modulated.pitch)
     }
 

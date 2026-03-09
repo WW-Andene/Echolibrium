@@ -30,6 +30,9 @@ class HomeFragment : Fragment() {
         val txtDndEnd     = v.findViewById<TextView>(R.id.txt_dnd_end)
         val btnStop       = v.findViewById<Button>(R.id.btn_stop)
 
+        // Eagerly warm up the voice engine so it's ready when user wants to test
+        SherpaEngine.warmUp(requireContext().applicationContext)
+
         updateStatus(statusText, btnPermission)
         btnPermission.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))

@@ -1,6 +1,8 @@
 package com.kokoro.reader
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -15,6 +17,7 @@ class ProfilesFragment : Fragment() {
     private var currentProfile = VoiceProfile()
     private var genderFilter = "All"
     private var languageFilter = "All"
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private lateinit var profileSpinner: Spinner
     private lateinit var txtPreview: EditText
@@ -38,6 +41,11 @@ class ProfilesFragment : Fragment() {
     private lateinit var gimmicksContainer: LinearLayout
     private lateinit var genderRow: LinearLayout
     private lateinit var nationRow: LinearLayout
+    private lateinit var tvEngineStatus: TextView
+    private lateinit var selectedVoiceBanner: LinearLayout
+    private lateinit var tvSelectedVoiceIcon: TextView
+    private lateinit var tvSelectedVoiceName: TextView
+    private lateinit var tvSelectedVoiceDetail: TextView
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_profiles, c, false)
@@ -56,6 +64,35 @@ class ProfilesFragment : Fragment() {
         setupButtons()
         buildGimmicksEditor()
         loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
+
+        // Start engine warm-up and show status
+        setupEngineStatus()
+    }
+
+    private fun setupEngineStatus() {
+        updateEngineStatusUI()
+        SherpaEngine.onReadyCallback = {
+            mainHandler.post { updateEngineStatusUI() }
+        }
+        // Refresh voice grid when a Piper voice finishes downloading
+        PiperVoiceManager.downloadCallback = { _, _ ->
+            mainHandler.post { if (isAdded && view != null) renderVoiceGrid() }
+        }
+        // Trigger warm-up if not already ready
+        if (!SherpaEngine.isReady) {
+            SherpaEngine.warmUp(requireContext().applicationContext)
+        }
+    }
+
+    private fun updateEngineStatusUI() {
+        if (!isAdded || view == null) return
+        if (SherpaEngine.isReady) {
+            tvEngineStatus.text = "✓ Voice engine ready"
+            tvEngineStatus.setTextColor(0xFF00ff88.toInt())
+        } else {
+            tvEngineStatus.text = "⏳ Initializing voice engine…"
+            tvEngineStatus.setTextColor(0xFFffaa00.toInt())
+        }
     }
 
     private fun setupCollapsibleSections(v: View) {
@@ -92,6 +129,11 @@ class ProfilesFragment : Fragment() {
         gimmicksContainer = v.findViewById(R.id.gimmicks_container)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
+        tvEngineStatus  = v.findViewById(R.id.tv_engine_status)
+        selectedVoiceBanner = v.findViewById(R.id.selected_voice_banner)
+        tvSelectedVoiceIcon = v.findViewById(R.id.tv_selected_voice_icon)
+        tvSelectedVoiceName = v.findViewById(R.id.tv_selected_voice_name)
+        tvSelectedVoiceDetail = v.findViewById(R.id.tv_selected_voice_detail)
         seekPitch       = v.findViewById(R.id.seek_pitch);         tvPitch       = v.findViewById(R.id.tv_pitch)
         seekSpeed       = v.findViewById(R.id.seek_speed);         tvSpeed       = v.findViewById(R.id.tv_speed)
         seekBreathInt   = v.findViewById(R.id.seek_breath_int);    tvBreathInt   = v.findViewById(R.id.tv_breath_int)
@@ -127,10 +169,41 @@ class ProfilesFragment : Fragment() {
             text = label; textSize = 11f
             setBackgroundColor(if (active) 0xFF1a3a1a.toInt() else 0xFF111111.toInt())
             setTextColor(if (active) 0xFF00ff88.toInt() else 0xFF666666.toInt())
-            setPadding(20, 8, 20, 8)
+            setPadding(24, 10, 24, 10)
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 8, 0); layoutParams = lp
             setOnClickListener { onClick() }
+        }
+    }
+
+    private fun updateSelectedVoiceBanner() {
+        val voiceId = currentProfile.voiceName
+        val kokoroVoice = KokoroVoices.byId(voiceId)
+        val piperVoice = PiperVoiceCatalog.byId(voiceId)
+        when {
+            kokoroVoice != null -> {
+                tvSelectedVoiceIcon.text = kokoroVoice.genderIcon
+                tvSelectedVoiceIcon.setTextColor(kokoroVoice.genderColor)
+                tvSelectedVoiceName.text = kokoroVoice.displayName
+                tvSelectedVoiceDetail.text = "${kokoroVoice.flagEmoji} ${kokoroVoice.nationality} · ${kokoroVoice.gender} · Kokoro"
+                selectedVoiceBanner.setBackgroundColor(0xFF0d2a0d.toInt())
+            }
+            piperVoice != null -> {
+                tvSelectedVoiceIcon.text = piperVoice.genderIcon
+                tvSelectedVoiceIcon.setTextColor(piperVoice.genderColor)
+                tvSelectedVoiceName.text = piperVoice.displayName
+                val ctx = context
+                val status = if (ctx != null && PiperVoiceManager.isVoiceReady(ctx, piperVoice.id)) "ready" else "not downloaded"
+                tvSelectedVoiceDetail.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
+                selectedVoiceBanner.setBackgroundColor(0xFF0d1a2a.toInt())
+            }
+            else -> {
+                tvSelectedVoiceIcon.text = "?"
+                tvSelectedVoiceIcon.setTextColor(0xFF666666.toInt())
+                tvSelectedVoiceName.text = voiceId.ifEmpty { "None selected" }
+                tvSelectedVoiceDetail.text = "Tap a voice below to select"
+                selectedVoiceBanner.setBackgroundColor(0xFF1a1a1a.toInt())
+            }
         }
     }
 
@@ -161,12 +234,15 @@ class ProfilesFragment : Fragment() {
         if (kokoroFiltered.isNotEmpty()) {
             kokoroFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
                 voiceGrid.addView(TextView(requireContext()).apply {
-                    text = "KOKORO · ${lang.uppercase()}  (${voices.size})"
+                    text = "KOKORO · ${lang.uppercase()}  (${voices.size} bundled)"
                     textSize = 10f; setTextColor(0xFF446644.toInt())
                     setPadding(4, 14, 0, 6)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 })
-                renderKokoroVoiceRows(voices)
+                renderVoiceCardRows(voices.map { v ->
+                    VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
+                        "${v.flagEmoji} ${v.nationality}", "bundled", 0xFF00ff88.toInt(), true)
+                })
             }
         }
 
@@ -178,34 +254,33 @@ class ProfilesFragment : Fragment() {
                     variants.find { it.quality == "medium" } ?: variants.first()
                 }
                 voiceGrid.addView(TextView(requireContext()).apply {
-                    text = "PIPER · ${lang.uppercase()}  (${deduped.size})"
+                    text = "PIPER · ${lang.uppercase()}  (${deduped.size} voices)"
                     textSize = 10f; setTextColor(0xFF446644.toInt())
                     setPadding(4, 14, 0, 6)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 })
-                renderPiperVoiceRows(deduped)
+                val ctx = requireContext()
+                renderVoiceCardRows(deduped.map { v ->
+                    val ready = PiperVoiceManager.isVoiceReady(ctx, v.id)
+                    val state = PiperVoiceManager.getVoiceState(ctx, v.id)
+                    val statusText = when {
+                        ready -> "ready"
+                        state == PiperVoiceManager.VoiceState.DOWNLOADING -> "downloading…"
+                        else -> "tap to download"
+                    }
+                    VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
+                        "${v.flagEmoji} ${v.nationality}", statusText, 0xFF00ccff.toInt(), ready)
+                })
             }
         }
-    }
 
-    private fun renderKokoroVoiceRows(voices: List<KokoroVoice>) {
-        renderVoiceCardRows(voices.map { v ->
-            VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                "${v.flagEmoji} ${v.nationality}", v.id, 0xFF00ff88.toInt())
-        })
-    }
-
-    private fun renderPiperVoiceRows(voices: List<PiperVoice>) {
-        renderVoiceCardRows(voices.map { v ->
-            VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                "${v.flagEmoji} ${v.nationality}", "${v.quality} · ${v.name}", 0xFF00ccff.toInt())
-        })
+        updateSelectedVoiceBanner()
     }
 
     private data class VoiceCardData(
         val voiceId: String, val genderIcon: String, val genderColor: Int,
-        val displayName: String, val subtitle: String, val detail: String,
-        val accentColor: Int
+        val displayName: String, val subtitle: String, val statusText: String,
+        val accentColor: Int, val isReady: Boolean
     )
 
     private fun renderVoiceCardRows(cards: List<VoiceCardData>) {
@@ -220,37 +295,54 @@ class ProfilesFragment : Fragment() {
                 val card = LinearLayout(requireContext()).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = android.view.Gravity.CENTER
-                    setPadding(10, 14, 10, 14)
+                    setPadding(12, 16, 12, 16)
                     val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    lp.setMargins(0, 0, 4, 4); layoutParams = lp
+                    lp.setMargins(0, 0, 6, 6); layoutParams = lp
                     background = android.graphics.drawable.GradientDrawable().apply {
                         setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
-                        setStroke(if (active) 2 else 0, c.accentColor)
-                        cornerRadius = 4f
+                        setStroke(if (active) 2 else 1, if (active) c.accentColor else 0xFF222222.toInt())
+                        cornerRadius = 8f
                     }
                     setOnClickListener {
-                        currentProfile = currentProfile.copy(voiceName = c.voiceId)
-                        renderVoiceGrid()
+                        if (c.isReady) {
+                            currentProfile = currentProfile.copy(voiceName = c.voiceId)
+                            renderVoiceGrid()
+                        } else {
+                            // Piper voice not downloaded — trigger download
+                            val piperVoice = PiperVoiceCatalog.byId(c.voiceId)
+                            if (piperVoice != null) {
+                                PiperVoiceManager.downloadVoice(requireContext().applicationContext, piperVoice)
+                                renderVoiceGrid()
+                                Toast.makeText(context, "Downloading ${piperVoice.displayName}…", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                 }
                 card.addView(TextView(requireContext()).apply {
-                    text = c.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
+                    text = c.genderIcon; textSize = 22f; gravity = android.view.Gravity.CENTER
                     setTextColor(c.genderColor)
                 })
                 card.addView(TextView(requireContext()).apply {
                     text = c.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
                     setTextColor(if (active) c.accentColor else 0xFFcccccc.toInt())
+                    typeface = android.graphics.Typeface.create("monospace",
+                        if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                 })
                 card.addView(TextView(requireContext()).apply {
-                    text = c.subtitle; textSize = 9f; gravity = android.view.Gravity.CENTER
+                    text = c.subtitle; textSize = 10f; gravity = android.view.Gravity.CENTER
                     setTextColor(if (active) c.accentColor else 0xFF446644.toInt())
                 })
                 card.addView(TextView(requireContext()).apply {
-                    text = c.detail; textSize = 8f; gravity = android.view.Gravity.CENTER
-                    setTextColor(0xFF333333.toInt())
+                    text = c.statusText; textSize = 8f; gravity = android.view.Gravity.CENTER
+                    setTextColor(when {
+                        c.isReady -> 0xFF336633.toInt()
+                        c.statusText.contains("download") -> 0xFF664400.toInt()
+                        else -> 0xFF333333.toInt()
+                    })
                 })
                 row.addView(card)
             }
+            // Fill remaining slots with empty space
             repeat(chunkSize - rowCards.size) {
                 row.addView(android.view.View(requireContext()).apply {
                     layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
@@ -577,11 +669,15 @@ class ProfilesFragment : Fragment() {
 
     private fun setupButtons() {
         btnTest.setOnClickListener {
+            if (!SherpaEngine.isReady) {
+                Toast.makeText(context, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             val p = readProfileFromUI()
             val rules = loadWordingRules()
             val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
-            NotificationReaderService.instance?.testSpeak(text, p, rules)
-                ?: Toast.makeText(context, "Service not running — grant permission first.", Toast.LENGTH_SHORT).show()
+            // Use AudioPipeline directly — works without notification service
+            AudioPipeline.testSpeak(requireContext().applicationContext, text, p, rules)
         }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
@@ -673,5 +769,9 @@ class ProfilesFragment : Fragment() {
         })
     }
 
-    override fun onDestroyView() { super.onDestroyView() }
+    override fun onDestroyView() {
+        SherpaEngine.onReadyCallback = null
+        PiperVoiceManager.downloadCallback = null
+        super.onDestroyView()
+    }
 }

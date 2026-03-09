@@ -149,8 +149,8 @@ object AudioPipeline {
             // Apply pitch shift via playback rate
             // AudioTrack can adjust playback rate to shift pitch within limits
             val shiftedRate = (sampleRate * pitch).toInt().coerceIn(
-                AudioTrack.getMinSampleRate(),
-                AudioTrack.getMaxSampleRate()
+                AudioTrack.SAMPLE_RATE_HZ_MIN,
+                AudioTrack.SAMPLE_RATE_HZ_MAX
             )
             track.playbackRate = shiftedRate
 

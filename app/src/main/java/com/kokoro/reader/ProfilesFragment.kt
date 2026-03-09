@@ -84,9 +84,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildFilterButtons() {
-        val v = view ?: return
-        val genderRow   = v.findViewById<LinearLayout>(R.id.voice_filter_gender)
-        val nationRow   = v.findViewById<LinearLayout>(R.id.voice_filter_nation)
+        if (view == null) return
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
@@ -214,8 +212,7 @@ class ProfilesFragment : Fragment() {
                     textSize = 13f; setTextColor(0xFFffcc00.toInt()); setPadding(0, 0, 0, 8)
                 })
                 card.addView(TextView(ctx).apply {
-                    text = "The Kokoro voice model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) needs to be downloaded once.
-Wi-Fi recommended."
+                    text = "The Kokoro voice model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) needs to be downloaded once.\nWi-Fi recommended."
                     textSize = 12f; setTextColor(0xFF888888.toInt()); setPadding(0, 0, 0, 12)
                 })
                 card.addView(Button(ctx).apply {

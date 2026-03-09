@@ -38,14 +38,12 @@ class HomeFragment : Fragment() {
 
         // Deep-link to SherpaTTS settings to download voices
         btnSherpaTts.setOnClickListener {
-            try {
-                val intent = requireContext().packageManager
-                    .getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts.engine")
-                if (intent != null) startActivity(intent)
-                else startActivity(Intent(Settings.ACTION_TTS_SETTINGS))
-            } catch (e: Exception) {
-                startActivity(Intent(Settings.ACTION_TTS_SETTINGS))
-            }
+            val ttsSettings = Intent("com.android.settings.TTS_SETTINGS")
+            val intent = try {
+                requireContext().packageManager
+                    .getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts.engine") ?: ttsSettings
+            } catch (e: Exception) { ttsSettings }
+            startActivity(intent)
         }
 
         switchEnabled.isChecked = prefs.getBoolean("service_enabled", true)

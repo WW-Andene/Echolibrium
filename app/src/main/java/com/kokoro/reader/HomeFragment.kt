@@ -1,7 +1,6 @@
 package com.kokoro.reader
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.*
@@ -12,10 +11,6 @@ import androidx.preference.PreferenceManager
 
 class HomeFragment : Fragment() {
 
-    companion object {
-        private const val SHERPA_TTS_PACKAGE = "com.k2fsa.sherpa.onnx.tts.engine"
-    }
-
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
@@ -24,7 +19,6 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(v: View, s: Bundle?) {
         val statusText    = v.findViewById<TextView>(R.id.status_text)
         val btnPermission = v.findViewById<Button>(R.id.btn_permission)
-        val btnSherpaTts  = v.findViewById<Button>(R.id.btn_sherpa_settings)
         val switchEnabled = v.findViewById<SwitchCompat>(R.id.switch_enabled)
         val spinnerMode   = v.findViewById<Spinner>(R.id.spinner_read_mode)
         val switchAppName = v.findViewById<SwitchCompat>(R.id.switch_read_app_name)
@@ -39,26 +33,6 @@ class HomeFragment : Fragment() {
         updateStatus(statusText, btnPermission)
         btnPermission.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-        }
-
-        // Deep-link to SherpaTTS settings to download voices
-        updateSherpaTtsButton(btnSherpaTts)
-        btnSherpaTts.setOnClickListener {
-            val pm = requireContext().packageManager
-            val launchIntent = try {
-                pm.getLaunchIntentForPackage(SHERPA_TTS_PACKAGE)
-            } catch (e: Exception) { null }
-                ?: try {
-                    pm.getLaunchIntentForPackage("com.k2fsa.sherpa.onnx.tts")
-                } catch (e: Exception) { null }
-
-            if (launchIntent != null) {
-                startActivity(launchIntent)
-            } else {
-                // SherpaTTS not installed — open the GitHub releases page
-                startActivity(Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models")))
-            }
         }
 
         switchEnabled.isChecked = prefs.getBoolean("service_enabled", true)
@@ -108,30 +82,6 @@ class HomeFragment : Fragment() {
         super.onResume()
         view?.let {
             updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission))
-            updateSherpaTtsButton(it.findViewById(R.id.btn_sherpa_settings))
-        }
-    }
-
-    private fun updateSherpaTtsButton(btn: Button) {
-        val installed = try {
-            requireContext().packageManager.getPackageInfo(SHERPA_TTS_PACKAGE, 0)
-            true
-        } catch (e: Exception) {
-            // Also check the alternate package name (TTS engine vs standalone app)
-            try {
-                requireContext().packageManager.getPackageInfo("com.k2fsa.sherpa.onnx.tts", 0)
-                true
-            } catch (e2: Exception) { false }
-        }
-
-        if (installed) {
-            btn.text = "🎙 Open SherpaTTS — Download Voices"
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1a2a3a.toInt())
-            btn.setTextColor(0xFF00ccff.toInt())
-        } else {
-            btn.text = "⚠ SherpaTTS not installed — Tap to download"
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF2a2a1a.toInt())
-            btn.setTextColor(0xFFffcc00.toInt())
         }
     }
 

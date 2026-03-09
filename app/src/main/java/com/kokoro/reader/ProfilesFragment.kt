@@ -137,11 +137,6 @@ class ProfilesFragment : Fragment() {
     private fun renderVoiceGrid() {
         voiceGrid.removeAllViews()
 
-        // ── Model download status banner (shown above voices, not blocking Piper list) ──
-        if (!VoiceDownloadManager.isModelReady(requireContext())) {
-            voiceGrid.addView(buildDownloadBanner())
-        }
-
         // ── Filter Kokoro voices ──────────────────────────────────────────
         val kokoroFiltered = KokoroVoices.ALL.filter { v ->
             val gOk = genderFilter   == "All" || v.gender   == genderFilter
@@ -263,78 +258,6 @@ class ProfilesFragment : Fragment() {
             }
             voiceGrid.addView(row)
         }
-    }
-
-    private fun buildDownloadBanner(): android.view.View {
-        val ctx = requireContext()
-        val card = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF1a1a00.toInt()); setPadding(20, 16, 20, 16)
-        }
-        val state = VoiceDownloadManager.state
-
-        when (state) {
-            VoiceDownloadManager.State.NOT_DOWNLOADED, VoiceDownloadManager.State.ERROR -> {
-                card.addView(TextView(ctx).apply {
-                    text = if (state == VoiceDownloadManager.State.ERROR)
-                        "⚠ Download failed: ${VoiceDownloadManager.errorMessage}"
-                    else "🎙 No voice model installed"
-                    textSize = 13f; setTextColor(0xFFffcc00.toInt()); setPadding(0, 0, 0, 8)
-                })
-                card.addView(TextView(ctx).apply {
-                    text = "The Kokoro voice model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) needs to be downloaded once.\nWi-Fi recommended."
-                    textSize = 12f; setTextColor(0xFF888888.toInt()); setPadding(0, 0, 0, 12)
-                })
-                card.addView(Button(ctx).apply {
-                    text = "⬇ DOWNLOAD KOKORO VOICES"
-                    setBackgroundColor(0xFF1a3a1a.toInt()); setTextColor(0xFF00ff88.toInt())
-                    setOnClickListener {
-                        VoiceDownloadManager.onProgress { pct ->
-                            // Update only the progress text and bar, not the whole grid
-                            activity?.runOnUiThread {
-                                if (!isAdded) return@runOnUiThread
-                                updateDownloadProgress(pct)
-                            }
-                        }
-                        VoiceDownloadManager.onStateChange { _ ->
-                            activity?.runOnUiThread {
-                                if (!isAdded) return@runOnUiThread
-                                buildFilterButtons(); renderVoiceGrid()
-                            }
-                        }
-                        VoiceDownloadManager.downloadModel(ctx)
-                        renderVoiceGrid()
-                    }
-                })
-            }
-            VoiceDownloadManager.State.DOWNLOADING -> {
-                val pct = VoiceDownloadManager.progressPercent
-                val statusText = TextView(ctx).apply {
-                    tag = "download_status"
-                    text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
-                    textSize = 13f; setTextColor(0xFF00ff88.toInt())
-                }
-                card.addView(statusText)
-                val bar = android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
-                    tag = "download_bar"
-                    max = 100; progress = if (pct >= 0) pct else 100
-                    isIndeterminate = pct < 0
-                    val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24)
-                    lp.setMargins(0, 12, 0, 0); layoutParams = lp
-                }
-                card.addView(bar)
-            }
-            VoiceDownloadManager.State.READY -> { /* won't reach here */ }
-        }
-        return card
-    }
-
-    private fun updateDownloadProgress(pct: Int) {
-        val statusView = voiceGrid.findViewWithTag<TextView>("download_status") ?: return
-        val barView = voiceGrid.findViewWithTag<android.widget.ProgressBar>("download_bar") ?: return
-        statusView.text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
-        barView.isIndeterminate = pct < 0
-        if (pct >= 0) barView.progress = pct
     }
 
     private fun buildPresets() {

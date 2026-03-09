@@ -173,6 +173,10 @@ object SherpaEngine {
                 Log.w(TAG, "Piper tokens.txt not found: $tokensPath")
                 return false
             }
+            if (!File(dataDir).exists()) {
+                Log.w(TAG, "Piper espeak-ng-data not found: $dataDir")
+                return false
+            }
 
             Log.d(TAG, "Loading Piper voice: $voiceId")
 

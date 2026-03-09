@@ -220,10 +220,10 @@ data class VoiceProfile(
                     post = listOf("I KNOW RIGHT?!", "Can you believe it?!", "Wild!"), postFreq = 40
                 ) + pools(
                     pre = listOf("Ooh a message!"), preFreq = 60,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 ) + pools(
                     pre = listOf("Someone's asking you something!"), preFreq = 55,
-                    condition = CommentaryCondition("time", "7-10")
+                    condition = CommentaryCondition("time_morning")
                 )),
 
             VoiceProfile(name = "Bored", emoji = "😒",
@@ -235,10 +235,10 @@ data class VoiceProfile(
                     post = listOf("Whatever.", "Cool.", "Not like I care."), postFreq = 40
                 ) + pools(
                     pre = listOf("Oh great, the phone again."), preFreq = 70,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 ) + pools(
                     pre = listOf("Who texts at this hour."), preFreq = 60,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 )),
 
             VoiceProfile(name = "Depressed", emoji = "😔",
@@ -251,10 +251,10 @@ data class VoiceProfile(
                     post = listOf("...figures.", "Of course.", "At least someone's happy."), postFreq = 35
                 ) + pools(
                     pre = listOf("Even at night they won't let me rest."), preFreq = 65,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     post = listOf("I'll deal with it tomorrow. Or never."), postFreq = 50,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 )),
 
             VoiceProfile(name = "Flirty", emoji = "😏",
@@ -267,13 +267,13 @@ data class VoiceProfile(
                     post = listOf("How charming.", "You're popular today~"), postFreq = 45
                 ) + pools(
                     pre = listOf("A message~ how intimate~"), preFreq = 60,
-                    condition = CommentaryCondition("app", "whatsapp")
+                    condition = CommentaryCondition("source_personal")
                 ) + pools(
                     pre = listOf("Late night message~ spicy~"), preFreq = 70,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     post = listOf("Someone's curious about you~"), postFreq = 55,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 )),
 
             VoiceProfile(name = "Gentle", emoji = "🌸",
@@ -286,10 +286,10 @@ data class VoiceProfile(
                     post = listOf("Take your time with that.", "How thoughtful."), postFreq = 35
                 ) + pools(
                     pre = listOf("Someone's thinking of you this late."), preFreq = 45,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     post = listOf("They seem to need something."), postFreq = 40,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 )),
 
             VoiceProfile(name = "Happy", emoji = "😄",
@@ -301,10 +301,10 @@ data class VoiceProfile(
                     post = listOf("Love it!", "This made my day!", "Woohoo!"), postFreq = 40
                 ) + pools(
                     pre = listOf("Good morning sunshine!"), preFreq = 70,
-                    condition = CommentaryCondition("time", "7-10")
+                    condition = CommentaryCondition("time_morning")
                 ) + pools(
                     post = listOf("So many messages, everyone loves you!"), postFreq = 50,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 )),
 
             VoiceProfile(name = "Hangry", emoji = "😤",
@@ -316,10 +316,10 @@ data class VoiceProfile(
                     post = listOf("FINE.", "Unbelievable.", "...I need food."), postFreq = 50
                 ) + pools(
                     pre = listOf("Again?! That's like the tenth one!"), preFreq = 80,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 ) + pools(
                     pre = listOf("Who texts at this hour. Who DOES that."), preFreq = 75,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 )),
 
             VoiceProfile(name = "Nervous", emoji = "😰",
@@ -331,10 +331,10 @@ data class VoiceProfile(
                     post = listOf("...okay that's fine. Fine.", "Should I be worried?"), postFreq = 50
                 ) + pools(
                     pre = listOf("Why is the email app notifying me?!"), preFreq = 65,
-                    condition = CommentaryCondition("app", "gmail")
+                    condition = CommentaryCondition("source_personal")
                 ) + pools(
                     pre = listOf("A question? What question? What did I do?"), preFreq = 60,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 )),
 
             VoiceProfile(name = "Whispery", emoji = "🤫",
@@ -346,7 +346,7 @@ data class VoiceProfile(
                     post = listOf("...don't tell anyone.", "Just thought you should know."), postFreq = 35
                 ) + pools(
                     pre = listOf("Shh... everyone's asleep."), preFreq = 70,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 )),
 
             VoiceProfile(name = "Robot", emoji = "🤖",
@@ -357,10 +357,10 @@ data class VoiceProfile(
                     post = listOf("End of message.", "Transmission complete.", "Awaiting response."), postFreq = 50
                 ) + pools(
                     pre = listOf("High priority alert detected."), preFreq = 70,
-                    condition = CommentaryCondition("keyword", "!")
+                    condition = CommentaryCondition("urgency_real")
                 ) + pools(
                     pre = listOf("Query incoming."), preFreq = 65,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 )),
 
             VoiceProfile(name = "Drunk", emoji = "🥴",
@@ -373,10 +373,10 @@ data class VoiceProfile(
                     post = listOf("I love you, man.", "...what were we talking about?", "Anyway—"), postFreq = 50
                 ) + pools(
                     pre = listOf("Who's texting at this hour, we're all out!"), preFreq = 75,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     post = listOf("That's SO many messages bro."), postFreq = 65,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 )),
 
             VoiceProfile(name = "Elder", emoji = "🧓",
@@ -388,10 +388,10 @@ data class VoiceProfile(
                     post = listOf("How about that.", "Well I never.", "Kids these days."), postFreq = 45
                 ) + pools(
                     pre = listOf("Who sends messages at this hour? No manners."), preFreq = 65,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     post = listOf("So many messages. Back in my day we called."), postFreq = 55,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 )),
 
             VoiceProfile(name = "Child", emoji = "🧒",
@@ -403,7 +403,7 @@ data class VoiceProfile(
                     post = listOf("So cool!", "Again again!", "Do it again!"), postFreq = 50
                 ) + pools(
                     pre = listOf("You got SO many messages today!"), preFreq = 70,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 )),
 
             VoiceProfile(name = "Dramatic", emoji = "🎭",
@@ -415,10 +415,10 @@ data class VoiceProfile(
                     post = listOf("The audacity.", "History will remember this day.", "...and scene."), postFreq = 55
                 ) + pools(
                     pre = listOf("In the dead of night... a message arrives."), preFreq = 80,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     pre = listOf("They have QUESTIONS. Dark questions."), preFreq = 70,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 )),
 
             VoiceProfile(name = "Sarcastic", emoji = "🙄",
@@ -430,13 +430,13 @@ data class VoiceProfile(
                     post = listOf("Truly groundbreaking.", "Color me surprised.", "Riveting stuff."), postFreq = 55
                 ) + pools(
                     pre = listOf("Oh yes, message me at night. Brilliant timing."), preFreq = 75,
-                    condition = CommentaryCondition("time", "22-06")
+                    condition = CommentaryCondition("time_night")
                 ) + pools(
                     post = listOf("Yes, another one. Because why not."), postFreq = 70,
-                    condition = CommentaryCondition("flood", "5")
+                    condition = CommentaryCondition("flooded")
                 ) + pools(
                     post = listOf("A question. How original."), postFreq = 60,
-                    condition = CommentaryCondition("keyword", "?")
+                    condition = CommentaryCondition("intent_request")
                 )),
         )
 

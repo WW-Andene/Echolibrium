@@ -413,34 +413,52 @@ class ProfilesFragment : Fragment() {
             orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 10)
         }
 
-        val condTypes = arrayOf("always", "app", "sender", "keyword", "time", "flood")
-        val condLabels = arrayOf("Always", "App (e.g. whatsapp)", "Sender name", "Text keyword (e.g. ?)", "Time range (e.g. 22-06)", "After N notifications")
-        var selectedType = "always"
+        // type → display label pairs — both arrays derived from the same source to stay in sync
+        val conditions = listOf(
+            "always"            to "Always",
+            "sender_human"      to "From a human",
+            "source_personal"   to "Personal message",
+            "source_game"       to "Game notification",
+            "source_financial"  to "Financial / bank",
+            "source_service"    to "Delivery / service",
+            "intent_request"    to "Contains question or request",
+            "intent_alert"      to "Urgent alert",
+            "intent_greeting"   to "Greeting",
+            "intent_plea"       to "Pleading",
+            "urgency_expiring"  to "Phone call / expiring",
+            "urgency_real"      to "Genuinely urgent",
+            "stakes_emotional"  to "Emotional stakes",
+            "stakes_financial"  to "Financial stakes",
+            "stakes_high"       to "High stakes",
+            "stakes_low"        to "Low / no stakes",
+            "warmth_high"       to "Warm message",
+            "warmth_distressed" to "Distressed sender",
+            "intensity_high"    to "High intensity",
+            "intensity_low"     to "Low intensity",
+            "time_night"        to "Night time (10 pm–6 am)",
+            "time_morning"      to "Morning (7 am–10 am)",
+            "flooded"           to "Many notifications today"
+        )
+        var selectedType = conditions[0].first
 
         val typeSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, condLabels)
-        }
-        val valueInput = android.widget.EditText(ctx).apply {
-            hint = "Condition value (if needed)"; textSize = 13f
-            visibility = View.GONE
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item,
+                conditions.map { it.second })
         }
         typeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                selectedType = condTypes[pos]
-                valueInput.visibility = if (selectedType == "always") View.GONE else View.VISIBLE
-                valueInput.hint = condLabels[pos]
+                selectedType = conditions[pos].first
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
         layout.addView(typeSpinner)
-        layout.addView(valueInput)
 
         AlertDialog.Builder(ctx)
             .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
             .setView(layout)
             .setPositiveButton("Add") { _, _ ->
-                val condition = CommentaryCondition(selectedType, valueInput.text.toString().trim())
+                val condition = CommentaryCondition(selectedType)
                 val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
                 val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
                 currentProfile = currentProfile.copy(commentaryPools = updated)

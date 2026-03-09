@@ -25,6 +25,10 @@ object AudioPipeline {
 
     private const val TAG = "AudioPipeline"
 
+    // AudioTrack.SAMPLE_RATE_HZ_MIN / MAX are @hide in the public SDK; use literal values.
+    private const val AUDIO_TRACK_MIN_SAMPLE_RATE_HZ = 4000
+    private const val AUDIO_TRACK_MAX_SAMPLE_RATE_HZ = 192000
+
     data class Item(
         val rawText: String,
         val profile: VoiceProfile,
@@ -149,8 +153,8 @@ object AudioPipeline {
             // Apply pitch shift via playback rate
             // AudioTrack can adjust playback rate to shift pitch within limits
             val shiftedRate = (sampleRate * pitch).toInt().coerceIn(
-                AudioTrack.SAMPLE_RATE_HZ_MIN,
-                AudioTrack.SAMPLE_RATE_HZ_MAX
+                AUDIO_TRACK_MIN_SAMPLE_RATE_HZ,
+                AUDIO_TRACK_MAX_SAMPLE_RATE_HZ
             )
             track.playbackRate = shiftedRate
 

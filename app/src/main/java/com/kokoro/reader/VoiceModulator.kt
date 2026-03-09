@@ -117,16 +117,10 @@ object VoiceModulator {
             base + msgSignal * traj               // addition
     }
 
-        private fun trajectoryMultiplier(t: Trajectory) = when (t) {
+    private fun trajectoryMultiplier(t: Trajectory) = when (t) {
         Trajectory.FLAT      -> 1.0f
         Trajectory.BUILDING  -> 1.3f
         Trajectory.PEAKED    -> 1.6f
         Trajectory.COLLAPSED -> 0.7f  // exhausted, not amplified
     }
-
-    // Addition: only one side has intensity
-    private fun add(base: Float, delta: Float) = base + delta
-
-    // Multiplication: both sides have it — resonance
-    private fun multiply(base: Float, factor: Float) = base * (1f + factor)
 }

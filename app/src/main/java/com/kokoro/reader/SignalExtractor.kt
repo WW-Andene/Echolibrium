@@ -14,6 +14,8 @@ object SignalExtractor {
     private val LOVE_EMOJI   = setOf("❤️","💕","💖","💗","💓","💞","💘","💝","🥰","😍","😘","💋","🫶","🤍","💙","💛","💚","💜","🖤")
     private val SHOCK_EMOJI  = setOf("😱","😳","🫢","😮","😯","😲","🤯","👀","‼️","⁉️")
 
+    private val NUMERIC_SENDER_RE = Regex(".*\\d{5,}.*")
+
     // ── Game app patterns ─────────────────────────────────────────────────────
     private val GAME_PACKAGES = listOf("game","clash","blizzard","supercell","king","zynga","epic","roblox","minecraft","brave","souls","brawl","legends","pubg","fortnite","pokemon","candy","farm")
     private val GAME_WORDS    = listOf("energy","stamina","attack","raid","base","clan","guild","level","xp","reward","chest","loot","battle","arena","league","village","city","troops","spell","hero","quest","mission","daily","bonus")
@@ -90,7 +92,7 @@ object SignalExtractor {
             else -> SenderType.UNKNOWN
         }
 
-        val isUnknown = title.matches(Regex(".*\\d{5,}.*")) || // number-only "sender"
+        val isUnknown = title.matches(NUMERIC_SENDER_RE) || // number-only "sender"
                         title.contains("unknown", ignoreCase = true) ||
                         title.isBlank()
 

@@ -33,8 +33,8 @@ object VoiceDownloadManager {
     @Volatile var progressPercent: Int = 0
     @Volatile var errorMessage: String = ""
 
-    private var progressCallback: ((Int) -> Unit)? = null
-    private var stateCallback: ((State) -> Unit)? = null
+    @Volatile private var progressCallback: ((Int) -> Unit)? = null
+    @Volatile private var stateCallback: ((State) -> Unit)? = null
 
     fun onProgress(cb: (Int) -> Unit) { progressCallback = cb }
     fun onStateChange(cb: (State) -> Unit) { stateCallback = cb }
@@ -131,20 +131,23 @@ object VoiceDownloadManager {
         val totalBytes = conn.contentLengthLong.takeIf { it > 0 } ?: -1L
         var downloadedBytes = 0L
 
-        conn.inputStream.use { input ->
-            dest.outputStream().use { output ->
-                val buf = ByteArray(32 * 1024)
-                var n: Int
-                while (input.read(buf).also { n = it } != -1) {
-                    output.write(buf, 0, n)
-                    downloadedBytes += n
-                    if (totalBytes > 0) {
-                        onProgress(((downloadedBytes * 100) / totalBytes).toInt())
+        try {
+            conn.inputStream.use { input ->
+                dest.outputStream().use { output ->
+                    val buf = ByteArray(32 * 1024)
+                    var n: Int
+                    while (input.read(buf).also { n = it } != -1) {
+                        output.write(buf, 0, n)
+                        downloadedBytes += n
+                        if (totalBytes > 0) {
+                            onProgress(((downloadedBytes * 100) / totalBytes).toInt())
+                        }
                     }
                 }
             }
+        } finally {
+            conn.disconnect()
         }
-        conn.disconnect()
     }
 
     private fun extract(tarBz2: File, destDir: File) {

@@ -77,6 +77,7 @@ object SherpaEngine {
      * @param sid    Speaker ID (from KokoroVoice.sid)
      * @param speed  Playback speed (1.0 = normal)
      */
+    @Synchronized
     fun synthesize(text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? {
         val engine = tts ?: return null
         return try {
@@ -84,7 +85,7 @@ object SherpaEngine {
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
         } catch (e: Exception) {
-            Log.e(TAG, "Synthesis failed: ${e.message}")
+            Log.e(TAG, "Synthesis failed", e)
             null
         }
     }

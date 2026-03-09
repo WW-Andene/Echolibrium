@@ -177,6 +177,188 @@ class ProfilesFragment : Fragment() {
         }
     }
 
+    private fun buildCommentaryEditor() {
+        val v = view ?: return
+        val container = v.findViewById<LinearLayout>(R.id.commentary_pools_container)
+        container.removeAllViews()
+
+        currentProfile.commentaryPools.forEachIndexed { idx, pool ->
+            container.addView(buildPoolCard(pool, idx))
+        }
+
+        v.findViewById<Button>(R.id.btn_add_pre_comment).setOnClickListener {
+            showAddPoolDialog("pre")
+        }
+        v.findViewById<Button>(R.id.btn_add_post_comment).setOnClickListener {
+            showAddPoolDialog("post")
+        }
+    }
+
+    private fun buildPoolCard(pool: CommentaryPool, idx: Int): View {
+        val card = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF111111.toInt()); setPadding(14, 12, 14, 12)
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, 0, 0, 6); layoutParams = lp
+        }
+
+        // Header: position badge + condition label + delete
+        val header = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        val posBadge = TextView(requireContext()).apply {
+            text = if (pool.position == "pre") "BEFORE" else "AFTER"
+            textSize = 10f; setPadding(10, 4, 10, 4)
+            setBackgroundColor(if (pool.position == "pre") 0xFF1a3a2a.toInt() else 0xFF1a2a3a.toInt())
+            setTextColor(if (pool.position == "pre") 0xFF00ff88.toInt() else 0xFF00ccff.toInt())
+        }
+        val condLabel = TextView(requireContext()).apply {
+            text = "  ${pool.condition.label()}"
+            textSize = 12f; setTextColor(0xFF888888.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val freqLabel = TextView(requireContext()).apply {
+            text = "${pool.frequency}%"; textSize = 11f; setTextColor(0xFFffaa44.toInt())
+            setPadding(0, 0, 10, 0)
+        }
+        val btnDel = Button(requireContext()).apply {
+            text = "✕"; textSize = 11f; setTextColor(0xFFff4444.toInt())
+            setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 4, 12, 4)
+            setOnClickListener {
+                val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
+                currentProfile = currentProfile.copy(commentaryPools = updated)
+                buildCommentaryEditor()
+            }
+        }
+        header.addView(posBadge); header.addView(condLabel); header.addView(freqLabel); header.addView(btnDel)
+        card.addView(header)
+
+        // Frequency slider
+        val seekFreq = SeekBar(requireContext()).apply {
+            max = 100; progress = pool.frequency
+            progressTintList = android.content.res.ColorStateList.valueOf(0xFFffaa44.toInt())
+            thumbTintList = android.content.res.ColorStateList.valueOf(0xFFffaa44.toInt())
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, 8, 0, 8); layoutParams = lp
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, pv: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        freqLabel.text = "$pv%"
+                        val updated = currentProfile.commentaryPools.toMutableList()
+                        updated[idx] = pool.copy(frequency = pv)
+                        currentProfile = currentProfile.copy(commentaryPools = updated)
+                    }
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        card.addView(seekFreq)
+
+        // Lines
+        val linesContainer = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+        val lines = pool.lines.toMutableList()
+
+        fun renderLines() {
+            linesContainer.removeAllViews()
+            lines.forEachIndexed { li, line ->
+                val row = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL; setPadding(0, 3, 0, 3)
+                }
+                val et = android.widget.EditText(requireContext()).apply {
+                    setText(line); hint = "Say something..."; textSize = 12f
+                    setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
+                    setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 6, 10, 6)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    addTextChangedListener(object : android.text.TextWatcher {
+                        override fun afterTextChanged(s: android.text.Editable?) {
+                            lines[li] = s.toString()
+                            val updatedPools = currentProfile.commentaryPools.toMutableList()
+                            updatedPools[idx] = pool.copy(lines = lines.toList())
+                            currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                        }
+                        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    })
+                }
+                val del = Button(requireContext()).apply {
+                    text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
+                    setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
+                    setOnClickListener {
+                        lines.removeAt(li)
+                        val updatedPools = currentProfile.commentaryPools.toMutableList()
+                        updatedPools[idx] = pool.copy(lines = lines.toList())
+                        currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                        renderLines()
+                    }
+                }
+                row.addView(et); row.addView(del); linesContainer.addView(row)
+            }
+        }
+        renderLines()
+        card.addView(linesContainer)
+
+        val btnAddLine = Button(requireContext()).apply {
+            text = "+ line"; textSize = 11f; setTextColor(0xFF00ff88.toInt())
+            setBackgroundColor(0xFF1a2a1a.toInt()); setPadding(14, 4, 14, 4)
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, 6, 0, 0); layoutParams = lp
+            setOnClickListener {
+                lines.add("")
+                val updatedPools = currentProfile.commentaryPools.toMutableList()
+                updatedPools[idx] = pool.copy(lines = lines.toList())
+                currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                renderLines()
+            }
+        }
+        card.addView(btnAddLine)
+        return card
+    }
+
+    private fun showAddPoolDialog(position: String) {
+        val ctx = requireContext()
+        val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 10)
+        }
+
+        val condTypes = arrayOf("always", "app", "sender", "keyword", "time", "flood")
+        val condLabels = arrayOf("Always", "App (e.g. whatsapp)", "Sender name", "Text keyword (e.g. ?)", "Time range (e.g. 22-06)", "After N notifications")
+        var selectedType = "always"
+
+        val typeSpinner = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, condLabels)
+        }
+        val valueInput = android.widget.EditText(ctx).apply {
+            hint = "Condition value (if needed)"; textSize = 13f
+            visibility = View.GONE
+        }
+        typeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                selectedType = condTypes[pos]
+                valueInput.visibility = if (selectedType == "always") View.GONE else View.VISIBLE
+                valueInput.hint = condLabels[pos]
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        layout.addView(typeSpinner)
+        layout.addView(valueInput)
+
+        AlertDialog.Builder(ctx)
+            .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
+            .setView(layout)
+            .setPositiveButton("Add") { _, _ ->
+                val condition = CommentaryCondition(selectedType, valueInput.text.toString().trim())
+                val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
+                val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
+                currentProfile = currentProfile.copy(commentaryPools = updated)
+                buildCommentaryEditor()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun buildGimmicksEditor() {
         gimmicksContainer.removeAllViews()
         val allTypes = listOf("giggle","sigh","huh","mmm","woah","ugh","aww","gasp","yawn","hmm","laugh","tsk")
@@ -338,6 +520,7 @@ class ProfilesFragment : Fragment() {
         attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: $it" }
         attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: $it%" }
 
+        buildCommentaryEditor()
         buildGimmicksEditor()
         renderVoiceGrid()
     }

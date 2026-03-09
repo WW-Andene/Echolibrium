@@ -25,15 +25,12 @@ jobs:
           curl -L "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar"
 
-      # Download SherpaTTS engine APK (arm64-v8a) for bundling with release
-      # Users need this TTS engine installed for Kokoro Reader to work
-      - name: Download SherpaTTS APK
+      # Assemble SherpaTTS engine APK from the split zip files in the repo
+      # (uploaded by maintainer as Sherpa_base1.zip + Sherpa_base2.zip + Sherpa_base3.zip)
+      - name: Assemble SherpaTTS APK from repo
         run: |
-          VERSION="1.12.28"
-          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-${VERSION}-arm64-v8a.apk"
-          echo "Downloading SherpaTTS APK from $URL"
-          curl -L "$URL" -o SherpaTTS-arm64-v8a.apk
-          echo "SherpaTTS APK downloaded"
+          cat Sherpa_base1.zip Sherpa_base2.zip Sherpa_base3.zip > SherpaTTS-arm64-v8a.apk
+          echo "SherpaTTS APK assembled from repo zip parts ($(stat -c%s SherpaTTS-arm64-v8a.apk) bytes)"
 
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease

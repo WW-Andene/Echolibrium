@@ -68,10 +68,13 @@ class ProfilesFragment : Fragment() {
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
         val label = v.findViewById<TextView>(labelId)
         val section = v.findViewById<View>(sectionId)
+        label.contentDescription = "$title, collapsed. Tap to expand."
         label.setOnClickListener {
             val expanded = section.visibility == View.VISIBLE
             section.visibility = if (expanded) View.GONE else View.VISIBLE
             label.text = "${if (expanded) "▸" else "▾"} $title"
+            label.contentDescription = if (expanded) "$title, collapsed. Tap to expand."
+                else "$title, expanded. Tap to collapse."
         }
     }
 

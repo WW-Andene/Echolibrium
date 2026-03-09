@@ -71,28 +71,25 @@ object AudioDsp {
         }
     }
 
-    // Compute per-sample RMS envelope (normalised 0-1) with a smoothing window
+    // Compute per-sample RMS envelope (normalised 0-1) with a trailing sliding window
     private fun computeEnvelope(samples: FloatArray, windowSize: Int): FloatArray {
         val envelope = FloatArray(samples.size)
         var sumSq = 0f
-        val half = windowSize / 2
-
-        // Seed with first window
-        for (i in 0 until minOf(windowSize, samples.size)) {
-            sumSq += samples[i] * samples[i]
-        }
         var maxRms = 0f
 
         for (i in samples.indices) {
-            // Slide window
-            if (i >= half && i - half < samples.size) {
-                sumSq -= samples[i - half] * samples[i - half]
+            // Add the incoming sample
+            sumSq += samples[i] * samples[i]
+            // Remove the sample that has fallen out of the window
+            if (i >= windowSize) {
+                sumSq -= samples[i - windowSize] * samples[i - windowSize]
             }
-            val addIdx = i + half
-            if (addIdx < samples.size) {
-                sumSq += samples[addIdx] * samples[addIdx]
-            }
-            val rms = sqrt((sumSq / windowSize).coerceAtLeast(0f))
+            // Guard against floating-point underflow producing a negative sumSq
+            sumSq = sumSq.coerceAtLeast(0f)
+            // During the first windowSize samples the window hasn't filled yet,
+            // so divide by the actual number of samples accumulated so far.
+            val count = minOf(i + 1, windowSize)
+            val rms = sqrt(sumSq / count)
             envelope[i] = rms
             if (rms > maxRms) maxRms = rms
         }

@@ -48,8 +48,7 @@
         <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginBottom="16dp">
             <LinearLayout android:id="@+id/voice_grid" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:orientation="horizontal"
-                android:flexWrap="wrap"/>
+                android:layout_height="wrap_content" android:orientation="horizontal"/>
         </HorizontalScrollView>
 
         <!-- Pitch & Speed -->

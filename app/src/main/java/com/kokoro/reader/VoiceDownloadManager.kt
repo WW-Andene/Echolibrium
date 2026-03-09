@@ -116,24 +116,23 @@ object VoiceDownloadManager {
         stateCallback?.invoke(s)
     }
 
-    private fun copyAssetsRecursive(ctx: Context, assetPath: String, destDir: File) {
+    private fun copyAssetsRecursive(ctx: Context, assetPath: String, dest: File) {
         val assetManager = ctx.assets
         val entries = assetManager.list(assetPath) ?: return
 
         if (entries.isEmpty()) {
-            // It's a file — copy it
-            val destFile = destDir
-            destFile.parentFile?.mkdirs()
+            // It's a file — copy it to dest
+            dest.parentFile?.mkdirs()
             assetManager.open(assetPath).use { input ->
-                destFile.outputStream().use { output ->
+                dest.outputStream().use { output ->
                     input.copyTo(output, bufferSize = 32 * 1024)
                 }
             }
         } else {
-            // It's a directory — recurse
-            destDir.mkdirs()
+            // It's a directory — recurse into each child
+            dest.mkdirs()
             for (entry in entries) {
-                copyAssetsRecursive(ctx, "$assetPath/$entry", File(destDir, entry))
+                copyAssetsRecursive(ctx, "$assetPath/$entry", File(dest, entry))
             }
         }
     }

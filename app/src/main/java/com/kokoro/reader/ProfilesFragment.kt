@@ -588,7 +588,7 @@ class ProfilesFragment : Fragment() {
     private fun setupButtons() {
         btnTest.setOnClickListener {
             if (!SherpaEngine.isReady) {
-                Toast.makeText(context, "Voice engine still loading — please wait.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val p = readProfileFromUI()

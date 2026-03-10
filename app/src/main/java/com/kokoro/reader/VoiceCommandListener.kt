@@ -18,7 +18,7 @@ import androidx.preference.PreferenceManager
  * The mic only triggers action when the profile name is heard first,
  * preventing the constant beep from SpeechRecognizer's ready sound.
  *
- * Commands: "repeat", "how long ago?", "stop", "what time?"
+ * Commands: "repeat", "how long ago?", "stop", "what time?", "how are you feeling?"
  */
 object VoiceCommandListener {
 

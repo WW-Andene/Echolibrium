@@ -19,6 +19,9 @@ import androidx.preference.PreferenceManager
  *
  *   • "what time is it?" / "what's the time?"
  *     → Speaks the current time
+ *
+ *   • "how are you feeling?" / "how are you?" / "what's your mood?"
+ *     → Describes the current MoodState in natural language
  */
 object VoiceCommandHandler {
 
@@ -44,6 +47,11 @@ object VoiceCommandHandler {
         "what time is it", "what's the time", "tell me the time", "current time"
     )
 
+    private val MOOD_TRIGGERS = listOf(
+        "how are you feeling", "how are you", "what's your mood",
+        "how do you feel", "what mood", "your mood", "how you feeling"
+    )
+
     /**
      * Try to match recognized speech against known commands.
      * @param ctx Application context
@@ -56,6 +64,7 @@ object VoiceCommandHandler {
 
         return when {
             matchesAny(normalized, REPEAT_TRIGGERS) -> { handleRepeat(ctx); true }
+            matchesAny(normalized, MOOD_TRIGGERS) -> { handleMood(ctx); true }
             matchesAny(normalized, TIME_AGO_TRIGGERS) -> { handleTimeAgo(ctx); true }
             matchesAny(normalized, STOP_TRIGGERS) -> { handleStop(); true }
             matchesAny(normalized, TIME_TRIGGERS) -> { handleTime(ctx); true }
@@ -102,6 +111,62 @@ object VoiceCommandHandler {
         val timeStr = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
         speak(ctx, "It is $timeStr.")
         Log.d(TAG, "Handled: time command")
+    }
+
+    private fun handleMood(ctx: Context) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val profiles = VoiceProfile.loadAll(prefs)
+        val profileId = prefs.getString("active_profile_id", "") ?: ""
+        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
+        val mood = MoodState.load(prefs).decayed(profile.sensitivity.moodDecayRate)
+        speak(ctx, describeMood(mood))
+        Log.d(TAG, "Handled: mood command (v=${mood.valence}, a=${mood.arousal}, s=${mood.stability})")
+    }
+
+    /**
+     * Convert MoodState dimensions into a natural-language description.
+     * Combines valence (positive/negative), arousal (energized/tired),
+     * and stability (steady/volatile) into a single spoken sentence.
+     */
+    private fun describeMood(mood: MoodState): String {
+        // Valence descriptor
+        val valenceWord = when {
+            mood.valence > 0.6f  -> "really good"
+            mood.valence > 0.3f  -> "pretty positive"
+            mood.valence > 0.1f  -> "okay"
+            mood.valence > -0.1f -> "neutral"
+            mood.valence > -0.3f -> "a little off"
+            mood.valence > -0.6f -> "not great"
+            else                 -> "pretty rough"
+        }
+
+        // Arousal descriptor
+        val arousalWord = when {
+            mood.arousal > 0.8f  -> "wired"
+            mood.arousal > 0.6f  -> "alert"
+            mood.arousal > 0.4f  -> "awake"
+            mood.arousal > 0.2f  -> "a bit tired"
+            else                 -> "exhausted"
+        }
+
+        // Stability descriptor (only mention if notably unstable)
+        val stabilityNote = when {
+            mood.stability < 0.3f -> " and honestly a bit all over the place"
+            mood.stability < 0.5f -> " and kind of unsettled"
+            else -> ""
+        }
+
+        // Session count context
+        val countNote = when {
+            mood.sessionCount == 0 -> "Haven't read anything yet today."
+            mood.sessionCount < 5  -> "Only read a few so far."
+            mood.sessionCount < 20 -> ""
+            mood.sessionCount < 50 -> "It's been a busy day."
+            else                   -> "It's been nonstop today."
+        }
+
+        val base = "I'm feeling $valenceWord. Energy-wise, $arousalWord$stabilityNote."
+        return if (countNote.isNotEmpty()) "$base $countNote" else base
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

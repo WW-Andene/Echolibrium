@@ -72,8 +72,12 @@ class HomeFragment : Fragment() {
             updateVoiceCommandStatus(voiceCmdStatus)
         }
 
-        VoiceCommandListener.onStatusChanged = { listening ->
-            activity?.runOnUiThread { updateVoiceCommandStatus(voiceCmdStatus) }
+        VoiceCommandListener.onStatusChanged = { _ ->
+            activity?.runOnUiThread {
+                if (isAdded) view?.findViewById<TextView>(R.id.voice_command_status)?.let {
+                    updateVoiceCommandStatus(it)
+                }
+            }
         }
 
         // Start voice commands if enabled and permission granted

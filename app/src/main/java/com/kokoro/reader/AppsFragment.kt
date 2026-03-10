@@ -51,14 +51,14 @@ class AppsFragment : Fragment() {
                 if (!isAdded) return@runOnUiThread
                 rules.addAll(newRules)
                 if (rules.isEmpty()) {
-                    Toast.makeText(ctx, "No user apps found.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context ?: return@runOnUiThread, "No user apps found.", Toast.LENGTH_SHORT).show()
                 }
                 AppRule.saveAll(rules, prefs)
                 renderRules()
                 btn.isEnabled = true
                 btn.text = "RELOAD APPS"
             }
-        }.start()
+        }.apply { name = "AppsFragment-load"; isDaemon = true; start() }
     }
 
     private fun renderRules() {

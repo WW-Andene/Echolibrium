@@ -39,10 +39,13 @@ object VoiceCommandListener {
     var onStatusChanged: ((Boolean) -> Unit)? = null
 
     fun start(ctx: Context) {
-        if (isListening) return
-        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
-            Log.w(TAG, "Speech recognition not available on this device")
-            return
+        synchronized(this) {
+            if (isListening) return
+            if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
+                Log.w(TAG, "Speech recognition not available on this device")
+                return
+            }
+            isListening = true
         }
 
         // Load the active profile name as the wake word
@@ -53,7 +56,6 @@ object VoiceCommandListener {
                 val sr = SpeechRecognizer.createSpeechRecognizer(ctx.applicationContext)
                 sr.setRecognitionListener(CommandRecognitionListener(ctx.applicationContext))
                 recognizer = sr
-                isListening = true
                 onStatusChanged?.invoke(true)
                 startListeningInternal()
                 Log.d(TAG, "Voice command listener started (wake word: '$wakeWord')")

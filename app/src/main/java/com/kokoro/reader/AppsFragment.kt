@@ -21,7 +21,8 @@ class AppsFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         try {
-            prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            val ctx = context ?: return
+            prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
             container = v.findViewById(R.id.apps_container)
             rules = AppRule.loadAll(prefs)
             profiles = VoiceProfile.loadAll(prefs)
@@ -56,30 +57,46 @@ class AppsFragment : Fragment() {
 
         val ctx = context?.applicationContext ?: return
         Thread {
-            val pm = ctx.packageManager
-            val apps = try {
-                @Suppress("DEPRECATION") pm.getInstalledApplications(0)
-            } catch (e: Exception) { emptyList() }
+            try {
+                val pm = ctx.packageManager
+                val apps = try {
+                    @Suppress("DEPRECATION") pm.getInstalledApplications(0)
+                } catch (e: Exception) { emptyList() }
 
-            val newRules = apps
-                .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
-                .sortedBy { try { pm.getApplicationLabel(it).toString().lowercase() } catch (e: Exception) { it.packageName } }
-                .mapNotNull { info ->
-                    val pkg = info.packageName
-                    val label = try { pm.getApplicationLabel(info).toString() } catch (e: Exception) { pkg }
-                    if (rules.none { it.packageName == pkg }) AppRule(packageName = pkg, appLabel = label) else null
-                }
+                val newRules = apps
+                    .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
+                    .sortedBy { try { pm.getApplicationLabel(it).toString().lowercase() } catch (e: Exception) { it.packageName } }
+                    .mapNotNull { info ->
+                        val pkg = info.packageName
+                        val label = try { pm.getApplicationLabel(info).toString() } catch (e: Exception) { pkg }
+                        if (rules.none { it.packageName == pkg }) AppRule(packageName = pkg, appLabel = label) else null
+                    }
 
-            activity?.runOnUiThread {
-                if (!isAdded) return@runOnUiThread
-                rules.addAll(newRules)
-                if (rules.isEmpty()) {
-                    Toast.makeText(context ?: return@runOnUiThread, "No user apps found.", Toast.LENGTH_SHORT).show()
+                activity?.runOnUiThread {
+                    try {
+                        if (!isAdded || view == null) return@runOnUiThread
+                        rules.addAll(newRules)
+                        if (rules.isEmpty()) {
+                            Toast.makeText(context ?: return@runOnUiThread, "No user apps found.", Toast.LENGTH_SHORT).show()
+                        }
+                        AppRule.saveAll(rules, prefs)
+                        renderRules()
+                        btn.isEnabled = true
+                        btn.text = "RELOAD APPS"
+                    } catch (e: Exception) {
+                        android.util.Log.e("AppsFragment", "Error updating UI after app load", e)
+                    }
                 }
-                AppRule.saveAll(rules, prefs)
-                renderRules()
-                btn.isEnabled = true
-                btn.text = "RELOAD APPS"
+            } catch (e: Exception) {
+                android.util.Log.e("AppsFragment", "Error loading installed apps", e)
+                activity?.runOnUiThread {
+                    try {
+                        if (isAdded && view != null) {
+                            btn.isEnabled = true
+                            btn.text = "RELOAD APPS"
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }.apply { name = "AppsFragment-load"; isDaemon = true; start() }
     }

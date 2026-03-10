@@ -50,7 +50,8 @@ class HomeFragment : Fragment() {
     }
 
     private fun initializeViews(v: View) {
-        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        val ctx = context ?: return
+        prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val statusText       = v.findViewById<TextView>(R.id.status_text)
         val serviceStatusText = v.findViewById<TextView>(R.id.service_status_text)
         val btnPermission    = v.findViewById<Button>(R.id.btn_permission)
@@ -68,7 +69,7 @@ class HomeFragment : Fragment() {
         val btnStop          = v.findViewById<Button>(R.id.btn_stop)
 
         // Eagerly warm up the voice engine so it's ready when user wants to test
-        SherpaEngine.warmUp(requireContext().applicationContext)
+        SherpaEngine.warmUp(ctx.applicationContext)
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         btnPermission.setOnClickListener {
@@ -118,7 +119,7 @@ class HomeFragment : Fragment() {
 
         val modes = arrayOf("Full (App + Title + Text)", "App + Title", "App name only", "Text only")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only")
-        spinnerMode.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
+        spinnerMode.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, modes)
         spinnerMode.setSelection(modeVals.indexOf(prefs.getString("read_mode", "full")).coerceAtLeast(0))
         spinnerMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v2: View?, pos: Int, id: Long) {

@@ -39,17 +39,28 @@ class ReaderApplication : Application() {
      */
     private fun ensureLogDirectories() {
         try {
-            // App-private: /storage/emulated/0/Android/data/<pkg>/files/Kyōkan/Logs/
-            val appPrivateDir = getExternalFilesDir(null)
-            if (appPrivateDir != null) {
-                File(appPrivateDir, "Kyōkan/Logs").mkdirs()
+            // Internal storage (always available, no permission needed)
+            File(filesDir, "Kyōkan/Logs").mkdirs()
+
+            // App-private external: /storage/emulated/0/Android/data/<pkg>/files/Kyōkan/Logs/
+            try {
+                val appPrivateDir = getExternalFilesDir(null)
+                if (appPrivateDir != null) {
+                    File(appPrivateDir, "Kyōkan/Logs").mkdirs()
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Could not create app-private log directory", e)
             }
 
             // Shared storage: /storage/emulated/0/Kyōkan/Logs/
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-                File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR).mkdirs()
-            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR).mkdirs()
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+                    File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR).mkdirs()
+                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                    File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR).mkdirs()
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Could not create shared log directory", e)
             }
         } catch (e: Throwable) {
             Log.w(TAG, "Could not create log directories", e)

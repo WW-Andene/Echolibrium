@@ -75,8 +75,7 @@ class NotificationReaderService : NotificationListenerService() {
         try {
             instance = this
             AudioPipeline.start(this)
-            // Eagerly warm up the TTS engine so first synthesis has zero lag
-            SherpaEngine.warmUp(this)
+            // TTS engine initializes lazily on first notification (avoids native crash on startup)
             // Load persisted mood state
             currentMood = MoodState.load(prefs)
             // Start foreground notification to keep the service alive in background

@@ -89,8 +89,15 @@ object SherpaEngine {
     @Synchronized
     fun initializeKokoro(ctx: Context): Boolean {
         if (isReady && kokoroTts != null) return true
+
+        // Lazy extraction: extract assets on first use if not already done
         if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.w(TAG, "Kokoro model not extracted yet")
+            Log.d(TAG, "Model not extracted yet — extracting now")
+            VoiceDownloadManager.ensureModelSync(ctx)
+            PiperVoiceManager.extractBundledVoicesSync(ctx)
+        }
+        if (!VoiceDownloadManager.isModelReady(ctx)) {
+            Log.w(TAG, "Kokoro model extraction failed")
             return false
         }
 

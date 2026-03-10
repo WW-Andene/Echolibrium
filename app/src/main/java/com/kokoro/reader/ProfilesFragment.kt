@@ -373,7 +373,11 @@ class ProfilesFragment : Fragment() {
                                 val appCtx = context?.applicationContext ?: return@setOnClickListener
                                 Thread {
                                     SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
-                                }.apply { name = "PiperPreload-${c.voiceId}"; isDaemon = true; start() }
+                                }.apply {
+                                    name = "PiperPreload-${c.voiceId}"
+                                    isDaemon = true
+                                    start()
+                                }
                             }
                         } else {
                             // Piper voice not downloaded — trigger download
@@ -493,7 +497,8 @@ class ProfilesFragment : Fragment() {
             setOnClickListener {
                 val pools = currentProfile.commentaryPools
                 if (idx >= 0 && idx < pools.size) {
-                    val updated = pools.toMutableList().also { if (idx < it.size) it.removeAt(idx) }
+                    val updated = pools.toMutableList()
+                    updated.removeAt(idx)
                     currentProfile = currentProfile.copy(commentaryPools = updated)
                     buildCommentaryEditor()
                 }

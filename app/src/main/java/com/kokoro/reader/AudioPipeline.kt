@@ -28,6 +28,7 @@ object AudioPipeline {
     // AudioTrack.SAMPLE_RATE_HZ_MIN / MAX are @hide in the public SDK; use literal values.
     private const val AUDIO_TRACK_MIN_SAMPLE_RATE_HZ = 4000
     private const val AUDIO_TRACK_MAX_SAMPLE_RATE_HZ = 192000
+    private const val DEFAULT_PITCH = 1.0f
 
     data class Item(
         val rawText: String,
@@ -218,7 +219,7 @@ object AudioPipeline {
             Log.e(TAG, "Invalid sample rate: $sampleRate — skipping playback")
             return
         }
-        val safePitch = if (pitch.isNaN() || pitch.isInfinite() || pitch <= 0f) 1.0f else pitch
+        val safePitch = if (pitch.isNaN() || pitch.isInfinite() || pitch <= 0f) DEFAULT_PITCH else pitch
         val bufferBytes = samples.size * 4  // Float = 4 bytes
 
         val track = try {

@@ -167,8 +167,11 @@ object VoiceCommandListener {
             if (isListening) {
                 mainHandler.postDelayed({
                     if (isListening) {
-                        try { startListeningInternal() }
-                        catch (e: Exception) { Log.e(TAG, "Error restarting after error", e) }
+                        try {
+                            startListeningInternal()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error restarting after error", e)
+                        }
                     }
                 }, 3000L)
             }

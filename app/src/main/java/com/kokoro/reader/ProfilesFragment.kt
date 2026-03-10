@@ -367,7 +367,7 @@ class ProfilesFragment : Fragment() {
                             if (piperVoice != null) {
                                 PiperVoiceManager.downloadVoice(ctx.applicationContext, piperVoice)
                                 renderVoiceGrid()
-                                Toast.makeText(context, "Downloading ${piperVoice.displayName}…", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, "Downloading ${piperVoice.displayName}…", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -612,25 +612,27 @@ class ProfilesFragment : Fragment() {
         }
         typeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                selectedType = conditions[pos].first
+                selectedType = conditions.getOrNull(pos)?.first ?: return
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
         layout.addView(typeSpinner)
 
-        AlertDialog.Builder(ctx)
-            .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
-            .setView(layout)
-            .setPositiveButton("Add") { _, _ ->
-                val condition = CommentaryCondition(selectedType)
-                val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
-                val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
-                currentProfile = currentProfile.copy(commentaryPools = updated)
-                buildCommentaryEditor()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        try {
+            AlertDialog.Builder(ctx)
+                .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
+                .setView(layout)
+                .setPositiveButton("Add") { _, _ ->
+                    val condition = CommentaryCondition(selectedType)
+                    val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
+                    val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
+                    currentProfile = currentProfile.copy(commentaryPools = updated)
+                    buildCommentaryEditor()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } catch (_: Exception) {}
     }
 
     private fun buildGimmicksEditor() {
@@ -736,20 +738,20 @@ class ProfilesFragment : Fragment() {
 
     private fun setupButtons() {
         btnTest.setOnClickListener {
+            val ctx = context ?: return@setOnClickListener
             if (!SherpaEngine.isReady) {
-                Toast.makeText(context, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val p = readProfileFromUI()
             val rules = loadWordingRules()
             val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
             // Use AudioPipeline directly — works without notification service
-            val ctx = context ?: return@setOnClickListener
             AudioPipeline.testSpeak(ctx.applicationContext, text, p, rules)
         }
         btnStop.setOnClickListener {
             AudioPipeline.stop()
-            Toast.makeText(context, "Stopped", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context ?: return@setOnClickListener, "Stopped", Toast.LENGTH_SHORT).show()
         }
         btnResetSettings.setOnClickListener {
             loadProfileToUI(currentProfile.copy(
@@ -759,34 +761,38 @@ class ProfilesFragment : Fragment() {
                 intonationIntensity = 0, intonationVariation = 0.5f,
                 gimmicks = emptyList()
             ))
-            Toast.makeText(context, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context ?: return@setOnClickListener, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
         }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
             val idx = profiles.indexOfFirst { it.id == p.id }
             if (idx >= 0) profiles[idx] = p else profiles.add(p)
             VoiceProfile.saveAll(profiles, prefs)
-            Toast.makeText(context, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context ?: return@setOnClickListener, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
         }
         btnNew.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
             val et = EditText(ctx).apply { hint = "Profile name" }
-            AlertDialog.Builder(ctx).setTitle("New Profile").setView(et)
-                .setPositiveButton("Create") { _, _ ->
-                    val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
-                    val p = VoiceProfile(name = name)
-                    profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
-                    setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
-                }.setNegativeButton("Cancel", null).show()
+            try {
+                AlertDialog.Builder(ctx).setTitle("New Profile").setView(et)
+                    .setPositiveButton("Create") { _, _ ->
+                        val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
+                        val p = VoiceProfile(name = name)
+                        profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
+                        setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
+                    }.setNegativeButton("Cancel", null).show()
+            } catch (_: Exception) {}
         }
         btnDelete.setOnClickListener {
-            if (profiles.size <= 1) { Toast.makeText(context, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (profiles.size <= 1) { Toast.makeText(context ?: return@setOnClickListener, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val ctx = context ?: return@setOnClickListener
-            AlertDialog.Builder(ctx).setTitle("Delete ${currentProfile.name}?")
-                .setPositiveButton("Delete") { _, _ ->
-                    profiles.removeAll { it.id == currentProfile.id }
-                    VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
-                }.setNegativeButton("Cancel", null).show()
+            try {
+                AlertDialog.Builder(ctx).setTitle("Delete ${currentProfile.name}?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        profiles.removeAll { it.id == currentProfile.id }
+                        VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
+                    }.setNegativeButton("Cancel", null).show()
+            } catch (_: Exception) {}
         }
         btnRenameVoice.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
@@ -794,27 +800,29 @@ class ProfilesFragment : Fragment() {
                 hint = "Voice nickname (leave empty to clear)"
                 setText(currentProfile.voiceAlias)
             }
-            AlertDialog.Builder(ctx)
-                .setTitle("Rename Voice")
-                .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
-                .setView(et)
-                .setPositiveButton("Save") { _, _ ->
-                    val alias = et.text.toString().trim()
-                    currentProfile = currentProfile.copy(voiceAlias = alias)
-                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                    if (idx >= 0) profiles[idx] = currentProfile
-                    VoiceProfile.saveAll(profiles, prefs)
-                    updateSelectedVoiceBanner()
-                }
-                .setNeutralButton("Clear") { _, _ ->
-                    currentProfile = currentProfile.copy(voiceAlias = "")
-                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                    if (idx >= 0) profiles[idx] = currentProfile
-                    VoiceProfile.saveAll(profiles, prefs)
-                    updateSelectedVoiceBanner()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            try {
+                AlertDialog.Builder(ctx)
+                    .setTitle("Rename Voice")
+                    .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
+                    .setView(et)
+                    .setPositiveButton("Save") { _, _ ->
+                        val alias = et.text.toString().trim()
+                        currentProfile = currentProfile.copy(voiceAlias = alias)
+                        val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                        if (idx >= 0) profiles[idx] = currentProfile
+                        VoiceProfile.saveAll(profiles, prefs)
+                        updateSelectedVoiceBanner()
+                    }
+                    .setNeutralButton("Clear") { _, _ ->
+                        currentProfile = currentProfile.copy(voiceAlias = "")
+                        val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                        if (idx >= 0) profiles[idx] = currentProfile
+                        VoiceProfile.saveAll(profiles, prefs)
+                        updateSelectedVoiceBanner()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            } catch (_: Exception) {}
         }
     }
 

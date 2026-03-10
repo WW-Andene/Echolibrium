@@ -3,6 +3,7 @@ package com.kokoro.reader
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -618,18 +619,22 @@ class ProfilesFragment : Fragment() {
 
         layout.addView(typeSpinner)
 
-        AlertDialog.Builder(ctx)
-            .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
-            .setView(layout)
-            .setPositiveButton("Add") { _, _ ->
-                val condition = CommentaryCondition(selectedType)
-                val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
-                val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
-                currentProfile = currentProfile.copy(commentaryPools = updated)
-                buildCommentaryEditor()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        try {
+            AlertDialog.Builder(ctx)
+                .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
+                .setView(layout)
+                .setPositiveButton("Add") { _, _ ->
+                    val condition = CommentaryCondition(selectedType)
+                    val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
+                    val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
+                    currentProfile = currentProfile.copy(commentaryPools = updated)
+                    buildCommentaryEditor()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } catch (e: Exception) {
+            Log.w("ProfilesFragment", "Failed to show add pool dialog", e)
+        }
     }
 
     private fun buildGimmicksEditor() {
@@ -770,22 +775,30 @@ class ProfilesFragment : Fragment() {
         btnNew.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
             val et = EditText(ctx).apply { hint = "Profile name" }
-            AlertDialog.Builder(ctx).setTitle("New Profile").setView(et)
-                .setPositiveButton("Create") { _, _ ->
-                    val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
-                    val p = VoiceProfile(name = name)
-                    profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
-                    setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
-                }.setNegativeButton("Cancel", null).show()
+            try {
+                AlertDialog.Builder(ctx).setTitle("New Profile").setView(et)
+                    .setPositiveButton("Create") { _, _ ->
+                        val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
+                        val p = VoiceProfile(name = name)
+                        profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
+                        setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
+                    }.setNegativeButton("Cancel", null).show()
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Failed to show new profile dialog", e)
+            }
         }
         btnDelete.setOnClickListener {
             if (profiles.size <= 1) { Toast.makeText(context, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val ctx = context ?: return@setOnClickListener
-            AlertDialog.Builder(ctx).setTitle("Delete ${currentProfile.name}?")
-                .setPositiveButton("Delete") { _, _ ->
-                    profiles.removeAll { it.id == currentProfile.id }
-                    VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
-                }.setNegativeButton("Cancel", null).show()
+            try {
+                AlertDialog.Builder(ctx).setTitle("Delete ${currentProfile.name}?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        profiles.removeAll { it.id == currentProfile.id }
+                        VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
+                    }.setNegativeButton("Cancel", null).show()
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Failed to show delete dialog", e)
+            }
         }
         btnRenameVoice.setOnClickListener {
             val renameCtx = context ?: return@setOnClickListener
@@ -793,27 +806,31 @@ class ProfilesFragment : Fragment() {
                 hint = "Voice nickname (leave empty to clear)"
                 setText(currentProfile.voiceAlias)
             }
-            AlertDialog.Builder(renameCtx)
-                .setTitle("Rename Voice")
-                .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
-                .setView(et)
-                .setPositiveButton("Save") { _, _ ->
-                    val alias = et.text.toString().trim()
-                    currentProfile = currentProfile.copy(voiceAlias = alias)
-                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                    if (idx >= 0) profiles[idx] = currentProfile
-                    VoiceProfile.saveAll(profiles, prefs)
-                    updateSelectedVoiceBanner()
-                }
-                .setNeutralButton("Clear") { _, _ ->
-                    currentProfile = currentProfile.copy(voiceAlias = "")
-                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                    if (idx >= 0) profiles[idx] = currentProfile
-                    VoiceProfile.saveAll(profiles, prefs)
-                    updateSelectedVoiceBanner()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            try {
+                AlertDialog.Builder(renameCtx)
+                    .setTitle("Rename Voice")
+                    .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
+                    .setView(et)
+                    .setPositiveButton("Save") { _, _ ->
+                        val alias = et.text.toString().trim()
+                        currentProfile = currentProfile.copy(voiceAlias = alias)
+                        val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                        if (idx >= 0) profiles[idx] = currentProfile
+                        VoiceProfile.saveAll(profiles, prefs)
+                        updateSelectedVoiceBanner()
+                    }
+                    .setNeutralButton("Clear") { _, _ ->
+                        currentProfile = currentProfile.copy(voiceAlias = "")
+                        val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                        if (idx >= 0) profiles[idx] = currentProfile
+                        VoiceProfile.saveAll(profiles, prefs)
+                        updateSelectedVoiceBanner()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Failed to show rename dialog", e)
+            }
         }
     }
 

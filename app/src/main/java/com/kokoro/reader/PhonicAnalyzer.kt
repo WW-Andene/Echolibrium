@@ -1,8 +1,6 @@
 package com.kokoro.reader
 
-import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sqrt
 

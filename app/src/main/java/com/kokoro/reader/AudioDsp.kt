@@ -176,8 +176,8 @@ object AudioDsp {
             val breathNoise = prevNoise * noiseLevel
 
             // Use landmark energy contour if available (more precise than local envelope)
-            val envValue = if (energyContour != null && i < energyContour.size) {
-                energyContour[i] / (landmarks.dynamicRange.coerceAtLeast(0.01f))
+            val envValue = if (landmarks != null && energyContour != null && i < energyContour.size) {
+                energyContour[i] / landmarks.dynamicRange.coerceAtLeast(0.01f)
             } else {
                 envelope[i]
             }

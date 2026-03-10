@@ -26,7 +26,15 @@ class ReaderApplication : Application() {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             Log.e(TAG, "Uncaught exception on thread '${thread.name}'", throwable)
-            // Delegate to the default handler (shows crash dialog, kills process)
+            // For daemon/background threads, absorb the crash instead of killing the app.
+            // These threads (e.g. AudioPipeline-loop, SherpaEngine-warmup, PiperPreload-*)
+            // are isolated workers — their failure should not take down the UI.
+            if (thread.isDaemon) {
+                Log.w(TAG, "Daemon thread '${thread.name}' crashed — absorbing to keep app alive")
+                return@setDefaultUncaughtExceptionHandler
+            }
+            // For the main thread and non-daemon threads, delegate to the default handler
+            // so Android shows the standard crash dialog.
             defaultHandler?.uncaughtException(thread, throwable)
         }
     }

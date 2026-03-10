@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectTab(id: Int) {
         try {
+            if (isFinishing || isDestroyed) return
             selectedTabId = id
             val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.green)
             val inactiveColor = androidx.core.content.ContextCompat.getColor(this, R.color.nav_inactive)
@@ -70,6 +71,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadFragment(f: Fragment) {
         try {
+            if (isFinishing || isDestroyed) return
             supportFragmentManager.beginTransaction()
                 .replace(R.id.fragment_container, f)
                 .commitAllowingStateLoss()
@@ -88,8 +90,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun isNotificationAccessGranted(): Boolean {
-        val cn = ComponentName(this, NotificationReaderService::class.java)
-        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
-        return !TextUtils.isEmpty(flat) && flat.contains(cn.flattenToString())
+        return try {
+            val cn = ComponentName(this, NotificationReaderService::class.java)
+            val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
+            !TextUtils.isEmpty(flat) && flat.contains(cn.flattenToString())
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error checking notification access", e)
+            false
+        }
     }
 }

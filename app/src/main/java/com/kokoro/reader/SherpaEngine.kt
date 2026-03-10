@@ -45,7 +45,8 @@ object SherpaEngine {
      */
     @Volatile var onReadyCallback: (() -> Unit)? = null
 
-    @Volatile private var isWarmingUp = false
+    private var isWarmingUp = false
+    private val warmUpLock = Object()
 
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
@@ -56,8 +57,10 @@ object SherpaEngine {
      */
     fun warmUp(ctx: Context) {
         if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
-        if (isWarmingUp) return
-        isWarmingUp = true
+        synchronized(warmUpLock) {
+            if (isWarmingUp) return
+            isWarmingUp = true
+        }
         Thread {
             try {
                 // Step 1: extract Kokoro model from assets
@@ -71,7 +74,7 @@ object SherpaEngine {
             } catch (e: Throwable) {
                 Log.e(TAG, "Warm-up failed", e)
             } finally {
-                isWarmingUp = false
+                synchronized(warmUpLock) { isWarmingUp = false }
             }
         }.apply { isDaemon = true; start() }
     }

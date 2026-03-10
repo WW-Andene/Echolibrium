@@ -62,29 +62,30 @@ class AppsFragment : Fragment() {
     }
 
     private fun renderRules() {
+        val ctx = context ?: return
         container.removeAllViews()
-        rules.forEach { container.addView(buildRow(it)) }
+        rules.forEach { container.addView(buildRow(ctx, it)) }
     }
 
-    private fun buildRow(rule: AppRule): View {
-        val root = LinearLayout(requireContext()).apply {
+    private fun buildRow(ctx: android.content.Context, rule: AppRule): View {
+        val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 0, 3); layoutParams = lp
         }
 
-        val top = LinearLayout(requireContext()).apply {
+        val top = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF111111.toInt()); setPadding(16, 14, 16, 14)
         }
-        val label = TextView(requireContext()).apply {
+        val label = TextView(ctx).apply {
             text = rule.appLabel; textSize = 14f; setTextColor(0xFFcccccc.toInt())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val toggle = SwitchCompat(requireContext()).apply { isChecked = rule.enabled }
+        val toggle = SwitchCompat(ctx).apply { isChecked = rule.enabled }
         top.addView(label); top.addView(toggle); root.addView(top)
 
-        val bottom = LinearLayout(requireContext()).apply {
+        val bottom = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF0d0d0d.toInt()); setPadding(16, 8, 16, 8)
             visibility = if (rule.enabled) View.VISIBLE else View.GONE
@@ -96,21 +97,22 @@ class AppsFragment : Fragment() {
 
         val modes = arrayOf("Full", "Title only", "App only", "Text only", "Skip")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only", "skip")
-        val modeSpinner = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
+        val modeSpinner = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, modes)
             setSelection(modeVals.indexOf(rule.readMode).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = modeVals[pos])) }
+                    val mode = modeVals.getOrNull(pos) ?: return
+                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = mode)) }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
 
         val profileNames = listOf("Global") + profiles.map { "${it.emoji} ${it.name}" }
-        val profileSpinner = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, profileNames)
+        val profileSpinner = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, profileNames)
             val idx = profiles.indexOfFirst { it.id == rule.profileId }
             setSelection((idx + 1).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)

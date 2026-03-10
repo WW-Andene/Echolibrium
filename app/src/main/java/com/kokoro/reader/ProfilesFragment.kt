@@ -474,9 +474,11 @@ class ProfilesFragment : Fragment() {
             text = "✕"; textSize = 11f; setTextColor(0xFFff4444.toInt())
             setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 4, 12, 4)
             setOnClickListener {
-                val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
-                currentProfile = currentProfile.copy(commentaryPools = updated)
-                buildCommentaryEditor()
+                if (idx < currentProfile.commentaryPools.size) {
+                    val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
+                    currentProfile = currentProfile.copy(commentaryPools = updated)
+                    buildCommentaryEditor()
+                }
             }
         }
         header.addView(posBadge); header.addView(condLabel); header.addView(freqLabel); header.addView(btnDel)
@@ -491,7 +493,7 @@ class ProfilesFragment : Fragment() {
             lp.setMargins(0, 8, 0, 8); layoutParams = lp
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, pv: Int, fromUser: Boolean) {
-                    if (fromUser) {
+                    if (fromUser && idx < currentProfile.commentaryPools.size) {
                         freqLabel.text = "$pv%"
                         val updated = currentProfile.commentaryPools.toMutableList()
                         updated[idx] = pool.copy(frequency = pv)
@@ -521,10 +523,12 @@ class ProfilesFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     addTextChangedListener(object : android.text.TextWatcher {
                         override fun afterTextChanged(s: android.text.Editable?) {
-                            lines[li] = s.toString()
-                            val updatedPools = currentProfile.commentaryPools.toMutableList()
-                            updatedPools[idx] = pool.copy(lines = lines.toList())
-                            currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                            if (li < lines.size && idx < currentProfile.commentaryPools.size) {
+                                lines[li] = s.toString()
+                                val updatedPools = currentProfile.commentaryPools.toMutableList()
+                                updatedPools[idx] = pool.copy(lines = lines.toList())
+                                currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                            }
                         }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -534,11 +538,13 @@ class ProfilesFragment : Fragment() {
                     text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
                     setOnClickListener {
-                        lines.removeAt(li)
-                        val updatedPools = currentProfile.commentaryPools.toMutableList()
-                        updatedPools[idx] = pool.copy(lines = lines.toList())
-                        currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                        renderLines()
+                        if (li < lines.size && idx < currentProfile.commentaryPools.size) {
+                            lines.removeAt(li)
+                            val updatedPools = currentProfile.commentaryPools.toMutableList()
+                            updatedPools[idx] = pool.copy(lines = lines.toList())
+                            currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                            renderLines()
+                        }
                     }
                 }
                 row.addView(et); row.addView(del); linesContainer.addView(row)
@@ -553,11 +559,13 @@ class ProfilesFragment : Fragment() {
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 6, 0, 0); layoutParams = lp
             setOnClickListener {
-                lines.add("")
-                val updatedPools = currentProfile.commentaryPools.toMutableList()
-                updatedPools[idx] = pool.copy(lines = lines.toList())
-                currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                renderLines()
+                if (idx < currentProfile.commentaryPools.size) {
+                    lines.add("")
+                    val updatedPools = currentProfile.commentaryPools.toMutableList()
+                    updatedPools[idx] = pool.copy(lines = lines.toList())
+                    currentProfile = currentProfile.copy(commentaryPools = updatedPools)
+                    renderLines()
+                }
             }
         }
         card.addView(btnAddLine)

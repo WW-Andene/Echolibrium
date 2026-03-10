@@ -241,10 +241,10 @@ data class VoiceProfile(
             fillerIntensity = j.optInt("fillerIntensity", 0),
             sensitivity = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
-                (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
+                (0 until arr.length()).mapNotNull { try { GimmickConfig.fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null } }
             } ?: emptyList(),
             commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
-                (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
+                (0 until arr.length()).mapNotNull { try { CommentaryPool.fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null } }
             } ?: emptyList()
         )
 
@@ -549,7 +549,9 @@ data class VoiceProfile(
             val json = prefs.getString("voice_profiles", null) ?: return mutableListOf()
             return try {
                 val arr = JSONArray(json)
-                (0 until arr.length()).map { fromJson(arr.getJSONObject(it)) }.toMutableList()
+                (0 until arr.length()).mapNotNull {
+                    try { fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null }
+                }.toMutableList()
             } catch (e: Exception) { mutableListOf() }
         }
     }

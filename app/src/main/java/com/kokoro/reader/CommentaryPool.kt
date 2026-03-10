@@ -172,7 +172,7 @@ data class CommentaryPool(
             position  = j.optString("position", "pre"),
             condition = CommentaryCondition.fromJson(j.optJSONObject("condition") ?: JSONObject()),
             lines     = j.optJSONArray("lines")?.let { arr ->
-                (0 until arr.length()).map { arr.getString(it) }
+                (0 until arr.length()).mapNotNull { arr.optString(it, null) }
             } ?: emptyList(),
             frequency = j.optInt("frequency", 40)
         )

@@ -114,6 +114,14 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        try {
+            handleNotification(sbn)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error handling notification from ${sbn.packageName}", e)
+        }
+    }
+
+    private fun handleNotification(sbn: StatusBarNotification) {
         if (!prefs.getBoolean("service_enabled", true)) return
         if (sbn.packageName == packageName) return
         if (isDndActive()) return
@@ -153,8 +161,9 @@ class NotificationReaderService : NotificationListenerService() {
         // ── Sender history lookup (§7.0) ──────────────────────────────────
         val now = System.currentTimeMillis()
         val senderId = title.ifBlank { sbn.packageName }
-        val senderRecord = synchronized(senderLock) {
+        val senderResult = synchronized(senderLock) {
             val existing = senderHistory[senderId]
+            val previousTimestamp = existing?.lastTimestamp ?: now
             val updated = if (existing != null) {
                 existing.copy(count = existing.count + 1, lastTimestamp = now)
             } else {
@@ -167,8 +176,10 @@ class NotificationReaderService : NotificationListenerService() {
                 it.next()
                 it.remove()
             }
-            updated
+            Pair(updated, previousTimestamp)
         }
+        val senderRecord = senderResult.first
+        val previousTimestamp = senderResult.second
 
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val signal = SignalExtractor.extract(
@@ -181,7 +192,7 @@ class NotificationReaderService : NotificationListenerService() {
         ).copy(
             // Inject sender history into signal (§7.0)
             senderRepeat   = senderRecord.count,
-            senderRecency  = now - senderRecord.lastTimestamp,
+            senderRecency  = now - previousTimestamp,
             senderPressure = senderRecord.pressure(now)
         )
 

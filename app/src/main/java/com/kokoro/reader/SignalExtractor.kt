@@ -136,7 +136,7 @@ object SignalExtractor {
         // ── Intent detection ──────────────────────────────────────────────────
         val intents = mutableSetOf<Intent>()
         if (REQUEST_WORDS.any { lower.contains(it) })         intents.add(Intent.REQUEST)
-        if (APOLOGY_WORDS.any { lower.contains(it) })         intents.add(Intent.REQUEST)
+        if (APOLOGY_WORDS.any { lower.contains(it) })         intents.add(Intent.REASSURANCE)
         if (DENIAL_WORDS.any  { lower.contains(it) })         intents.add(Intent.DENIAL)
         if (PLEA_WORDS.any    { lower.contains(it) })         intents.add(Intent.PLEA)
         if (GREETING_WORDS.any{ lower.contains(it) })         intents.add(Intent.GREETING)

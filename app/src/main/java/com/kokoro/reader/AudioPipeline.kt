@@ -250,10 +250,10 @@ object AudioPipeline {
 
             track.play()
             val completed = latch.await(60, TimeUnit.SECONDS)
+            track.setPlaybackPositionUpdateListener(null)
             if (!completed) Log.w(TAG, "Playback marker timeout")
 
         } finally {
-            track.setPlaybackPositionUpdateListener(null)
             try { track.stop() } catch (e: Throwable) {}
             try { track.release() } catch (e: Throwable) {}
             synchronized(trackLock) { if (currentTrack === track) currentTrack = null }

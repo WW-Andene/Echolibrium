@@ -106,7 +106,7 @@ class RulesFragment : Fragment() {
     override fun onDestroyView() {
         saveHandler.removeCallbacks(saveRunnable)
         // Flush any pending save before destroying
-        if (rules.isNotEmpty()) saveRules()
+        saveRules()
         super.onDestroyView()
     }
 }

@@ -92,7 +92,7 @@ class NotificationReaderService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         try {
             handleNotification(sbn)
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             Log.e(TAG, "Error processing notification from ${sbn.packageName}", e)
         }
     }
@@ -223,7 +223,7 @@ class NotificationReaderService : NotificationListenerService() {
                 signal    = signal,
                 rules     = rules
             ))
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             Log.e(TAG, "Error in testSpeak", e)
         }
     }

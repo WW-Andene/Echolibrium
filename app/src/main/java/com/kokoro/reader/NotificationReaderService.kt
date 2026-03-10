@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -81,7 +83,7 @@ class NotificationReaderService : NotificationListenerService() {
             startForegroundNotification()
             Log.d(TAG, "Service created, foreground notification started")
         } catch (e: Throwable) {
-            Log.e(TAG, "Error during service creation", e)
+            Log.e(TAG, "Error during service creation — service may not function correctly", e)
         }
     }
 
@@ -124,7 +126,7 @@ class NotificationReaderService : NotificationListenerService() {
             prefs.edit().putBoolean("listener_connected", false).apply()
             // Request rebind — Android will reconnect the service if permission is still granted
             requestRebind(android.content.ComponentName(this, NotificationReaderService::class.java))
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error in onListenerDisconnected", e)
         }
     }
@@ -346,9 +348,9 @@ class NotificationReaderService : NotificationListenerService() {
                 .setOngoing(true)
                 .build()
 
-            if (android.os.Build.VERSION.SDK_INT >= 34) {
+            if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(FOREGROUND_ID, notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
                 startForeground(FOREGROUND_ID, notification)
             }

@@ -192,10 +192,10 @@ data class VoiceProfile(
             intonationIntensity = j.optInt("intonationIntensity", 0),
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
-                (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
+                (0 until arr.length()).mapNotNull { i -> try { GimmickConfig.fromJson(arr.getJSONObject(i)) } catch (e: Exception) { android.util.Log.w("VoiceProfile", "Skipping corrupted gimmick at index $i", e); null } }
             } ?: emptyList(),
             commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
-                (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
+                (0 until arr.length()).mapNotNull { i -> try { CommentaryPool.fromJson(arr.getJSONObject(i)) } catch (e: Exception) { android.util.Log.w("VoiceProfile", "Skipping corrupted commentary pool at index $i", e); null } }
             } ?: emptyList()
         )
 

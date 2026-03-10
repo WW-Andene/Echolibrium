@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadFragment(f: Fragment) =
-        supportFragmentManager.beginTransaction().replace(R.id.fragment_container, f).commit()
+        supportFragmentManager.beginTransaction().replace(R.id.fragment_container, f).commitAllowingStateLoss()
 
     fun isNotificationAccessGranted(): Boolean {
         val cn = ComponentName(this, NotificationReaderService::class.java)

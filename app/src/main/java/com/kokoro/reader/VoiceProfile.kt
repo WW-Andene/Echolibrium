@@ -241,10 +241,10 @@ data class VoiceProfile(
             fillerIntensity = j.optInt("fillerIntensity", 0),
             sensitivity = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
-                (0 until arr.length()).mapNotNull { try { GimmickConfig.fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null } }
+                (0 until arr.length()).mapNotNull { i -> try { GimmickConfig.fromJson(arr.getJSONObject(i)) } catch (e: Exception) { android.util.Log.w("VoiceProfile", "Skipping corrupted gimmick at index $i", e); null } }
             } ?: emptyList(),
             commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
-                (0 until arr.length()).mapNotNull { try { CommentaryPool.fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null } }
+                (0 until arr.length()).mapNotNull { i -> try { CommentaryPool.fromJson(arr.getJSONObject(i)) } catch (e: Exception) { android.util.Log.w("VoiceProfile", "Skipping corrupted commentary pool at index $i", e); null } }
             } ?: emptyList()
         )
 

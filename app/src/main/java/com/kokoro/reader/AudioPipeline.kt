@@ -191,6 +191,7 @@ object AudioPipeline {
 
         result ?: return
         val (rawPcm, sampleRate) = result
+        if (rawPcm.isEmpty()) return
 
         // ── Step 3: Apply DSP ─────────────────────────────────────────────
         val pcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated)
@@ -202,6 +203,7 @@ object AudioPipeline {
     // ── Playback ──────────────────────────────────────────────────────────────
 
     private fun playPcm(samples: FloatArray, sampleRate: Int, pitch: Float) {
+        if (samples.isEmpty()) return
         val bufferBytes = samples.size * 4  // Float = 4 bytes
 
         val track = try {

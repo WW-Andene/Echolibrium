@@ -185,21 +185,25 @@ object VoiceModulator {
         val shouldTrailOff = decayedMood.arousal < 0.25f || signal.trajectory == Trajectory.COLLAPSED
 
         return ModulatedVoice(
-            pitch               = blendedPitch.first,
-            speed               = blendedPitch.second,
+            pitch               = blendedPitch.first.guardNaN(1.0f),
+            speed               = blendedPitch.second.guardNaN(1.0f),
             breathIntensity     = blendedPitch.third,
-            breathCurvePosition = profile.breathCurvePosition,
+            breathCurvePosition = profile.breathCurvePosition.guardNaN(0f),
             breathPause         = profile.breathPause,
             stutterIntensity    = stutterIntensity,
             stutterFrequency    = stutterFrequency,
-            stutterPosition     = profile.stutterPosition,
+            stutterPosition     = profile.stutterPosition.guardNaN(0f),
             stutterPause        = profile.stutterPause,
             intonationIntensity = blendedPitch.fourth,
-            intonationVariation = intonationVariation,
+            intonationVariation = intonationVariation.guardNaN(0.5f),
             jitterAmount        = jitterAmount,
             shouldTrailOff      = shouldTrailOff
         )
     }
+
+    /** Replace NaN or Infinity with a safe default */
+    private fun Float.guardNaN(default: Float): Float =
+        if (this.isNaN() || this.isInfinite()) default else this
 
     // ── Time-of-day modifier (§6.0) ───────────────────────────────────────
     private fun timeOfDayModifier(hour: Int): TimeModifier = when (hour) {
@@ -252,6 +256,7 @@ object VoiceModulator {
         )
         EmotionBlend.NONE -> Quad(pitch, speed, breath, intonation)
     }
+
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
 

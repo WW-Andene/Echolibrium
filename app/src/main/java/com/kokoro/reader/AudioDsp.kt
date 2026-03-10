@@ -36,6 +36,7 @@ object AudioDsp {
         sampleRate: Int,
         modulated: ModulatedVoice
     ): FloatArray {
+        if (samples.isEmpty()) return samples
         var pcm = samples.copyOf()
 
         // 1. Soft saturation

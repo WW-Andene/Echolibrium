@@ -116,7 +116,7 @@ class NotificationReaderService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         try {
             handleNotification(sbn)
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             Log.e(TAG, "Error handling notification from ${sbn.packageName}", e)
         }
     }
@@ -268,24 +268,28 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     fun testSpeak(text: String, profile: VoiceProfile, rules: List<Pair<String, String>>) {
-        val signal = SignalMap(
-            sourceType     = SourceType.PERSONAL,
-            senderType     = SenderType.HUMAN,
-            warmth         = WarmthLevel.MEDIUM,
-            register       = Register.CASUAL,
-            stakesLevel    = StakesLevel.LOW,
-            urgencyType    = UrgencyType.NONE,
-            intensityLevel = 0.3f,
-            trajectory     = Trajectory.FLAT
-        )
-        val modulated = VoiceModulator.modulate(profile, signal)
-        AudioPipeline.enqueue(AudioPipeline.Item(
-            rawText   = text,
-            profile   = profile,
-            modulated = modulated,
-            signal    = signal,
-            rules     = rules
-        ))
+        try {
+            val signal = SignalMap(
+                sourceType     = SourceType.PERSONAL,
+                senderType     = SenderType.HUMAN,
+                warmth         = WarmthLevel.MEDIUM,
+                register       = Register.CASUAL,
+                stakesLevel    = StakesLevel.LOW,
+                urgencyType    = UrgencyType.NONE,
+                intensityLevel = 0.3f,
+                trajectory     = Trajectory.FLAT
+            )
+            val modulated = VoiceModulator.modulate(profile, signal)
+            AudioPipeline.enqueue(AudioPipeline.Item(
+                rawText   = text,
+                profile   = profile,
+                modulated = modulated,
+                signal    = signal,
+                rules     = rules
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in testSpeak", e)
+        }
     }
 
     fun stopSpeaking() = AudioPipeline.stop()

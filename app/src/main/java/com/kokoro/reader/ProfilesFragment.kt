@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -164,8 +165,8 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildFilterButtons() {
-        if (view == null) return
         val ctx = context ?: return
+        if (view == null) return
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
@@ -231,8 +232,8 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun renderVoiceGrid() {
-        voiceGrid.removeAllViews()
         val ctx = context ?: return
+        voiceGrid.removeAllViews()
 
         // ── Filter Kokoro voices ──────────────────────────────────────────
         val kokoroFiltered = KokoroVoices.ALL.filter { v ->
@@ -356,7 +357,7 @@ class ProfilesFragment : Fragment() {
                             renderVoiceGrid()
                             // Pre-warm Piper engine for the selected voice to reduce test lag
                             if (PiperVoiceCatalog.byId(c.voiceId) != null) {
-                                val appCtx = ctx.applicationContext
+                                val appCtx = context?.applicationContext ?: return@setOnClickListener
                                 Thread {
                                     SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
                                 }.apply { isDaemon = true; start() }
@@ -365,7 +366,8 @@ class ProfilesFragment : Fragment() {
                             // Piper voice not downloaded — trigger download
                             val piperVoice = PiperVoiceCatalog.byId(c.voiceId)
                             if (piperVoice != null) {
-                                PiperVoiceManager.downloadVoice(ctx.applicationContext, piperVoice)
+                                val appCtx = context?.applicationContext ?: return@setOnClickListener
+                                PiperVoiceManager.downloadVoice(appCtx, piperVoice)
                                 renderVoiceGrid()
                                 Toast.makeText(ctx, "Downloading ${piperVoice.displayName}…", Toast.LENGTH_SHORT).show()
                             }
@@ -407,8 +409,8 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildPresets() {
-        presetsScroll.removeAllViews()
         val ctx = context ?: return
+        presetsScroll.removeAllViews()
         VoiceProfile.PRESETS.forEach { preset ->
             val btn = Button(ctx).apply {
                 text = "${preset.emoji}\n${preset.name}"; textSize = 11f
@@ -496,8 +498,10 @@ class ProfilesFragment : Fragment() {
                     if (fromUser && idx < currentProfile.commentaryPools.size) {
                         freqLabel.text = "$pv%"
                         val updated = currentProfile.commentaryPools.toMutableList()
-                        updated[idx] = pool.copy(frequency = pv)
-                        currentProfile = currentProfile.copy(commentaryPools = updated)
+                        if (idx < updated.size) {
+                            updated[idx] = pool.copy(frequency = pv)
+                            currentProfile = currentProfile.copy(commentaryPools = updated)
+                        }
                     }
                 }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -523,9 +527,9 @@ class ProfilesFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     addTextChangedListener(object : android.text.TextWatcher {
                         override fun afterTextChanged(s: android.text.Editable?) {
-                            if (li < lines.size && idx < currentProfile.commentaryPools.size) {
-                                lines[li] = s.toString()
-                                val updatedPools = currentProfile.commentaryPools.toMutableList()
+                            if (li < lines.size) lines[li] = s.toString()
+                            val updatedPools = currentProfile.commentaryPools.toMutableList()
+                            if (idx < updatedPools.size) {
                                 updatedPools[idx] = pool.copy(lines = lines.toList())
                                 currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                             }
@@ -538,13 +542,13 @@ class ProfilesFragment : Fragment() {
                     text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
                     setOnClickListener {
-                        if (li < lines.size && idx < currentProfile.commentaryPools.size) {
-                            lines.removeAt(li)
-                            val updatedPools = currentProfile.commentaryPools.toMutableList()
+                        if (li < lines.size) lines.removeAt(li)
+                        val updatedPools = currentProfile.commentaryPools.toMutableList()
+                        if (idx < updatedPools.size) {
                             updatedPools[idx] = pool.copy(lines = lines.toList())
                             currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                            renderLines()
                         }
+                        renderLines()
                     }
                 }
                 row.addView(et); row.addView(del); linesContainer.addView(row)
@@ -559,13 +563,13 @@ class ProfilesFragment : Fragment() {
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 6, 0, 0); layoutParams = lp
             setOnClickListener {
-                if (idx < currentProfile.commentaryPools.size) {
-                    lines.add("")
-                    val updatedPools = currentProfile.commentaryPools.toMutableList()
+                lines.add("")
+                val updatedPools = currentProfile.commentaryPools.toMutableList()
+                if (idx < updatedPools.size) {
                     updatedPools[idx] = pool.copy(lines = lines.toList())
                     currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                    renderLines()
                 }
+                renderLines()
             }
         }
         card.addView(btnAddLine)
@@ -632,12 +636,14 @@ class ProfilesFragment : Fragment() {
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w("ProfilesFragment", "Failed to show add pool dialog", e)
+        }
     }
 
     private fun buildGimmicksEditor() {
-        gimmicksContainer.removeAllViews()
         val ctx = context ?: return
+        gimmicksContainer.removeAllViews()
         val allTypes = listOf("giggle","sigh","huh","mmm","woah","ugh","aww","gasp","yawn","hmm","laugh","tsk")
         allTypes.forEach { type ->
             val existing = currentProfile.gimmicks.find { it.type == type }
@@ -747,7 +753,8 @@ class ProfilesFragment : Fragment() {
             val rules = loadWordingRules()
             val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
             // Use AudioPipeline directly — works without notification service
-            AudioPipeline.testSpeak(ctx.applicationContext, text, p, rules)
+            val appCtx = context?.applicationContext ?: return@setOnClickListener
+            AudioPipeline.testSpeak(appCtx, text, p, rules)
         }
         btnStop.setOnClickListener {
             AudioPipeline.stop()
@@ -781,7 +788,9 @@ class ProfilesFragment : Fragment() {
                         profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
                         setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
                     }.setNegativeButton("Cancel", null).show()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Failed to show new profile dialog", e)
+            }
         }
         btnDelete.setOnClickListener {
             if (profiles.size <= 1) { Toast.makeText(context ?: return@setOnClickListener, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
@@ -792,7 +801,9 @@ class ProfilesFragment : Fragment() {
                         profiles.removeAll { it.id == currentProfile.id }
                         VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
                     }.setNegativeButton("Cancel", null).show()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Failed to show delete dialog", e)
+            }
         }
         btnRenameVoice.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
@@ -822,7 +833,9 @@ class ProfilesFragment : Fragment() {
                     }
                     .setNegativeButton("Cancel", null)
                     .show()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Failed to show rename dialog", e)
+            }
         }
     }
 

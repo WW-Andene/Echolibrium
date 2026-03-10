@@ -3,6 +3,8 @@ package com.kokoro.reader
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.*
@@ -73,7 +75,26 @@ class HomeFragment : Fragment() {
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         btnPermission.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Android 13+: sideloaded apps need "Allow restricted settings" first.
+                // Open app details where the user can enable it, then proceed to
+                // notification listener settings.
+                try {
+                    val appDetails = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${ctx.packageName}")
+                    )
+                    startActivity(appDetails)
+                    Toast.makeText(ctx,
+                        "Enable \"Allow restricted settings\", then grant notification access",
+                        Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+            } else {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
         }
 
         switchEnabled.isChecked = prefs.getBoolean("service_enabled", true)

@@ -98,11 +98,30 @@ object SherpaEngine {
             val modelDir = VoiceDownloadManager.getModelDir(ctx)
             Log.d(TAG, "Loading Kokoro model from $modelDir")
 
+            // Validate model files exist and are non-empty before passing to native code
+            val modelFile  = File(modelDir, "model.onnx")
+            val voicesFile = File(modelDir, "voices.bin")
+            val tokensFile = File(modelDir, "tokens.txt")
+            val dataDir    = File(modelDir, "espeak-ng-data")
+
+            for (f in listOf(modelFile, voicesFile, tokensFile)) {
+                if (!f.exists() || f.length() == 0L) {
+                    Log.e(TAG, "Model file missing or empty: ${f.absolutePath} (size=${if (f.exists()) f.length() else "N/A"})")
+                    errorMessage = "Model file missing or corrupted: ${f.name}"
+                    return false
+                }
+            }
+            if (!dataDir.exists() || !dataDir.isDirectory) {
+                Log.e(TAG, "espeak-ng-data directory missing: ${dataDir.absolutePath}")
+                errorMessage = "espeak-ng-data directory missing"
+                return false
+            }
+
             val kokoroConfig = OfflineTtsKokoroModelConfig(
-                model  = File(modelDir, "model.onnx").absolutePath,
-                voices = File(modelDir, "voices.bin").absolutePath,
-                tokens = File(modelDir, "tokens.txt").absolutePath,
-                dataDir = File(modelDir, "espeak-ng-data").absolutePath
+                model  = modelFile.absolutePath,
+                voices = voicesFile.absolutePath,
+                tokens = tokensFile.absolutePath,
+                dataDir = dataDir.absolutePath
             )
 
             val modelConfig = OfflineTtsModelConfig(

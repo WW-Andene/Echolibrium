@@ -49,7 +49,7 @@ object SherpaEngine {
      */
     @Volatile var onReadyCallback: (() -> Unit)? = null
 
-    private var isWarmingUp = false
+    @Volatile private var isWarmingUp = false
     private val warmUpLock = Object()
 
     // ── Eager warm-up ─────────────────────────────────────────────────────────

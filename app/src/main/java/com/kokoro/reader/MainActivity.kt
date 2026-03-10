@@ -16,6 +16,10 @@ class MainActivity : AppCompatActivity() {
     private val tabIds = intArrayOf(R.id.nav_home, R.id.nav_profiles, R.id.nav_apps, R.id.nav_rules)
     private var selectedTabId = R.id.nav_home
 
+    // Cached fragments — show/hide instead of recreating on every tab switch
+    private val fragments = mutableMapOf<Int, Fragment>()
+    private var activeFragmentTag: String? = null
+
     companion object {
         private const val KEY_SELECTED_TAB = "selected_tab_id"
     }
@@ -23,6 +27,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Restore existing fragments after configuration change
+        if (savedInstanceState != null) {
+            for (id in tabIds) {
+                val tag = tagForTab(id)
+                supportFragmentManager.findFragmentByTag(tag)?.let { fragments[id] = it }
+            }
+        }
+
         for (id in tabIds) {
             findViewById<View>(id).setOnClickListener { selectTab(id) }
         }
@@ -55,13 +68,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-            loadFragment(when (id) {
-                R.id.nav_home     -> HomeFragment()
-                R.id.nav_profiles -> ProfilesFragment()
-                R.id.nav_apps     -> AppsFragment()
-                R.id.nav_rules    -> RulesFragment()
-                else -> HomeFragment()
-            })
+            showFragment(id)
         } catch (e: Exception) {
             val tabName = tabName(id)
             android.util.Log.e("MainActivity", "Error switching to tab '$tabName'", e)
@@ -69,14 +76,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadFragment(f: Fragment) {
+    private fun tagForTab(id: Int): String = "tab_$id"
+
+    private fun createFragmentForTab(id: Int): Fragment = when (id) {
+        R.id.nav_home     -> HomeFragment()
+        R.id.nav_profiles -> ProfilesFragment()
+        R.id.nav_apps     -> AppsFragment()
+        R.id.nav_rules    -> RulesFragment()
+        else -> HomeFragment()
+    }
+
+    private fun showFragment(tabId: Int) {
         try {
             if (isFinishing || isDestroyed) return
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.fragment_container, f)
-                .commitAllowingStateLoss()
+            val tag = tagForTab(tabId)
+            val fm = supportFragmentManager
+            val tx = fm.beginTransaction()
+
+            // Hide the currently active fragment
+            activeFragmentTag?.let { activeTag ->
+                fm.findFragmentByTag(activeTag)?.let { tx.hide(it) }
+            }
+
+            // Show or create the target fragment
+            var target = fragments[tabId]
+            if (target == null) {
+                target = createFragmentForTab(tabId)
+                fragments[tabId] = target
+                tx.add(R.id.fragment_container, target, tag)
+            } else {
+                tx.show(target)
+            }
+
+            activeFragmentTag = tag
+            tx.commitAllowingStateLoss()
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error loading fragment ${f.javaClass.simpleName}", e)
+            android.util.Log.e("MainActivity", "Error showing fragment for tab ${tabName(tabId)}", e)
             try { android.widget.Toast.makeText(this, "Failed to load page", android.widget.Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
         }
     }

@@ -31,7 +31,8 @@ data class ModulatedVoice(
     val intonationVariation: Float,
     // New fields for downstream DSP
     val jitterAmount:   Float = 0f,
-    val shouldTrailOff: Boolean = false
+    val shouldTrailOff: Boolean = false,
+    val volume:         Float = 1.0f
 )
 
 /** Time-of-day baseline modifier (§6.0) */
@@ -46,6 +47,8 @@ data class TimeModifier(
 object VoiceModulator {
 
     private const val MIN_INTONATION_FLOOR = 5  // §8.4: minimum natural prosodic variation
+    private const val MAX_PITCH_DELTA = 0.25f  // max deviation from profile baseline
+    private const val MAX_SPEED_DELTA = 0.35f  // max deviation from profile baseline
 
     /**
      * Full modulation with mood and time-of-day.
@@ -190,8 +193,8 @@ object VoiceModulator {
 
         var intonationIntensity = (profile.intonationIntensity + msgInton * 35f * intonMoodMul)
             .coerceIn(0f, 100f).toInt()
-        // §8.4: Intonation floor — minimum natural variation (Robot exempt)
-        if (profile.name != "Robot") {
+        // §8.4: Intonation floor — minimum natural variation (skip for flat-intonation profiles)
+        if (!profile.suppressIntonationFloor) {
             intonationIntensity = maxOf(intonationIntensity, MIN_INTONATION_FLOOR)
         }
 
@@ -199,9 +202,18 @@ object VoiceModulator {
             .coerceIn(0f, 1f)
         if (decayedMood.stability < 0.4f) intonationVariation = (intonationVariation * 1.3f).coerceIn(0f, 1f)
 
+        // ── Modulation budget cap ────────────────────────────────────────
+        // Prevent 12+ independent modifier systems from compounding into
+        // degenerate output. If total delta from baseline exceeds budget,
+        // scale all deltas proportionally to stay within sane range.
+        val cappedPitch = capDelta(profile.pitch, pitch, MAX_PITCH_DELTA)
+        val cappedSpeed = capDelta(profile.speed, speed, MAX_SPEED_DELTA)
+        val cappedBreath = breathIntensity  // already clamped 0-100
+        val cappedIntonation = intonationIntensity  // already clamped 0-100
+
         // ── Emotional blend overrides (§2.3) ──────────────────────────────
         // Blends modify the combination rather than stacking independently
-        val blendedPitch = applyBlend(signal.emotionBlend, pitch, speed, breathIntensity, intonationIntensity)
+        val blendedPitch = applyBlend(signal.emotionBlend, cappedPitch, cappedSpeed, cappedBreath, cappedIntonation)
 
         // ── Jitter (§5.1) — computed here, applied in AudioDsp ───────────
         val arousalExcess = maxOf(0f, decayedMood.arousal - 0.6f)
@@ -209,6 +221,23 @@ object VoiceModulator {
 
         // ── Trailing off (§4.3B) ──────────────────────────────────────────
         val shouldTrailOff = decayedMood.arousal < 0.25f || signal.trajectory == Trajectory.COLLAPSED
+
+        // ── Volume/gain (§5.4) ──────────────────────────────────────────
+        var volumeDelta = 0f
+        // Urgency raises volume
+        volumeDelta += urgencyStrength * 0.15f * reassuranceFactor
+        // Distress lowers volume (quieter, withdrawn)
+        volumeDelta -= distressStrength * 0.10f
+        // Mood: low arousal = quieter, high arousal = louder
+        if (decayedMood.arousal > 0.7f) volumeDelta += 0.10f
+        if (decayedMood.arousal < 0.2f) volumeDelta -= 0.12f
+        // Late night / dead of night = quieter
+        if (hourOfDay in 22..23 || hourOfDay in 0..6) volumeDelta -= 0.08f
+        // Flood overwhelm = slightly quieter (fatigue)
+        if (signal.floodTier == FloodTier.OVERWHELMED) volumeDelta -= 0.06f
+        // Collapsed trajectory = fading
+        if (signal.trajectory == Trajectory.COLLAPSED) volumeDelta -= 0.10f
+        val volume = (1.0f + volumeDelta).coerceIn(0.4f, 1.3f)
 
         return ModulatedVoice(
             pitch               = blendedPitch.first.guardNaN(1.0f),
@@ -223,7 +252,8 @@ object VoiceModulator {
             intonationIntensity = blendedPitch.fourth,
             intonationVariation = intonationVariation.guardNaN(0.5f),
             jitterAmount        = jitterAmount,
-            shouldTrailOff      = shouldTrailOff
+            shouldTrailOff      = shouldTrailOff,
+            volume              = volume
         )
     }
 
@@ -281,6 +311,14 @@ object VoiceModulator {
             pitch + 0.02f, speed - 0.02f, breath + 3, intonation + 3
         )
         EmotionBlend.NONE -> Quad(pitch, speed, breath, intonation)
+    }
+
+    /** Cap the total delta from baseline. If |modulated - baseline| > maxDelta, clamp it. */
+    private fun capDelta(baseline: Float, modulated: Float, maxDelta: Float): Float {
+        val delta = modulated - baseline
+        return if (kotlin.math.abs(delta) > maxDelta) {
+            baseline + maxDelta * if (delta > 0f) 1f else -1f
+        } else modulated
     }
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)

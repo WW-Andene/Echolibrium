@@ -265,7 +265,7 @@ class HomeFragment : Fragment() {
     private fun updateStatus(tv: TextView, serviceStatusTv: TextView, btn: Button) {
         val ctx = context ?: return
         val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-        tv.text = if (granted) "✓ Active — reading notifications with Kokoro"
+        tv.text = if (granted) "✓ Active — reading notifications"
                   else "✗ Notification access required"
         tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
         btn.text = if (granted) "Notification Settings" else "Grant Permission"
@@ -277,11 +277,11 @@ class HomeFragment : Fragment() {
             granted -> "◯ Service starting…"
             else -> "◯ Service not active"
         }
-        serviceStatusTv.setTextColor(when {
-            granted && serviceAlive -> 0xFF00ff88.toInt()
-            granted -> 0xFFffaa00.toInt()
-            else -> 0xFF666666.toInt()
-        })
+        serviceStatusTv.setTextColor(ctx.getColor(when {
+            granted && serviceAlive -> R.color.status_active
+            granted -> R.color.status_warning
+            else -> R.color.status_inactive
+        }))
     }
 
     private fun updateVoiceCommandStatus(tv: TextView) {
@@ -303,11 +303,12 @@ class HomeFragment : Fragment() {
             }
             else -> "Voice commands: starting…"
         }
-        tv.setTextColor(when {
-            listening -> 0xFF00ccff.toInt()
-            enabled && !hasPerm -> 0xFFffaa00.toInt()
-            else -> 0xFF666666.toInt()
-        })
+        val colorCtx = context ?: return
+        tv.setTextColor(colorCtx.getColor(when {
+            listening -> R.color.status_info
+            enabled && !hasPerm -> R.color.status_warning
+            else -> R.color.status_inactive
+        }))
     }
 
     private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {

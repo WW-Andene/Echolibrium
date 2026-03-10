@@ -67,20 +67,21 @@ object VoiceTransform {
         return result
     }
 
-    // Maps gimmick type to the signal condition that should gate it
+    // Maps gimmick type to the signal condition that should gate it.
+    // Each gimmick fires only when its emotional context is appropriate.
     private fun String.toGimmickSignal() = when (this) {
-        "sigh"   -> "always"
-        "giggle" -> "always"
-        "huh"    -> "always"
-        "mmm"    -> "always"
+        "sigh"   -> "warmth_distressed"
+        "giggle" -> "emoji_happy"
+        "huh"    -> "sender_unknown"
+        "mmm"    -> "sender_human"
         "woah"   -> "intensity_high"
         "ugh"    -> "stakes_high"
-        "aww"    -> "always"
+        "aww"    -> "warmth_high"
         "gasp"   -> "urgency_expiring"
         "yawn"   -> "stakes_low"
-        "hmm"    -> "always"
+        "hmm"    -> "intent_request"
         "laugh"  -> "stakes_fake"
-        "tsk"    -> "always"
+        "tsk"    -> "emoji_angry"
         else     -> "always"
     }
 
@@ -279,7 +280,7 @@ object VoiceTransform {
         val endIdx = minOf(idx + 2, word.length)
         val syllable = word.substring(idx, endIdx)
         val stutter = (1..repeats).joinToString(pauseStr) { syllable } + pauseStr
-        return word.substring(0, idx) + stutter + word.substring(idx)
+        return word.substring(0, idx) + stutter + word.substring(endIdx)
     }
 
     // PROLONGATION: stretch first consonant cluster (§4.2)
@@ -337,6 +338,49 @@ object VoiceTransform {
         return result
     }
 
+    // ── Pause injection via punctuation (§4.4) ────────────────────────────────
+    // Insert commas at natural pause points so the TTS engine handles timing
+    // organically. Only activates for emotionally loaded or urgent signals.
+    private val PAUSE_CONJUNCTIONS = setOf("but", "and", "so", "because", "yet", "though")
+    private val PAUSE_HEAVY_WORDS = setOf(
+        "sorry", "please", "help", "urgent", "emergency", "died", "dead",
+        "hurt", "scared", "afraid", "love", "miss", "goodbye", "forgive",
+        "never", "always", "promise", "unfortunately", "seriously"
+    )
+
+    fun applyPauseInjection(text: String, signal: SignalMap): String {
+        // Only inject pauses for emotionally loaded or high-urgency content
+        val shouldPause = signal.urgencyType >= UrgencyType.REAL ||
+            signal.stakesType == StakesType.EMOTIONAL ||
+            signal.warmth == WarmthLevel.DISTRESSED ||
+            signal.trajectory == Trajectory.PEAKED
+        if (!shouldPause) return text
+
+        val words = text.split(" ").toMutableList()
+        if (words.size < 3) return text  // too short for pauses to make sense
+
+        val result = mutableListOf<String>()
+        for (i in words.indices) {
+            val word = words[i]
+            val lower = word.lowercase().trimEnd(',', '.', '!', '?', ';', ':')
+
+            // Add comma before conjunctions (if not already punctuated)
+            if (i > 0 && lower in PAUSE_CONJUNCTIONS && !words[i - 1].endsWith(",")) {
+                val prev = result.removeLastOrNull() ?: ""
+                result.add("$prev,")
+            }
+
+            // Add comma before emotionally heavy words (if not already punctuated)
+            if (i > 0 && lower in PAUSE_HEAVY_WORDS && !words[i - 1].endsWith(",")) {
+                val prev = result.removeLastOrNull() ?: ""
+                result.add("$prev,")
+            }
+
+            result.add(word)
+        }
+        return result.joinToString(" ")
+    }
+
     // ── Full pipeline ─────────────────────────────────────────────────────────
     fun process(
         text: String,
@@ -348,6 +392,7 @@ object VoiceTransform {
     ): String {
         return try {
             var r = applyWordingRules(text, rules)
+            r = applyPauseInjection(r, signal)                              // §4.4
             r = applyCommentary(r, profile, signal, mood)
             r = applyFillers(r, profile.fillerIntensity, signal, mood)      // §4.1
             r = applyBreathInjection(r, signal, mood)                       // §4.3A
@@ -356,7 +401,8 @@ object VoiceTransform {
             r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
             r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition,
                 modulated.stutterFrequency, modulated.stutterPause, profile.stutterType)  // §4.2
-            r = applyBreathiness(r, modulated.breathIntensity, modulated.breathCurvePosition, modulated.breathPause)
+            // Note: breathiness is handled exclusively by AudioDsp (noise + spectral tilt)
+            // to avoid triple-stacking with text "h" insertion + DSP noise + DSP tilt.
             r = applyTrailingText(r, signal, mood)                          // §4.3B/§5.3
             r
         } catch (e: Exception) {

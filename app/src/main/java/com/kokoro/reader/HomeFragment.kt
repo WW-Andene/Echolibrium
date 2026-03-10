@@ -29,6 +29,23 @@ class HomeFragment : Fragment() {
             initializeViews(v)
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "Error initializing home view", e)
+            showErrorFallback(v, "Home failed to load: ${e.message}")
+        }
+    }
+
+    private fun showErrorFallback(v: View, message: String) {
+        try {
+            val ctx = context ?: return
+            val root = v as? ViewGroup ?: return
+            root.removeAllViews()
+            root.addView(TextView(ctx).apply {
+                text = "⚠ $message\n\nTry restarting the app."
+                setTextColor(0xFFff4444.toInt())
+                textSize = 14f
+                setPadding(20, 40, 20, 40)
+            })
+        } catch (e2: Exception) {
+            android.util.Log.e("HomeFragment", "Error showing fallback UI", e2)
         }
     }
 

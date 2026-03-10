@@ -62,7 +62,9 @@ class MainActivity : AppCompatActivity() {
                 else -> HomeFragment()
             })
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error switching to tab $id", e)
+            val tabName = tabName(id)
+            android.util.Log.e("MainActivity", "Error switching to tab '$tabName'", e)
+            try { android.widget.Toast.makeText(this, "Failed to open $tabName", android.widget.Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
         }
     }
 
@@ -73,7 +75,16 @@ class MainActivity : AppCompatActivity() {
                 .commitAllowingStateLoss()
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Error loading fragment ${f.javaClass.simpleName}", e)
+            try { android.widget.Toast.makeText(this, "Failed to load page", android.widget.Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
         }
+    }
+
+    private fun tabName(id: Int): String = when (id) {
+        R.id.nav_home     -> "Home"
+        R.id.nav_profiles -> "Voice"
+        R.id.nav_apps     -> "Apps"
+        R.id.nav_rules    -> "Words"
+        else              -> "Unknown"
     }
 
     fun isNotificationAccessGranted(): Boolean {

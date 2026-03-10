@@ -65,7 +65,7 @@ object AudioDsp {
         }
 
         // 4. Spectral tilt — proportional to breathiness (§5.2)
-        if (modulated.breathIntensity >= 10) {
+        if (modulated.breathIntensity >= 5) {
             pcm = applySpectralTilt(pcm, sampleRate, modulated.breathIntensity / 100f)
         }
 

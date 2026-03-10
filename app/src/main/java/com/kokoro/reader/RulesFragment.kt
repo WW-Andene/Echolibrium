@@ -108,7 +108,7 @@ class RulesFragment : Fragment() {
     override fun onDestroyView() {
         saveHandler.removeCallbacks(saveRunnable)
         // Flush any pending save before destroying
-        try { saveRules() } catch (e: Exception) { /* prefs may not be initialized if view was never created */ }
+        try { saveRules() } catch (e: Exception) { android.util.Log.w("RulesFragment", "Failed to save rules on destroy", e) }
         super.onDestroyView()
     }
 }

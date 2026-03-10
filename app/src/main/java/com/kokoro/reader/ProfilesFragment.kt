@@ -79,15 +79,19 @@ class ProfilesFragment : Fragment() {
         updateEngineStatusUI()
         SherpaEngine.onReadyCallback = {
             mainHandler.post {
-                try { if (isAdded && view != null) updateEngineStatusUI() }
-                catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Engine status update failed", e) }
+                if (isAdded && view != null) {
+                    try { updateEngineStatusUI() }
+                    catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Engine status update failed", e) }
+                }
             }
         }
         // Refresh voice grid when a Piper voice finishes downloading
         PiperVoiceManager.downloadCallback = { _, _ ->
             mainHandler.post {
-                try { if (isAdded && view != null) renderVoiceGrid() }
-                catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Voice grid refresh failed", e) }
+                if (isAdded && view != null) {
+                    try { renderVoiceGrid() }
+                    catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Voice grid refresh failed", e) }
+                }
             }
         }
         // Trigger warm-up if not already ready

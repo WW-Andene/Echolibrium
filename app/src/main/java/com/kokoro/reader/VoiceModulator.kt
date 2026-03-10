@@ -47,6 +47,8 @@ data class TimeModifier(
 object VoiceModulator {
 
     private const val MIN_INTONATION_FLOOR = 5  // §8.4: minimum natural prosodic variation
+    private const val MAX_PITCH_DELTA = 0.25f  // max deviation from profile baseline
+    private const val MAX_SPEED_DELTA = 0.35f  // max deviation from profile baseline
 
     /**
      * Full modulation with mood and time-of-day.
@@ -200,9 +202,18 @@ object VoiceModulator {
             .coerceIn(0f, 1f)
         if (decayedMood.stability < 0.4f) intonationVariation = (intonationVariation * 1.3f).coerceIn(0f, 1f)
 
+        // ── Modulation budget cap ────────────────────────────────────────
+        // Prevent 12+ independent modifier systems from compounding into
+        // degenerate output. If total delta from baseline exceeds budget,
+        // scale all deltas proportionally to stay within sane range.
+        val cappedPitch = capDelta(profile.pitch, pitch, MAX_PITCH_DELTA)
+        val cappedSpeed = capDelta(profile.speed, speed, MAX_SPEED_DELTA)
+        val cappedBreath = breathIntensity  // already clamped 0-100
+        val cappedIntonation = intonationIntensity  // already clamped 0-100
+
         // ── Emotional blend overrides (§2.3) ──────────────────────────────
         // Blends modify the combination rather than stacking independently
-        val blendedPitch = applyBlend(signal.emotionBlend, pitch, speed, breathIntensity, intonationIntensity)
+        val blendedPitch = applyBlend(signal.emotionBlend, cappedPitch, cappedSpeed, cappedBreath, cappedIntonation)
 
         // ── Jitter (§5.1) — computed here, applied in AudioDsp ───────────
         val arousalExcess = maxOf(0f, decayedMood.arousal - 0.6f)
@@ -300,6 +311,14 @@ object VoiceModulator {
             pitch + 0.02f, speed - 0.02f, breath + 3, intonation + 3
         )
         EmotionBlend.NONE -> Quad(pitch, speed, breath, intonation)
+    }
+
+    /** Cap the total delta from baseline. If |modulated - baseline| > maxDelta, clamp it. */
+    private fun capDelta(baseline: Float, modulated: Float, maxDelta: Float): Float {
+        val delta = modulated - baseline
+        return if (kotlin.math.abs(delta) > maxDelta) {
+            baseline + maxDelta * if (delta > 0f) 1f else -1f
+        } else modulated
     }
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)

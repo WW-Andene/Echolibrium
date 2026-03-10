@@ -31,7 +31,8 @@ data class ModulatedVoice(
     val intonationVariation: Float,
     // New fields for downstream DSP
     val jitterAmount:   Float = 0f,
-    val shouldTrailOff: Boolean = false
+    val shouldTrailOff: Boolean = false,
+    val volume:         Float = 1.0f
 )
 
 /** Time-of-day baseline modifier (§6.0) */
@@ -210,6 +211,23 @@ object VoiceModulator {
         // ── Trailing off (§4.3B) ──────────────────────────────────────────
         val shouldTrailOff = decayedMood.arousal < 0.25f || signal.trajectory == Trajectory.COLLAPSED
 
+        // ── Volume/gain (§5.4) ──────────────────────────────────────────
+        var volumeDelta = 0f
+        // Urgency raises volume
+        volumeDelta += urgencyStrength * 0.15f * reassuranceFactor
+        // Distress lowers volume (quieter, withdrawn)
+        volumeDelta -= distressStrength * 0.10f
+        // Mood: low arousal = quieter, high arousal = louder
+        if (decayedMood.arousal > 0.7f) volumeDelta += 0.10f
+        if (decayedMood.arousal < 0.2f) volumeDelta -= 0.12f
+        // Late night / dead of night = quieter
+        if (hourOfDay in 22..23 || hourOfDay in 0..6) volumeDelta -= 0.08f
+        // Flood overwhelm = slightly quieter (fatigue)
+        if (signal.floodTier == FloodTier.OVERWHELMED) volumeDelta -= 0.06f
+        // Collapsed trajectory = fading
+        if (signal.trajectory == Trajectory.COLLAPSED) volumeDelta -= 0.10f
+        val volume = (1.0f + volumeDelta).coerceIn(0.4f, 1.3f)
+
         return ModulatedVoice(
             pitch               = blendedPitch.first.guardNaN(1.0f),
             speed               = blendedPitch.second.guardNaN(1.0f),
@@ -223,7 +241,8 @@ object VoiceModulator {
             intonationIntensity = blendedPitch.fourth,
             intonationVariation = intonationVariation.guardNaN(0.5f),
             jitterAmount        = jitterAmount,
-            shouldTrailOff      = shouldTrailOff
+            shouldTrailOff      = shouldTrailOff,
+            volume              = volume
         )
     }
 

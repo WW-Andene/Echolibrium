@@ -54,6 +54,12 @@ object AudioDsp {
         // Single allocation — all effects modify this array in-place
         val pcm = samples.copyOf()
 
+        // 0. Volume/gain (§5.4) — applied first so all subsequent effects
+        //    operate on the correctly-scaled signal
+        if (modulated.volume != 1.0f) {
+            applyVolume(pcm, modulated.volume)
+        }
+
         // 1. Soft saturation
         applySoftSaturation(pcm)
 
@@ -86,6 +92,13 @@ object AudioDsp {
         }
 
         return pcm
+    }
+
+    // ── Volume/gain (§5.4) ─────────────────────────────────────────────────────
+    private fun applyVolume(pcm: FloatArray, volume: Float) {
+        for (i in pcm.indices) {
+            pcm[i] = (pcm[i] * volume).coerceIn(-1f, 1f)
+        }
     }
 
     // ── Soft saturation ───────────────────────────────────────────────────────

@@ -224,7 +224,7 @@ class NotificationReaderService : NotificationListenerService() {
 
         try {
             startForeground(FOREGROUND_ID, notification)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to start foreground service", e)
         }
     }

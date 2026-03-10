@@ -45,22 +45,33 @@ object SherpaEngine {
      */
     @Volatile var onReadyCallback: (() -> Unit)? = null
 
+    @Volatile private var isWarmingUp = false
+
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
     /**
      * Extracts models from assets (if needed) and initializes the Kokoro engine
      * on a background thread. Also extracts bundled Piper voices.
+     * Guarded against duplicate concurrent calls.
      */
     fun warmUp(ctx: Context) {
         if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
+        if (isWarmingUp) return
+        isWarmingUp = true
         Thread {
-            // Step 1: extract Kokoro model from assets
-            VoiceDownloadManager.ensureModelSync(ctx)
-            // Step 2: extract bundled Piper voices from assets
-            PiperVoiceManager.extractBundledVoicesSync(ctx)
-            // Step 3: load the Kokoro engine
-            if (initializeKokoro(ctx)) {
-                onReadyCallback?.invoke()
+            try {
+                // Step 1: extract Kokoro model from assets
+                VoiceDownloadManager.ensureModelSync(ctx)
+                // Step 2: extract bundled Piper voices from assets
+                PiperVoiceManager.extractBundledVoicesSync(ctx)
+                // Step 3: load the Kokoro engine
+                if (initializeKokoro(ctx)) {
+                    onReadyCallback?.invoke()
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Warm-up failed", e)
+            } finally {
+                isWarmingUp = false
             }
         }.apply { isDaemon = true; start() }
     }
@@ -99,7 +110,7 @@ object SherpaEngine {
             Log.d(TAG, "Kokoro engine ready")
             true
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to initialize Kokoro engine", e)
             kokoroTts = null
             isReady = false
@@ -124,7 +135,7 @@ object SherpaEngine {
             val audio = engine.generate(text = text, sid = sid, speed = speed)
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Kokoro synthesis failed", e)
             null
         }
@@ -150,7 +161,7 @@ object SherpaEngine {
             val audio = engine.generate(text = text, sid = 0, speed = speed)
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Piper synthesis failed for $voiceId", e)
             null
         }
@@ -201,7 +212,7 @@ object SherpaEngine {
             Log.d(TAG, "Piper voice loaded: $voiceId")
             return true
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Piper voice $voiceId", e)
             return false
         }
@@ -221,8 +232,8 @@ object SherpaEngine {
 
     @Synchronized
     fun release() {
-        try { kokoroTts?.release() } catch (e: Exception) { /* ignore */ }
-        try { piperTts?.release() } catch (e: Exception) { /* ignore */ }
+        try { kokoroTts?.release() } catch (e: Throwable) { /* ignore */ }
+        try { piperTts?.release() } catch (e: Throwable) { /* ignore */ }
         kokoroTts = null
         piperTts = null
         piperLoadedVoiceId = null

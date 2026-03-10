@@ -31,8 +31,9 @@ class AppsFragment : Fragment() {
         btn.isEnabled = false
         btn.text = "LOADING..."
 
+        val ctx = requireContext()
         Thread {
-            val pm = requireContext().packageManager
+            val pm = ctx.packageManager
             val apps = try {
                 @Suppress("DEPRECATION") pm.getInstalledApplications(0)
             } catch (e: Exception) { emptyList() }

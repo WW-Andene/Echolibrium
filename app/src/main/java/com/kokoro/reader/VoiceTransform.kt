@@ -134,12 +134,13 @@ object VoiceTransform {
     }
 
     private fun stutterWord(word: String, intensity: Int, position: Float, pause: Int): String {
+        if (word.length < 2) return word
         // Smooth curve: intensity 1-20 = 1 repeat, 50 = 2, 80+ = 3
         val repeats = (smooth(intensity) * 3f + 1f).toInt().coerceIn(1, 4)
         val pauseStr = "-".repeat((smooth(pause) * 3f).toInt().coerceIn(0, 3))
         val idx = (word.length * position).roundToInt().coerceIn(0, word.length - 1)
-        val sylLen = if (idx + 2 <= word.length) 2 else 1
-        val syllable = word.substring(idx, idx + sylLen)
+        val endIdx = minOf(idx + 2, word.length)
+        val syllable = word.substring(idx, endIdx)
         val stutter = (1..repeats).joinToString(pauseStr) { syllable } + pauseStr
         return word.substring(0, idx) + stutter + word.substring(idx)
     }

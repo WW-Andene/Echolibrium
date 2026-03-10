@@ -34,6 +34,7 @@ data class PiperVoice(
     }
     val flagEmoji get() = when (locale) {
         "en_US" -> "🇺🇸"
+        "en_GB" -> "🇬🇧"
         "fr_FR" -> "🇫🇷"
         else    -> "🌐"
     }
@@ -90,6 +91,21 @@ object PiperVoiceCatalog {
         piper("sam",          "Male",    "English (US)", "American", "en_US", "medium"),
     )
 
+    // ── English (GB) ──────────────────────────────────────────────────────────
+    val EN_GB: List<PiperVoice> = listOf(
+        piper("alan",                    "Male",    "English (UK)", "British", "en_GB", "low"),
+        piper("alan",                    "Male",    "English (UK)", "British", "en_GB", "medium"),
+        piper("alba",                    "Female",  "English (UK)", "British", "en_GB", "medium"),
+        piper("aru",                     "Male",    "English (UK)", "British", "en_GB", "medium"),
+        piper("cori",                    "Female",  "English (UK)", "British", "en_GB", "medium"),
+        piper("cori",                    "Female",  "English (UK)", "British", "en_GB", "high"),
+        piper("jenny_dioco",             "Female",  "English (UK)", "British", "en_GB", "medium"),
+        piper("northern_english_male",   "Male",    "English (UK)", "British", "en_GB", "medium"),
+        piper("semaine",                 "Unknown", "English (UK)", "British", "en_GB", "medium"),
+        piper("southern_english_female", "Female",  "English (UK)", "British", "en_GB", "low"),
+        piper("vctk",                    "Unknown", "English (UK)", "British", "en_GB", "medium"),
+    )
+
     // ── French (France) ───────────────────────────────────────────────────────
     val FR_FR: List<PiperVoice> = listOf(
         piper("gilles",   "Male",    "French", "French", "fr_FR", "low"),
@@ -101,8 +117,8 @@ object PiperVoiceCatalog {
         piper("upmc",     "Unknown", "French", "French", "fr_FR", "medium"),
     )
 
-    /** All Piper voices (en_US + fr_FR) */
-    val ALL: List<PiperVoice> = EN_US + FR_FR
+    /** All Piper voices (en_US + en_GB + fr_FR) */
+    val ALL: List<PiperVoice> = EN_US + EN_GB + FR_FR
 
     /** Unique language labels across all Piper voices */
     fun languages() = ALL.map { it.language }.distinct().sorted()

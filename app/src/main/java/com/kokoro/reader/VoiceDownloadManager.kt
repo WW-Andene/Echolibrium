@@ -8,7 +8,7 @@ import java.io.File
  * Manages the Kokoro TTS model bundled in app assets.
  *
  * The model is pre-packaged at build time in assets/kokoro-model/
- * and extracted to context.filesDir/sherpa/kokoro-en-v0_19/ on first launch.
+ * and extracted to context.filesDir/sherpa/kokoro-multi-lang-v1_0/ on first launch.
  * No internet connection is required — the APK is fully autonomous.
  *
  * Model files after extraction:
@@ -18,7 +18,7 @@ object VoiceDownloadManager {
 
     private const val TAG = "ModelManager"
 
-    const val MODEL_NAME    = "kokoro-en-v0_19"
+    const val MODEL_NAME    = "kokoro-multi-lang-v1_0"
     private const val ASSET_DIR = "kokoro-model"
 
     enum class State { NOT_EXTRACTED, EXTRACTING, READY, ERROR }

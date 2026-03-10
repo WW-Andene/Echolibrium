@@ -184,7 +184,13 @@ class HomeFragment : Fragment() {
         tv.text = when {
             !enabled -> "Voice commands: off"
             !hasPerm -> "Voice commands: microphone permission needed"
-            listening -> "🎤 Listening for: \"repeat\" · \"how long ago?\" · \"stop\" · \"what time?\""
+            listening -> {
+                val wake = VoiceCommandListener.wakeWord
+                if (wake.isNotBlank())
+                    "🎤 Say \"$wake\" + command: repeat · how long ago? · stop · what time?"
+                else
+                    "🎤 Listening for: \"repeat\" · \"how long ago?\" · \"stop\" · \"what time?\""
+            }
             else -> "Voice commands: starting…"
         }
         tv.setTextColor(when {

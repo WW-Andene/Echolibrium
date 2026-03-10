@@ -57,6 +57,9 @@ object PiperVoiceManager {
 
     // ── State queries ─────────────────────────────────────────────────────────
 
+    fun getConfigPath(ctx: Context, voiceId: String): String =
+        File(getPiperDir(ctx), "$voiceId.onnx.json").absolutePath
+
     fun isVoiceReady(ctx: Context, voiceId: String): Boolean {
         val modelFile = File(getPiperDir(ctx), "$voiceId.onnx")
         val tokensFile = File(getPiperDir(ctx), "tokens.txt")
@@ -131,6 +134,16 @@ object PiperVoiceManager {
 
                 Log.d(TAG, "Downloading ${voice.id} from ${voice.modelUrl}")
                 downloadFile(voice.modelUrl, destFile)
+
+                // Best-effort download of config file (not required by sherpa-onnx)
+                val configFile = File(piperDir, "${voice.id}.onnx.json")
+                if (!configFile.exists()) {
+                    try {
+                        downloadFile(voice.configUrl, configFile)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Config download failed for ${voice.id} (non-critical)", e)
+                    }
+                }
 
                 val tokensFile = File(piperDir, "tokens.txt")
                 if (!tokensFile.exists()) {

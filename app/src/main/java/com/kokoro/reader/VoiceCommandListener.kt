@@ -9,24 +9,28 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import androidx.preference.PreferenceManager
 
 /**
  * Continuous voice command listener that uses Android's SpeechRecognizer
- * to detect trigger phrases like "can you repeat?" and "how long ago?"
+ * to detect a wake word (the profile name) followed by a command.
  *
- * When a command is recognized, it's dispatched to [VoiceCommandHandler]
- * which generates an appropriate spoken response via the AudioPipeline.
+ * The mic only triggers action when the profile name is heard first,
+ * preventing the constant beep from SpeechRecognizer's ready sound.
  *
- * The listener automatically restarts after each recognition cycle to
- * provide continuous listening. Uses RECORD_AUDIO permission.
+ * Commands: "repeat", "how long ago?", "stop", "what time?"
  */
 object VoiceCommandListener {
 
     private const val TAG = "VoiceCommandListener"
-    private const val RESTART_DELAY_MS = 500L
+    private const val RESTART_DELAY_MS = 800L
 
     private var recognizer: SpeechRecognizer? = null
     @Volatile var isListening = false
+        private set
+
+    /** The wake word that must be spoken before a command is processed */
+    @Volatile var wakeWord: String = ""
         private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -41,6 +45,9 @@ object VoiceCommandListener {
             return
         }
 
+        // Load the active profile name as the wake word
+        loadWakeWord(ctx)
+
         mainHandler.post {
             try {
                 val sr = SpeechRecognizer.createSpeechRecognizer(ctx.applicationContext)
@@ -49,7 +56,7 @@ object VoiceCommandListener {
                 isListening = true
                 onStatusChanged?.invoke(true)
                 startListeningInternal()
-                Log.d(TAG, "Voice command listener started")
+                Log.d(TAG, "Voice command listener started (wake word: '$wakeWord')")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start voice command listener", e)
                 isListening = false
@@ -73,16 +80,28 @@ object VoiceCommandListener {
         }
     }
 
+    /** Reload the wake word from the active profile name */
+    fun loadWakeWord(ctx: Context) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val profiles = VoiceProfile.loadAll(prefs)
+        val activeId = prefs.getString("active_profile_id", "") ?: ""
+        val profile = profiles.find { it.id == activeId }
+        wakeWord = (profile?.name ?: "").lowercase().trim()
+        Log.d(TAG, "Wake word set to: '$wakeWord'")
+    }
+
     private fun startListeningInternal() {
         val sr = recognizer ?: return
         if (!isListening) return
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            // Shorter silence detection for responsive command recognition
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            // Longer silence window — reduces how often the recognizer restarts (less beeping)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L)
         }
         try {
             sr.startListening(intent)
@@ -102,7 +121,7 @@ object VoiceCommandListener {
     private class CommandRecognitionListener(private val ctx: Context) : RecognitionListener {
 
         override fun onReadyForSpeech(params: Bundle?) {
-            Log.d(TAG, "Listening for voice commands…")
+            Log.d(TAG, "Listening for wake word '$wakeWord'…")
         }
 
         override fun onBeginningOfSpeech() {}
@@ -127,7 +146,7 @@ object VoiceCommandListener {
                 else -> "UNKNOWN($error)"
             }
 
-            // NO_MATCH and SPEECH_TIMEOUT are normal — just restart
+            // NO_MATCH and SPEECH_TIMEOUT are normal — just restart silently
             if (error == SpeechRecognizer.ERROR_NO_MATCH ||
                 error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 scheduleRestart()
@@ -139,7 +158,7 @@ object VoiceCommandListener {
             if (isListening) {
                 mainHandler.postDelayed({
                     if (isListening) startListeningInternal()
-                }, 2000L)
+                }, 3000L)
             }
         }
 
@@ -147,6 +166,19 @@ object VoiceCommandListener {
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             if (!matches.isNullOrEmpty()) {
                 Log.d(TAG, "Heard: ${matches.joinToString(" | ")}")
+
+                // Only process if the wake word is detected in the speech
+                val wake = wakeWord
+                if (wake.isNotBlank()) {
+                    val heardWakeWord = matches.any { it.lowercase().contains(wake) }
+                    if (!heardWakeWord) {
+                        Log.d(TAG, "Wake word '$wake' not detected — ignoring")
+                        scheduleRestart()
+                        return
+                    }
+                    Log.d(TAG, "Wake word '$wake' detected!")
+                }
+
                 val handled = VoiceCommandHandler.handleCommand(ctx, matches)
                 if (handled) {
                     Log.d(TAG, "Command handled successfully")
@@ -157,7 +189,7 @@ object VoiceCommandListener {
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
-            // Could be used for real-time feedback, but we wait for final results
+            // Wait for final results only
         }
 
         override fun onEvent(eventType: Int, params: Bundle?) {}

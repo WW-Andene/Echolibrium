@@ -13,7 +13,7 @@ import java.io.File
  * Singleton wrapper around sherpa-onnx OfflineTts.
  *
  * Supports two synthesis backends, both running locally:
- *   • Kokoro — 11 voices in a single model, selected by speaker ID
+ *   • Kokoro — 30 voices in a single model (multi-lang-v1_0), selected by speaker ID
  *   • Piper/VITS — one model per voice, loaded on demand
  *
  * Models are bundled in the APK's assets and extracted on first launch.
@@ -26,7 +26,7 @@ object SherpaEngine {
 
     private const val TAG = "SherpaEngine"
 
-    // ── Kokoro engine (single model, 11 speakers) ─────────────────────────────
+    // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null
 
     // ── Piper engine (one model per voice, cached) ────────────────────────────
@@ -114,7 +114,7 @@ object SherpaEngine {
     // ── Kokoro synthesis ──────────────────────────────────────────────────────
 
     /**
-     * Synthesize with Kokoro engine (11 bundled voices).
+     * Synthesize with Kokoro engine (30 bundled voices).
      * @param sid Speaker ID (from KokoroVoice.sid)
      */
     @Synchronized
@@ -138,6 +138,8 @@ object SherpaEngine {
      */
     @Synchronized
     fun synthesizePiper(ctx: Context, text: String, voiceId: String, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        if (text.isBlank()) return null
+
         // Reuse cached engine if same voice
         if (piperTts == null || piperLoadedVoiceId != voiceId) {
             if (!loadPiperVoice(ctx, voiceId)) return null
@@ -203,6 +205,16 @@ object SherpaEngine {
             Log.e(TAG, "Failed to load Piper voice $voiceId", e)
             return false
         }
+    }
+
+    /**
+     * Pre-load a Piper voice model without synthesizing.
+     * Call from a background thread to eliminate first-synthesis lag.
+     */
+    @Synchronized
+    fun preloadPiperVoice(ctx: Context, voiceId: String): Boolean {
+        if (piperTts != null && piperLoadedVoiceId == voiceId) return true
+        return loadPiperVoice(ctx, voiceId)
     }
 
     // ── Release ───────────────────────────────────────────────────────────────

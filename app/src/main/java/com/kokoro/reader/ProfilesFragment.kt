@@ -118,10 +118,10 @@ class ProfilesFragment : Fragment() {
                 }
             }
         }
-        // Trigger warm-up if not already ready
+        // Show status — engine initializes lazily on first synthesis
         if (!SherpaEngine.isReady) {
-            val ctx = context ?: return
-            SherpaEngine.warmUp(ctx.applicationContext)
+            tvEngineStatus?.text = "Engine will initialize on first use"
+            tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
         }
     }
 

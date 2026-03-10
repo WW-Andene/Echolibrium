@@ -73,18 +73,20 @@ class HomeFragment : Fragment() {
         updateStatus(statusText, serviceStatusText, btnPermission)
         btnPermission.setOnClickListener {
             val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (granted) {
+                // Already granted — open notification settings for management
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 // Android 13+: sideloaded apps need "Allow restricted settings" first.
-                // Open app details where the user can enable it, then proceed to
-                // notification listener settings.
+                // Open app info so user can enable restricted settings, then
+                // notification listener settings for the actual permission.
                 try {
-                    val appDetails = Intent(
+                    startActivity(Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:${ctx.packageName}")
-                    )
-                    startActivity(appDetails)
+                    ))
                     Toast.makeText(ctx,
-                        "Enable \"Allow restricted settings\", then grant notification access",
+                        "Tap ⋮ menu → \"Allow restricted settings\", then come back and tap again",
                         Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -178,6 +180,15 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        refreshStatus()
+    }
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (!hidden) refreshStatus()
+    }
+
+    private fun refreshStatus() {
         try {
             view?.let {
                 updateStatus(
@@ -188,7 +199,7 @@ class HomeFragment : Fragment() {
                 updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status))
             }
         } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "Error in onResume", e)
+            android.util.Log.e("HomeFragment", "Error refreshing status", e)
         }
     }
 

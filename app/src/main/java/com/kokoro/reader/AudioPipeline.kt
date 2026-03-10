@@ -35,7 +35,8 @@ object AudioPipeline {
         val modulated: ModulatedVoice,
         val signal: SignalMap,
         val rules: List<Pair<String, String>>,
-        val priority: Boolean = false   // true = interrupt and jump queue (phone calls)
+        val priority: Boolean = false,   // true = interrupt and jump queue (phone calls)
+        val mood: MoodState? = null      // §1.0: mood state for commentary/filler decisions
     )
 
     private val queue = LinkedBlockingQueue<Item>()
@@ -128,7 +129,8 @@ object AudioPipeline {
             profile   = item.profile,
             modulated = item.modulated,
             signal    = item.signal,
-            rules     = item.rules
+            rules     = item.rules,
+            mood      = item.mood
         )
         if (processed.isBlank()) return
 

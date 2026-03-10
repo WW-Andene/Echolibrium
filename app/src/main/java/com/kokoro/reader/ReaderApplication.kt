@@ -22,48 +22,74 @@ class ReaderApplication : Application() {
 
     companion object {
         private const val TAG = "ReaderApplication"
-        /** User-visible crash log folder on shared storage */
-        private const val CRASH_LOG_DIR = "Kyōkan/Logs"
+        private const val LOG_SUBDIR = "Kyokan/Logs"
     }
+
+    /** Resolved log directory — set during onCreate, used by crash handler */
+    private var logDir: File? = null
 
     override fun onCreate() {
         super.onCreate()
-        ensureLogDirectories()
+        logDir = resolveLogDirectory()
         installUncaughtExceptionHandler()
     }
 
     /**
-     * Creates the Kyōkan/Logs/ directory structure on first launch.
-     * - App-private external storage (always works, no permission needed)
-     * - Shared storage Kyōkan/Logs/ (works if MANAGE_EXTERNAL_STORAGE is granted)
+     * Finds the best writable directory for crash logs and creates it.
+     * Returns the first directory that was successfully created.
+     *
+     * Priority:
+     *   1. Shared storage /storage/emulated/0/Kyokan/Logs/ (user-visible in file manager)
+     *   2. App-private external /Android/data/<pkg>/files/Kyokan/Logs/ (no permission needed)
+     *   3. Internal storage (always available)
      */
-    private fun ensureLogDirectories() {
+    private fun resolveLogDirectory(): File? {
+        // Try shared storage (visible in file manager)
         try {
-            // Internal storage (always available, no permission needed)
-            File(filesDir, "Kyōkan/Logs").mkdirs()
-
-            // App-private external: /storage/emulated/0/Android/data/<pkg>/files/Kyōkan/Logs/
-            try {
-                val appPrivateDir = getExternalFilesDir(null)
-                if (appPrivateDir != null) {
-                    File(appPrivateDir, "Kyōkan/Logs").mkdirs()
-                }
-            } catch (e: Throwable) {
-                Log.w(TAG, "Could not create app-private log directory", e)
+            val canWriteShared = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                true // WRITE_EXTERNAL_STORAGE is in manifest
             }
-
-            // Shared storage: /storage/emulated/0/Kyōkan/Logs/
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-                    File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR).mkdirs()
-                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                    File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR).mkdirs()
+            if (canWriteShared) {
+                val dir = File(Environment.getExternalStorageDirectory(), LOG_SUBDIR)
+                if (dir.mkdirs() || dir.isDirectory) {
+                    // Verify we can actually write
+                    val testFile = File(dir, ".write_test")
+                    if (testFile.createNewFile()) {
+                        testFile.delete()
+                        Log.i(TAG, "Log directory: ${dir.absolutePath}")
+                        return dir
+                    }
                 }
-            } catch (e: Throwable) {
-                Log.w(TAG, "Could not create shared log directory", e)
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Could not create log directories", e)
+            Log.w(TAG, "Shared storage log dir unavailable", e)
+        }
+
+        // Try app-private external storage
+        try {
+            val appExt = getExternalFilesDir(null)
+            if (appExt != null) {
+                val dir = File(appExt, LOG_SUBDIR)
+                if (dir.mkdirs() || dir.isDirectory) {
+                    Log.i(TAG, "Log directory: ${dir.absolutePath}")
+                    return dir
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "App-private external log dir unavailable", e)
+        }
+
+        // Fallback: internal storage (always works)
+        return try {
+            val dir = File(filesDir, LOG_SUBDIR)
+            dir.mkdirs()
+            Log.i(TAG, "Log directory (internal): ${dir.absolutePath}")
+            dir
+        } catch (e: Throwable) {
+            Log.e(TAG, "Cannot create any log directory", e)
+            null
         }
     }
 
@@ -86,47 +112,21 @@ class ReaderApplication : Application() {
     }
 
     /**
-     * Writes crash details to Kyōkan/Logs/crash_<timestamp>.log
-     * Tries shared storage first, then falls back to app-private storage.
+     * Writes crash details to Kyokan/Logs/crash_<timestamp>.log
+     * Uses the directory resolved during onCreate.
      * This runs inside the crash handler so it must never throw.
      */
     private fun writeCrashLog(thread: Thread, throwable: Throwable) {
         try {
-            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
-            val filename = "crash_$timestamp.log"
-
-            val content = buildCrashContent(thread, throwable)
-
-            // Try 1: Shared storage /storage/emulated/0/Kyōkan/Logs/
-            val sharedDir = File(Environment.getExternalStorageDirectory(), CRASH_LOG_DIR)
-            if (tryWriteLog(sharedDir, filename, content)) return
-
-            // Try 2: App-private external storage
-            val appPrivateDir = getExternalFilesDir(null)
-            if (appPrivateDir != null) {
-                val privateLogDir = File(appPrivateDir, "Kyōkan/Logs")
-                if (tryWriteLog(privateLogDir, filename, content)) return
-            }
-
-            // Try 3: Internal storage (always available)
-            val internalDir = File(filesDir, "Kyōkan/Logs")
-            tryWriteLog(internalDir, filename, content)
-
-        } catch (e: Throwable) {
-            // Last resort — crash handler must never throw
-            Log.e(TAG, "Failed to write crash log file", e)
-        }
-    }
-
-    private fun tryWriteLog(dir: File, filename: String, content: String): Boolean {
-        return try {
+            val dir = logDir ?: return
             if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, filename)
-            file.writeText(content)
+
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
+            val file = File(dir, "crash_$timestamp.log")
+            file.writeText(buildCrashContent(thread, throwable))
             Log.i(TAG, "Crash log written to ${file.absolutePath}")
-            true
         } catch (e: Throwable) {
-            false
+            Log.e(TAG, "Failed to write crash log file", e)
         }
     }
 

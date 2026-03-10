@@ -235,7 +235,7 @@ data class VoiceProfile(
             stutterPosition = j.optDouble("stutterPosition", 0.0).toFloat(),
             stutterFrequency = j.optInt("stutterFrequency", 0),
             stutterPause = j.optInt("stutterPause", 30),
-            stutterType = try { StutterType.valueOf(j.optString("stutterType", "REPETITION")) } catch (_: IllegalArgumentException) { StutterType.REPETITION },
+            stutterType = StutterType.entries.firstOrNull { it.name == j.optString("stutterType", "REPETITION") } ?: StutterType.REPETITION,
             intonationIntensity = j.optInt("intonationIntensity", 0),
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
             fillerIntensity = j.optInt("fillerIntensity", 0),

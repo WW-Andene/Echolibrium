@@ -301,6 +301,7 @@ object SignalExtractor {
 
     // Find the modifier multiplier for a keyword based on preceding words
     private fun findModifier(tokens: List<String>, keyword: String): Float {
+        if (tokens.isEmpty()) return 1.0f
         val idx = tokens.indexOfFirst { it.contains(keyword) }
         if (idx <= 0) return 1.0f
         val preceding = tokens.subList(maxOf(0, idx - 2), idx).joinToString(" ")

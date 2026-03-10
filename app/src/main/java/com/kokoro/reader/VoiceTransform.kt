@@ -128,7 +128,7 @@ object VoiceTransform {
         }
 
         // Pre-text filler
-        if (Random.nextFloat() < baseProbability) {
+        if (fillerPool.isNotEmpty() && Random.nextFloat() < baseProbability) {
             result.add(fillerPool.random())
         }
 
@@ -136,13 +136,13 @@ object VoiceTransform {
         for (i in words.indices) {
             val word = words[i]
             // At comma boundaries (clause breaks)
-            if (word.endsWith(",") && Random.nextFloat() < baseProbability * 0.6f) {
+            if (word.endsWith(",") && fillerPool.isNotEmpty() && Random.nextFloat() < baseProbability * 0.6f) {
                 result.add(word)
                 result.add(fillerPool.random())
                 continue
             }
             // Before unusually long words (>10 chars)
-            if (word.length > 10 && Random.nextFloat() < baseProbability * 0.4f) {
+            if (word.length > 10 && fillerPool.isNotEmpty() && Random.nextFloat() < baseProbability * 0.4f) {
                 result.add(fillerPool.random())
             }
             result.add(word)

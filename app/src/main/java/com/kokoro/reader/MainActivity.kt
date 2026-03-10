@@ -16,13 +16,27 @@ class MainActivity : AppCompatActivity() {
     private val tabIds = intArrayOf(R.id.nav_home, R.id.nav_profiles, R.id.nav_apps, R.id.nav_rules)
     private var selectedTabId = R.id.nav_home
 
+    companion object {
+        private const val KEY_SELECTED_TAB = "selected_tab_id"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         for (id in tabIds) {
             findViewById<View>(id).setOnClickListener { selectTab(id) }
         }
-        if (savedInstanceState == null) selectTab(R.id.nav_home)
+        if (savedInstanceState == null) {
+            selectTab(R.id.nav_home)
+        } else {
+            val restoredTab = savedInstanceState.getInt(KEY_SELECTED_TAB, R.id.nav_home)
+            selectTab(restoredTab)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(KEY_SELECTED_TAB, selectedTabId)
     }
 
     private fun selectTab(id: Int) {

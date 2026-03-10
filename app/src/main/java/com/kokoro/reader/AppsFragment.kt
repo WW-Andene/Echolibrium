@@ -10,7 +10,7 @@ import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 
 class AppsFragment : Fragment() {
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private lateinit var prefs: android.content.SharedPreferences
     private var rules = mutableListOf<AppRule>()
     private var profiles = listOf<VoiceProfile>()
     private lateinit var container: LinearLayout
@@ -19,6 +19,7 @@ class AppsFragment : Fragment() {
         i.inflate(R.layout.fragment_apps, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         container = v.findViewById(R.id.apps_container)
         rules = AppRule.loadAll(prefs)
         profiles = VoiceProfile.loadAll(prefs)

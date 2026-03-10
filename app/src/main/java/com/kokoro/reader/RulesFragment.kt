@@ -11,7 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class RulesFragment : Fragment() {
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private lateinit var prefs: android.content.SharedPreferences
     private val rules = mutableListOf<Pair<String, String>>()
     private lateinit var container: LinearLayout
     private val saveHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -21,6 +21,7 @@ class RulesFragment : Fragment() {
         i.inflate(R.layout.fragment_rules, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         container = v.findViewById(R.id.rules_container)
         loadRules()
         if (rules.isEmpty()) {
@@ -107,7 +108,7 @@ class RulesFragment : Fragment() {
     override fun onDestroyView() {
         saveHandler.removeCallbacks(saveRunnable)
         // Flush any pending save before destroying
-        saveRules()
+        try { saveRules() } catch (e: Exception) { android.util.Log.w("RulesFragment", "Failed to save rules on destroy", e) }
         super.onDestroyView()
     }
 }

@@ -13,7 +13,7 @@ import androidx.preference.PreferenceManager
 
 class ProfilesFragment : Fragment() {
 
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private lateinit var prefs: android.content.SharedPreferences
     private var profiles = mutableListOf<VoiceProfile>()
     private var activeProfileId = ""
     private var currentProfile = VoiceProfile()
@@ -56,6 +56,7 @@ class ProfilesFragment : Fragment() {
         i.inflate(R.layout.fragment_profiles, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         bindViews(v)
         profiles = VoiceProfile.loadAll(prefs)
         activeProfileId = prefs.getString("active_profile_id", "") ?: ""
@@ -68,7 +69,7 @@ class ProfilesFragment : Fragment() {
         renderVoiceGrid()
         setupButtons()
         buildGimmicksEditor()
-        loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
+        loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: VoiceProfile(name = "Default"))
 
         // Start engine warm-up and show status
         setupEngineStatus()
@@ -77,11 +78,21 @@ class ProfilesFragment : Fragment() {
     private fun setupEngineStatus() {
         updateEngineStatusUI()
         SherpaEngine.onReadyCallback = {
-            mainHandler.post { if (isAdded && view != null) updateEngineStatusUI() }
+            mainHandler.post {
+                if (isAdded && view != null) {
+                    try { updateEngineStatusUI() }
+                    catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Engine status update failed", e) }
+                }
+            }
         }
         // Refresh voice grid when a Piper voice finishes downloading
         PiperVoiceManager.downloadCallback = { _, _ ->
-            mainHandler.post { if (isAdded && view != null) renderVoiceGrid() }
+            mainHandler.post {
+                if (isAdded && view != null) {
+                    try { renderVoiceGrid() }
+                    catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Voice grid refresh failed", e) }
+                }
+            }
         }
         // Trigger warm-up if not already ready
         if (!SherpaEngine.isReady) {
@@ -915,6 +926,7 @@ class ProfilesFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        mainHandler.removeCallbacksAndMessages(null)
         SherpaEngine.onReadyCallback = null
         PiperVoiceManager.downloadCallback = null
         super.onDestroyView()

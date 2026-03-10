@@ -14,7 +14,7 @@ import androidx.preference.PreferenceManager
 
 class HomeFragment : Fragment() {
 
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private lateinit var prefs: android.content.SharedPreferences
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
@@ -24,6 +24,7 @@ class HomeFragment : Fragment() {
         i.inflate(R.layout.fragment_home, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         val statusText       = v.findViewById<TextView>(R.id.status_text)
         val serviceStatusText = v.findViewById<TextView>(R.id.service_status_text)
         val btnPermission    = v.findViewById<Button>(R.id.btn_permission)

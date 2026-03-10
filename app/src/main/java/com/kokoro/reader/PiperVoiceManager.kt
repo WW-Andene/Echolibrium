@@ -159,39 +159,55 @@ object PiperVoiceManager {
                 voiceStates[voice.id] = VoiceState.ERROR
                 downloadCallback?.invoke(voice.id, VoiceState.ERROR)
             }
-        }.apply { isDaemon = true; start() }
+        }.apply { name = "PiperDownload-${voice.id}"; isDaemon = true; start() }
     }
 
     private fun downloadFile(urlStr: String, dest: File) {
-        val url = URL(urlStr)
-        var conn = url.openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        conn.connect()
-
-        // Follow redirects manually (HuggingFace / GitHub redirects)
-        var redirects = 0
-        while (conn.responseCode in 300..399 && redirects++ < 5) {
-            val location = conn.getHeaderField("Location") ?: break
-            conn.disconnect()
-            conn = URL(location).openConnection() as HttpURLConnection
+        // Write to a temp file first, then rename atomically.
+        // This prevents corrupted partial files from appearing as "ready"
+        // if the download is interrupted (network loss, app killed, etc.).
+        val tempFile = File(dest.parentFile, "${dest.name}.tmp")
+        try {
+            val url = URL(urlStr)
+            var conn = url.openConnection() as HttpURLConnection
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
             conn.connect()
-        }
 
-        if (conn.responseCode != 200) {
-            throw Exception("HTTP ${conn.responseCode} from $urlStr")
-        }
+            // Follow redirects manually (HuggingFace / GitHub redirects)
+            var redirects = 0
+            while (conn.responseCode in 300..399 && redirects++ < 5) {
+                val location = conn.getHeaderField("Location") ?: break
+                conn.disconnect()
+                conn = URL(location).openConnection() as HttpURLConnection
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 30_000
+                conn.connect()
+            }
 
-        try {
-            conn.inputStream.use { input ->
-                dest.outputStream().use { output ->
-                    input.copyTo(output, bufferSize = 32 * 1024)
+            if (conn.responseCode != 200) {
+                throw Exception("HTTP ${conn.responseCode} from $urlStr")
+            }
+
+            try {
+                conn.inputStream.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output, bufferSize = 32 * 1024)
+                    }
                 }
+            } finally {
+                conn.disconnect()
+            }
+
+            // Atomic rename — only makes the file visible once fully written
+            if (!tempFile.renameTo(dest)) {
+                // Fallback: copy then delete (renameTo can fail across filesystems)
+                tempFile.copyTo(dest, overwrite = true)
+                tempFile.delete()
             }
         } finally {
-            conn.disconnect()
+            // Clean up temp file if anything went wrong
+            tempFile.delete()
         }
     }
 }

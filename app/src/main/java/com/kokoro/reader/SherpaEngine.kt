@@ -81,7 +81,7 @@ object SherpaEngine {
             } finally {
                 synchronized(warmUpLock) { isWarmingUp = false }
             }
-        }.apply { isDaemon = true; start() }
+        }.apply { name = "SherpaEngine-warmup"; isDaemon = true; start() }
     }
 
     // ── Kokoro initialization ─────────────────────────────────────────────────

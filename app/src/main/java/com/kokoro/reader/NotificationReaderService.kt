@@ -19,6 +19,14 @@ class NotificationReaderService : NotificationListenerService() {
     @Volatile private var lastCountDay = -1
     private val countLock = Object()
 
+    /**
+     * Tracks the last notification content per package to avoid re-reading
+     * identical text when an app updates an existing notification
+     * (e.g. WhatsApp appending messages to the same notification).
+     */
+    private val lastNotificationContent = mutableMapOf<String, String>()
+    private val dedupLock = Object()
+
     companion object {
         private const val TAG = "NotiReaderService"
         private const val CHANNEL_ID = "kokoro_foreground"
@@ -95,6 +103,20 @@ class NotificationReaderService : NotificationListenerService() {
         val title   = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val text    = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         if (title.isBlank() && text.isBlank()) return
+
+        // Skip duplicate content — apps like WhatsApp update the same notification
+        // repeatedly with identical text. Only read if content actually changed.
+        val contentKey = "${sbn.packageName}:${sbn.id}"
+        val contentValue = "$title|$text"
+        synchronized(dedupLock) {
+            if (lastNotificationContent[contentKey] == contentValue) return
+            lastNotificationContent[contentKey] = contentValue
+            // Evict old entries to prevent unbounded growth
+            if (lastNotificationContent.size > 100) {
+                val oldest = lastNotificationContent.keys.first()
+                lastNotificationContent.remove(oldest)
+            }
+        }
 
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
         val floodCount = synchronized(countLock) {

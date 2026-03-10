@@ -31,7 +31,7 @@ class AppsFragment : Fragment() {
         btn.isEnabled = false
         btn.text = "LOADING..."
 
-        val ctx = requireContext()
+        val ctx = context ?: return
         Thread {
             val pm = ctx.packageManager
             val apps = try {
@@ -51,7 +51,7 @@ class AppsFragment : Fragment() {
                 if (!isAdded) return@runOnUiThread
                 rules.addAll(newRules)
                 if (rules.isEmpty()) {
-                    Toast.makeText(requireContext(), "No user apps found.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "No user apps found.", Toast.LENGTH_SHORT).show()
                 }
                 AppRule.saveAll(rules, prefs)
                 renderRules()

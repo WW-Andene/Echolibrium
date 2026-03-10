@@ -81,7 +81,7 @@ object VoiceDownloadManager {
                 Log.e(TAG, "Asset extraction failed", e)
                 updateState(State.ERROR)
             }
-        }.start()
+        }.apply { name = "ModelExtractor"; isDaemon = true; start() }
     }
 
     /**

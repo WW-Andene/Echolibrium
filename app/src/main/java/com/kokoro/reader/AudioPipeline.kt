@@ -49,7 +49,7 @@ object AudioPipeline {
     fun start(ctx: Context) {
         if (running) return
         running = true
-        Thread { loop(ctx) }.apply { isDaemon = true; start() }
+        Thread { loop(ctx) }.apply { name = "AudioPipeline-loop"; isDaemon = true; start() }
     }
 
     fun stop() {

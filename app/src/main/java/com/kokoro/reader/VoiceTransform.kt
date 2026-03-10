@@ -338,6 +338,49 @@ object VoiceTransform {
         return result
     }
 
+    // ── Pause injection via punctuation (§4.4) ────────────────────────────────
+    // Insert commas at natural pause points so the TTS engine handles timing
+    // organically. Only activates for emotionally loaded or urgent signals.
+    private val PAUSE_CONJUNCTIONS = setOf("but", "and", "so", "because", "yet", "though")
+    private val PAUSE_HEAVY_WORDS = setOf(
+        "sorry", "please", "help", "urgent", "emergency", "died", "dead",
+        "hurt", "scared", "afraid", "love", "miss", "goodbye", "forgive",
+        "never", "always", "promise", "unfortunately", "seriously"
+    )
+
+    fun applyPauseInjection(text: String, signal: SignalMap): String {
+        // Only inject pauses for emotionally loaded or high-urgency content
+        val shouldPause = signal.urgencyType >= UrgencyType.REAL ||
+            signal.stakesType == StakesType.EMOTIONAL ||
+            signal.warmth == WarmthLevel.DISTRESSED ||
+            signal.trajectory == Trajectory.PEAKED
+        if (!shouldPause) return text
+
+        val words = text.split(" ").toMutableList()
+        if (words.size < 3) return text  // too short for pauses to make sense
+
+        val result = mutableListOf<String>()
+        for (i in words.indices) {
+            val word = words[i]
+            val lower = word.lowercase().trimEnd(',', '.', '!', '?', ';', ':')
+
+            // Add comma before conjunctions (if not already punctuated)
+            if (i > 0 && lower in PAUSE_CONJUNCTIONS && !words[i - 1].endsWith(",")) {
+                val prev = result.removeLastOrNull() ?: ""
+                result.add("$prev,")
+            }
+
+            // Add comma before emotionally heavy words (if not already punctuated)
+            if (i > 0 && lower in PAUSE_HEAVY_WORDS && !words[i - 1].endsWith(",")) {
+                val prev = result.removeLastOrNull() ?: ""
+                result.add("$prev,")
+            }
+
+            result.add(word)
+        }
+        return result.joinToString(" ")
+    }
+
     // ── Full pipeline ─────────────────────────────────────────────────────────
     fun process(
         text: String,
@@ -349,6 +392,7 @@ object VoiceTransform {
     ): String {
         return try {
             var r = applyWordingRules(text, rules)
+            r = applyPauseInjection(r, signal)                              // §4.4
             r = applyCommentary(r, profile, signal, mood)
             r = applyFillers(r, profile.fillerIntensity, signal, mood)      // §4.1
             r = applyBreathInjection(r, signal, mood)                       // §4.3A

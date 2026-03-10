@@ -75,8 +75,10 @@ class NotificationReaderService : NotificationListenerService() {
         try {
             instance = this
             AudioPipeline.start(this)
-            // Pre-initialize TTS engine on background thread so first notification has no lag
-            SherpaEngine.warmUp(this)
+            // TTS engine initializes lazily on first notification — do NOT call
+            // SherpaEngine.warmUp() here: the native OfflineTts JNI constructor
+            // can trigger a SIGSEGV that kills the entire process (uncatchable
+            // by Java try-catch). Lazy init avoids this startup crash.
             // Load persisted mood state
             currentMood = MoodState.load(prefs)
             // Start foreground notification to keep the service alive in background

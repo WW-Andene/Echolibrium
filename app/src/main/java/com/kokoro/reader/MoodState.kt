@@ -48,11 +48,11 @@ data class MoodState(
         private const val KEY_COUNT = "mood_session_count"
 
         fun load(prefs: SharedPreferences): MoodState = MoodState(
-            valence       = prefs.getFloat(KEY_VALENCE, DEFAULT_VALENCE),
-            arousal       = prefs.getFloat(KEY_AROUSAL, DEFAULT_AROUSAL),
-            stability     = prefs.getFloat(KEY_STABILITY, DEFAULT_STABILITY),
+            valence       = prefs.getFloat(KEY_VALENCE, DEFAULT_VALENCE).coerceIn(-1f, 1f),
+            arousal       = prefs.getFloat(KEY_AROUSAL, DEFAULT_AROUSAL).coerceIn(0f, 1f),
+            stability     = prefs.getFloat(KEY_STABILITY, DEFAULT_STABILITY).coerceIn(0f, 1f),
             lastUpdatedMs = prefs.getLong(KEY_UPDATED, System.currentTimeMillis()),
-            sessionCount  = prefs.getInt(KEY_COUNT, 0)
+            sessionCount  = prefs.getInt(KEY_COUNT, 0).coerceAtLeast(0)
         )
 
         fun save(prefs: SharedPreferences, state: MoodState) {

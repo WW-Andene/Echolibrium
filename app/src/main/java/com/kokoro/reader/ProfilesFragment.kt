@@ -1,5 +1,6 @@
 package com.kokoro.reader
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -84,7 +85,8 @@ class ProfilesFragment : Fragment() {
         }
         // Trigger warm-up if not already ready
         if (!SherpaEngine.isReady) {
-            SherpaEngine.warmUp(requireContext().applicationContext)
+            val ctx = context ?: return
+            SherpaEngine.warmUp(ctx.applicationContext)
         }
     }
 
@@ -180,7 +182,7 @@ class ProfilesFragment : Fragment() {
         }
     }
 
-    private fun filterBtn(ctx: android.content.Context, label: String, active: Boolean, onClick: () -> Unit): Button {
+    private fun filterBtn(ctx: Context, label: String, active: Boolean, onClick: () -> Unit): Button {
         return Button(ctx).apply {
             text = label; textSize = 11f
             setBackgroundColor(if (active) 0xFF1a3a1a.toInt() else 0xFF111111.toInt())
@@ -367,7 +369,7 @@ class ProfilesFragment : Fragment() {
                                 val appCtx = context?.applicationContext ?: return@setOnClickListener
                                 PiperVoiceManager.downloadVoice(appCtx, piperVoice)
                                 renderVoiceGrid()
-                                Toast.makeText(context, "Downloading ${piperVoice.displayName}…", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, "Downloading ${piperVoice.displayName}…", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -442,7 +444,7 @@ class ProfilesFragment : Fragment() {
         }
     }
 
-    private fun buildPoolCard(ctx: android.content.Context, pool: CommentaryPool, idx: Int): View {
+    private fun buildPoolCard(ctx: Context, pool: CommentaryPool, idx: Int): View {
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF111111.toInt()); setPadding(14, 12, 14, 12)
@@ -474,9 +476,11 @@ class ProfilesFragment : Fragment() {
             text = "✕"; textSize = 11f; setTextColor(0xFFff4444.toInt())
             setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 4, 12, 4)
             setOnClickListener {
-                val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
-                currentProfile = currentProfile.copy(commentaryPools = updated)
-                buildCommentaryEditor()
+                if (idx < currentProfile.commentaryPools.size) {
+                    val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
+                    currentProfile = currentProfile.copy(commentaryPools = updated)
+                    buildCommentaryEditor()
+                }
             }
         }
         header.addView(posBadge); header.addView(condLabel); header.addView(freqLabel); header.addView(btnDel)
@@ -491,7 +495,7 @@ class ProfilesFragment : Fragment() {
             lp.setMargins(0, 8, 0, 8); layoutParams = lp
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, pv: Int, fromUser: Boolean) {
-                    if (fromUser) {
+                    if (fromUser && idx < currentProfile.commentaryPools.size) {
                         freqLabel.text = "$pv%"
                         val updated = currentProfile.commentaryPools.toMutableList()
                         if (idx < updated.size) {
@@ -612,7 +616,7 @@ class ProfilesFragment : Fragment() {
         }
         typeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                selectedType = conditions[pos].first
+                selectedType = conditions.getOrNull(pos)?.first ?: return
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
@@ -729,9 +733,9 @@ class ProfilesFragment : Fragment() {
         profileSpinner.setSelection(idx)
         profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val profile = profiles.getOrNull(pos) ?: return
-                loadProfileToUI(profile)
-                activeProfileId = profile.id
+                val selected = profiles.getOrNull(pos) ?: return
+                loadProfileToUI(selected)
+                activeProfileId = selected.id
                 prefs.edit().putString("active_profile_id", activeProfileId).apply()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -740,8 +744,9 @@ class ProfilesFragment : Fragment() {
 
     private fun setupButtons() {
         btnTest.setOnClickListener {
+            val ctx = context ?: return@setOnClickListener
             if (!SherpaEngine.isReady) {
-                Toast.makeText(context, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val p = readProfileFromUI()
@@ -753,7 +758,7 @@ class ProfilesFragment : Fragment() {
         }
         btnStop.setOnClickListener {
             AudioPipeline.stop()
-            Toast.makeText(context, "Stopped", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context ?: return@setOnClickListener, "Stopped", Toast.LENGTH_SHORT).show()
         }
         btnResetSettings.setOnClickListener {
             loadProfileToUI(currentProfile.copy(
@@ -763,14 +768,14 @@ class ProfilesFragment : Fragment() {
                 intonationIntensity = 0, intonationVariation = 0.5f,
                 gimmicks = emptyList()
             ))
-            Toast.makeText(context, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context ?: return@setOnClickListener, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
         }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
             val idx = profiles.indexOfFirst { it.id == p.id }
             if (idx >= 0) profiles[idx] = p else profiles.add(p)
             VoiceProfile.saveAll(profiles, prefs)
-            Toast.makeText(context, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context ?: return@setOnClickListener, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
         }
         btnNew.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
@@ -788,7 +793,7 @@ class ProfilesFragment : Fragment() {
             }
         }
         btnDelete.setOnClickListener {
-            if (profiles.size <= 1) { Toast.makeText(context, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (profiles.size <= 1) { Toast.makeText(context ?: return@setOnClickListener, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val ctx = context ?: return@setOnClickListener
             try {
                 AlertDialog.Builder(ctx).setTitle("Delete ${currentProfile.name}?")
@@ -801,13 +806,13 @@ class ProfilesFragment : Fragment() {
             }
         }
         btnRenameVoice.setOnClickListener {
-            val renameCtx = context ?: return@setOnClickListener
-            val et = EditText(renameCtx).apply {
+            val ctx = context ?: return@setOnClickListener
+            val et = EditText(ctx).apply {
                 hint = "Voice nickname (leave empty to clear)"
                 setText(currentProfile.voiceAlias)
             }
             try {
-                AlertDialog.Builder(renameCtx)
+                AlertDialog.Builder(ctx)
                     .setTitle("Rename Voice")
                     .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
                     .setView(et)

@@ -1,6 +1,9 @@
 package com.kokoro.reader
 
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tanh
 import kotlin.random.Random
@@ -12,6 +15,10 @@ import kotlin.random.Random
  *   1. Soft saturation — smooths harsh transitions and cross-language artifacts
  *   2. Formant smoothing — reduces abrupt frequency jumps between syllables
  *   3. Breathiness — mix a filtered breath-noise layer into the speech signal
+ *   4. Spectral tilt — low-pass proportional to breathiness (§5.2)
+ *   5. Jitter — micro-amplitude variation for humanizing (§5.1)
+ *   6. Vocal fry — phrase-end amplitude modulation (§5.3)
+ *   7. Trailing off — fade-out on fatigued/collapsed states (§4.3B)
  *
  * All effects are applied to the same FloatArray and normalised to [-1, 1].
  */
@@ -32,31 +39,42 @@ object AudioDsp {
         if (samples.isEmpty()) return samples
         var pcm = samples.copyOf()
 
-        // Soft saturation: tames harsh peaks from cross-language synthesis artifacts.
-        // Always applied (lightweight) — smooths transitions that sound like
-        // breathing-like glitches when a voice speaks a non-native language.
+        // 1. Soft saturation
         pcm = applySoftSaturation(pcm)
 
-        // Formant smoothing: gently low-passes rapid amplitude changes between
-        // syllables so pitch curves feel continuous rather than stepped.
+        // 2. Formant smoothing
         pcm = applyFormantSmoothing(pcm, sampleRate)
 
+        // 3. Breathiness noise mixing
         if (modulated.breathIntensity >= 5) {
             pcm = applyBreathiness(pcm, sampleRate, modulated.breathIntensity)
         }
+
+        // 4. Spectral tilt — proportional to breathiness (§5.2)
+        if (modulated.breathIntensity >= 10) {
+            pcm = applySpectralTilt(pcm, sampleRate, modulated.breathIntensity / 100f)
+        }
+
+        // 5. Jitter simulation (§5.1)
+        if (modulated.jitterAmount > 0.01f) {
+            pcm = applyJitter(pcm, sampleRate, modulated.jitterAmount)
+        }
+
+        // 6. Vocal fry at phrase endings (§5.3)
+        if (modulated.shouldTrailOff) {
+            pcm = applyVocalFry(pcm, sampleRate)
+        }
+
+        // 7. Trailing off — PCM fade (§4.3B)
+        if (modulated.shouldTrailOff) {
+            pcm = applyTrailingOff(pcm)
+        }
+
         return pcm
     }
 
     // ── Soft saturation ───────────────────────────────────────────────────────
-    // Uses tanh waveshaping to gently compress peaks.
-    // Voices that struggle on non-native phonemes often produce transient spikes
-    // that sound like breathing or clicking; soft-clipping rounds them off while
-    // keeping the overall signal intact.
-    //
     private fun applySoftSaturation(samples: FloatArray): FloatArray {
-        // Drive: how aggressively we push into the tanh curve.
-        // 1.2 is very gentle — barely audible on clean speech, but catches
-        // the harsh spikes from cross-language artifacts.
         val drive = 1.2f
         return FloatArray(samples.size) { i ->
             tanh((samples[i] * drive).toDouble()).toFloat()
@@ -64,22 +82,11 @@ object AudioDsp {
     }
 
     // ── Formant smoothing ─────────────────────────────────────────────────────
-    // A simple single-pole IIR low-pass on the amplitude envelope, then
-    // re-applies that smoothed envelope to the original signal's phase.
-    // This makes pitch transitions within syllables feel like a curve
-    // rather than abrupt steps, particularly for Piper voices that produce
-    // slightly robotic transitions between phonemes.
-    //
     private fun applyFormantSmoothing(samples: FloatArray, sampleRate: Int): FloatArray {
         if (samples.isEmpty()) return samples
-
-        // 5ms window: at 22050 Hz → ~110 samples, at 24000 Hz → ~120 samples
-        // Fast enough to preserve consonants, slow enough to smooth vowel-to-vowel
-        // transitions that cause artifacts in non-native phoneme synthesis
         val windowSamples = (sampleRate * 0.005).toInt().coerceAtLeast(1)
-        val alpha = 1.0f / windowSamples  // IIR coefficient
+        val alpha = 1.0f / windowSamples
 
-        // Pass 1: extract instantaneous amplitude envelope
         val envelope = FloatArray(samples.size)
         envelope[0] = abs(samples[0])
         for (i in 1 until samples.size) {
@@ -87,10 +94,6 @@ object AudioDsp {
             envelope[i] = envelope[i - 1] + alpha * (amp - envelope[i - 1])
         }
 
-        // Pass 2: re-shape original signal by the smoothed envelope
-        // Blend ratio: 70% original signal + 30% envelope-shaped
-        // Ratio clamped to [0.5, 2.0] — halve at most, double at most —
-        // to avoid over-amplifying silence or crushing peaks
         return FloatArray(samples.size) { i ->
             val originalAmp = abs(samples[i])
             if (originalAmp > 0.001f) {
@@ -104,42 +107,102 @@ object AudioDsp {
     }
 
     // ── Breathiness ───────────────────────────────────────────────────────────
-    // Mix a low-amplitude breath-noise layer into the speech signal.
-    //
-    // The noise is IIR low-pass filtered to sound like breath (air passing
-    // through a throat) rather than electrical hiss. The breath layer is
-    // shaped by the speech envelope — it's louder when the voice is loud,
-    // quieter during silence. This creates a natural "whispery" quality.
-    //
     private fun applyBreathiness(
         samples: FloatArray,
         sampleRate: Int,
         intensity: Int
     ): FloatArray {
-        // Quadratic curve: intensity 5→10 = very subtle, 100 = clearly whispery
         val curve = (intensity / 100f) * (intensity / 100f)
-        val noiseLevel = curve * 0.18f  // max ~18% noise — above that sounds broken
-
-        // IIR low-pass to make noise sound like breath, not static
-        // Cutoff ~3000Hz gives a "breathy air" quality
-        val alpha = 0.55f  // IIR coefficient for ~3kHz at 22050Hz
+        val noiseLevel = curve * 0.18f
+        val alpha = 0.55f
         var prevNoise = 0f
 
-        // Compute RMS envelope of the speech signal (smoothed)
-        val envWindow = (sampleRate * 0.02).toInt().coerceAtLeast(1)  // 20ms window
+        val envWindow = (sampleRate * 0.02).toInt().coerceAtLeast(1)
         val envelope = computeEnvelope(samples, envWindow)
 
         return FloatArray(samples.size) { i ->
-            // Low-pass filtered noise
             val rawNoise = Random.nextFloat() * 2f - 1f
             prevNoise = prevNoise * (1f - alpha) + rawNoise * alpha
             val breathNoise = prevNoise * noiseLevel
-
-            // Shape breath by speech envelope — breath sounds loudest where speech is
             val envShaped = breathNoise * (0.3f + envelope[i] * 0.7f)
-
             (samples[i] + envShaped).coerceIn(-1f, 1f)
         }
+    }
+
+    // ── Spectral tilt filter (§5.2) ───────────────────────────────────────────
+    // Low-pass that activates proportionally to breathiness.
+    // Real breathiness attenuates high frequencies (steep spectral tilt).
+    // Applied AFTER noise-mixing so it shapes both speech and added noise.
+    private fun applySpectralTilt(
+        samples: FloatArray,
+        sampleRate: Int,
+        breathiness: Float
+    ): FloatArray {
+        if (breathiness < 0.1f) return samples
+        val normalizedBreath = breathiness.coerceIn(0f, 1f)
+        val cutoffHz = lerp(8000f, 2500f, normalizedBreath)
+        val alpha = exp(-2.0 * PI * cutoffHz / sampleRate).toFloat()
+        val result = samples.copyOf()
+        var prev = 0f
+        for (i in result.indices) {
+            result[i] = (1f - alpha) * result[i] + alpha * prev
+            prev = result[i]
+        }
+        return result
+    }
+
+    // ── Jitter simulation (§5.1) ──────────────────────────────────────────────
+    // Applies small, randomized amplitude modulations at speech-rate timescales
+    // (~8ms windows) to approximate micro-F0 variation. Produces amplitude jitter
+    // that perceptually correlates with vocal roughness/humanness.
+    private fun applyJitter(
+        samples: FloatArray,
+        sampleRate: Int,
+        jitterAmount: Float
+    ): FloatArray {
+        val windowMs = 8
+        val windowSamples = (sampleRate * windowMs / 1000).coerceAtLeast(1)
+        val result = samples.copyOf()
+        val rng = Random
+        var i = 0
+        while (i < result.size) {
+            val gain = 1f + (rng.nextFloat() - 0.5f) * 2f * jitterAmount
+            val end = minOf(i + windowSamples, result.size)
+            for (j in i until end) result[j] = (result[j] * gain).coerceIn(-1f, 1f)
+            i = end
+        }
+        return result
+    }
+
+    // ── Vocal fry at phrase endings (§5.3) ────────────────────────────────────
+    // Applies low-frequency amplitude modulation (30–70Hz) to the final ~200ms
+    // to approximate creaky voice / pulse register at phrase ends.
+    private fun applyVocalFry(samples: FloatArray, sampleRate: Int): FloatArray {
+        if (samples.size < sampleRate / 5) return samples  // skip very short samples
+        val fryDurationSamples = (sampleRate * 0.2f).toInt()  // last 200ms
+        val fryStart = (samples.size - fryDurationSamples).coerceAtLeast(0)
+        val fryFreq = 45f  // Hz, typical vocal fry rate
+        val result = samples.copyOf()
+        for (i in fryStart until result.size) {
+            val t = (i - fryStart).toFloat() / sampleRate
+            val fryGain = 0.5f + 0.5f * sin(2.0 * PI * fryFreq * t).toFloat()
+            val fadeFactor = 1f - ((i - fryStart).toFloat() / (result.size - fryStart)) * 0.3f
+            result[i] = (result[i] * fryGain * fadeFactor).coerceIn(-1f, 1f)
+        }
+        return result
+    }
+
+    // ── Trailing off (§4.3B) ──────────────────────────────────────────────────
+    // Linear fade-out on the last 15% of the PCM buffer for fatigued/collapsed states.
+    private fun applyTrailingOff(samples: FloatArray): FloatArray {
+        val fadeStart = (samples.size * 0.85f).toInt()
+        if (fadeStart >= samples.size) return samples
+        val result = samples.copyOf()
+        for (i in fadeStart until result.size) {
+            val factor = 1f - ((i - fadeStart).toFloat() / (result.size - fadeStart))
+            result[i] *= factor.coerceAtLeast(0f)
+        }
+        return result
     }
 
     // Compute per-sample RMS envelope (normalised 0-1) with a trailing sliding window
@@ -149,25 +212,21 @@ object AudioDsp {
         var maxRms = 0f
 
         for (i in samples.indices) {
-            // Add the incoming sample
             sumSq += samples[i] * samples[i]
-            // Remove the sample that has fallen out of the window
             if (i >= windowSize) {
                 sumSq -= samples[i - windowSize] * samples[i - windowSize]
             }
-            // Guard against floating-point underflow producing a negative sumSq
             sumSq = sumSq.coerceAtLeast(0f)
-            // During the first windowSize samples the window hasn't filled yet,
-            // so divide by the actual number of samples accumulated so far.
             val count = minOf(i + 1, windowSize)
             val rms = sqrt(sumSq / count)
             envelope[i] = rms
             if (rms > maxRms) maxRms = rms
         }
 
-        // Normalize envelope to 0-1
         return if (maxRms > 0f) {
             FloatArray(envelope.size) { i -> (envelope[i] / maxRms).coerceIn(0f, 1f) }
         } else envelope
     }
+
+    private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
 }

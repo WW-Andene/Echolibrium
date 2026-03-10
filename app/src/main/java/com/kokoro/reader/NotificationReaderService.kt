@@ -27,6 +27,26 @@ class NotificationReaderService : NotificationListenerService() {
     private val lastNotificationContent = LinkedHashMap<String, String>(32, 0.75f, true)
     private val dedupLock = Object()
 
+    // ── Sender history (§7.0) ────────────────────────────────────────────────
+    // Key = title (sender name heuristic), Value = SenderRecord
+    private data class SenderRecord(
+        val senderId: String,
+        val count: Int = 1,
+        val lastTimestamp: Long = System.currentTimeMillis()
+    ) {
+        fun pressure(now: Long): Float {
+            val recencyMinutes = (now - lastTimestamp) / 60000f
+            val recencyDecay = (1f - recencyMinutes / 30f).coerceIn(0f, 1f)
+            return (count / 5f * recencyDecay).coerceIn(0f, 1f)
+        }
+    }
+    private val senderHistory = LinkedHashMap<String, SenderRecord>(32, 0.75f, true)
+    private val senderLock = Object()
+
+    // ── MoodState (§1.0) ─────────────────────────────────────────────────────
+    @Volatile private var currentMood: MoodState? = null
+    private val moodLock = Object()
+
     companion object {
         private const val TAG = "NotiReaderService"
         private const val CHANNEL_ID = "kokoro_foreground"
@@ -54,12 +74,16 @@ class NotificationReaderService : NotificationListenerService() {
         AudioPipeline.start(this)
         // Eagerly warm up the TTS engine so first synthesis has zero lag
         SherpaEngine.warmUp(this)
+        // Load persisted mood state
+        currentMood = MoodState.load(prefs)
         // Start foreground notification to keep the service alive in background
         startForegroundNotification()
         Log.d(TAG, "Service created, foreground notification started")
     }
 
     override fun onDestroy() {
+        // Persist mood before shutdown
+        currentMood?.let { MoodState.save(prefs, it) }
         instance = null
         VoiceCommandListener.stop()
         AudioPipeline.shutdown()
@@ -93,7 +117,7 @@ class NotificationReaderService : NotificationListenerService() {
         try {
             handleNotification(sbn)
         } catch (e: Exception) {
-            Log.e(TAG, "Error processing notification from ${sbn.packageName}", e)
+            Log.e(TAG, "Error handling notification from ${sbn.packageName}", e)
         }
     }
 
@@ -134,6 +158,29 @@ class NotificationReaderService : NotificationListenerService() {
             dailyCount
         }
 
+        // ── Sender history lookup (§7.0) ──────────────────────────────────
+        val now = System.currentTimeMillis()
+        val senderId = title.ifBlank { sbn.packageName }
+        val senderResult = synchronized(senderLock) {
+            val existing = senderHistory[senderId]
+            val previousTimestamp = existing?.lastTimestamp ?: now
+            val updated = if (existing != null) {
+                existing.copy(count = existing.count + 1, lastTimestamp = now)
+            } else {
+                SenderRecord(senderId, 1, now)
+            }
+            senderHistory[senderId] = updated
+            // Evict old entries
+            while (senderHistory.size > 100) {
+                val it = senderHistory.iterator()
+                it.next()
+                it.remove()
+            }
+            Pair(updated, previousTimestamp)
+        }
+        val senderRecord = senderResult.first
+        val previousTimestamp = senderResult.second
+
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val signal = SignalExtractor.extract(
             packageName = sbn.packageName,
@@ -142,13 +189,29 @@ class NotificationReaderService : NotificationListenerService() {
             text        = text,
             hourOfDay   = hour,
             floodCount  = floodCount
+        ).copy(
+            // Inject sender history into signal (§7.0)
+            senderRepeat   = senderRecord.count,
+            senderRecency  = now - previousTimestamp,
+            senderPressure = senderRecord.pressure(now)
         )
 
         val profiles  = VoiceProfile.loadAll(prefs)
         val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
             ?: prefs.getString("active_profile_id", "")
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        val modulated = VoiceModulator.modulate(profile, signal)
+
+        // ── MoodState update + modulation (§1.0) ─────────────────────────
+        val mood = synchronized(moodLock) {
+            val loaded = currentMood ?: MoodState.load(prefs)
+            val updated = MoodUpdater.update(loaded.decayed(profile.sensitivity.moodDecayRate), signal, profile.sensitivity.moodVelocity)
+            currentMood = updated
+            // Persist mood periodically (every 10 notifications)
+            if (updated.sessionCount % 10 == 0) MoodState.save(prefs, updated)
+            updated
+        }
+
+        val modulated = VoiceModulator.modulate(profile, signal, mood, hour)
 
         val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
         val rawText = buildMessage(appName, title, text, readMode)
@@ -163,7 +226,8 @@ class NotificationReaderService : NotificationListenerService() {
             modulated = modulated,
             signal    = signal,
             rules     = loadWordingRules(),
-            priority  = signal.urgencyType == UrgencyType.EXPIRING
+            priority  = signal.urgencyType == UrgencyType.EXPIRING,
+            mood      = mood
         ))
     }
 

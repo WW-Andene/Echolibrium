@@ -57,13 +57,14 @@ class HomeFragment : Fragment() {
 
         switchVoiceCmd.setOnCheckedChangeListener { _, enabled ->
             prefs.edit().putBoolean("voice_commands_enabled", enabled).apply()
+            val ctx = context ?: return@setOnCheckedChangeListener
             if (enabled) {
                 // Check RECORD_AUDIO permission
-                if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {
                     requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
                 } else {
-                    VoiceCommandListener.start(requireContext().applicationContext)
+                    VoiceCommandListener.start(ctx.applicationContext)
                 }
             } else {
                 VoiceCommandListener.stop()
@@ -71,8 +72,12 @@ class HomeFragment : Fragment() {
             updateVoiceCommandStatus(voiceCmdStatus)
         }
 
-        VoiceCommandListener.onStatusChanged = { listening ->
-            activity?.runOnUiThread { updateVoiceCommandStatus(voiceCmdStatus) }
+        VoiceCommandListener.onStatusChanged = { _ ->
+            activity?.runOnUiThread {
+                if (isAdded) view?.findViewById<TextView>(R.id.voice_command_status)?.let {
+                    updateVoiceCommandStatus(it)
+                }
+            }
         }
 
         // Start voice commands if enabled and permission granted
@@ -88,7 +93,8 @@ class HomeFragment : Fragment() {
         spinnerMode.setSelection(modeVals.indexOf(prefs.getString("read_mode", "full")).coerceAtLeast(0))
         spinnerMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v2: View?, pos: Int, id: Long) {
-                prefs.edit().putString("read_mode", modeVals[pos]).apply()
+                val mode = modeVals.getOrNull(pos) ?: return
+                prefs.edit().putString("read_mode", mode).apply()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
@@ -143,12 +149,13 @@ class HomeFragment : Fragment() {
     @Suppress("DEPRECATION")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         if (requestCode == AUDIO_PERMISSION_CODE) {
+            val ctx = context ?: return
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                VoiceCommandListener.start(requireContext().applicationContext)
+                VoiceCommandListener.start(ctx.applicationContext)
             } else {
                 prefs.edit().putBoolean("voice_commands_enabled", false).apply()
                 view?.findViewById<SwitchCompat>(R.id.switch_voice_commands)?.isChecked = false
-                Toast.makeText(context, "Microphone permission required for voice commands", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "Microphone permission required for voice commands", Toast.LENGTH_SHORT).show()
             }
             view?.let { updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status)) }
         }

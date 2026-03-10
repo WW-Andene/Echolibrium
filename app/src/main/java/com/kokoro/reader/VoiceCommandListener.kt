@@ -18,7 +18,7 @@ import androidx.preference.PreferenceManager
  * The mic only triggers action when the profile name is heard first,
  * preventing the constant beep from SpeechRecognizer's ready sound.
  *
- * Commands: "repeat", "how long ago?", "stop", "what time?"
+ * Commands: "repeat", "how long ago?", "stop", "what time?", "how are you feeling?"
  */
 object VoiceCommandListener {
 
@@ -39,10 +39,13 @@ object VoiceCommandListener {
     var onStatusChanged: ((Boolean) -> Unit)? = null
 
     fun start(ctx: Context) {
-        if (isListening) return
-        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
-            Log.w(TAG, "Speech recognition not available on this device")
-            return
+        synchronized(this) {
+            if (isListening) return
+            if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
+                Log.w(TAG, "Speech recognition not available on this device")
+                return
+            }
+            isListening = true
         }
 
         // Load the active profile name as the wake word
@@ -53,7 +56,6 @@ object VoiceCommandListener {
                 val sr = SpeechRecognizer.createSpeechRecognizer(ctx.applicationContext)
                 sr.setRecognitionListener(CommandRecognitionListener(ctx.applicationContext))
                 recognizer = sr
-                isListening = true
                 onStatusChanged?.invoke(true)
                 startListeningInternal()
                 Log.d(TAG, "Voice command listener started (wake word: '$wakeWord')")

@@ -51,14 +51,14 @@ class AppsFragment : Fragment() {
                 if (!isAdded) return@runOnUiThread
                 rules.addAll(newRules)
                 if (rules.isEmpty()) {
-                    Toast.makeText(ctx, "No user apps found.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context ?: return@runOnUiThread, "No user apps found.", Toast.LENGTH_SHORT).show()
                 }
                 AppRule.saveAll(rules, prefs)
                 renderRules()
                 btn.isEnabled = true
                 btn.text = "RELOAD APPS"
             }
-        }.start()
+        }.apply { name = "AppsFragment-load"; isDaemon = true; start() }
     }
 
     private fun renderRules() {
@@ -103,7 +103,8 @@ class AppsFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = modeVals[pos])) }
+                    val mode = modeVals.getOrNull(pos) ?: return
+                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = mode)) }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }

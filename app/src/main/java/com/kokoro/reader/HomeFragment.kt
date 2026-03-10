@@ -3,7 +3,10 @@ package com.kokoro.reader
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.view.*
 import android.widget.*
@@ -18,6 +21,7 @@ class HomeFragment : Fragment() {
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
+        private const val STORAGE_PERMISSION_CODE = 1002
     }
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
@@ -50,7 +54,8 @@ class HomeFragment : Fragment() {
     }
 
     private fun initializeViews(v: View) {
-        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        val ctx = context ?: return
+        prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val statusText       = v.findViewById<TextView>(R.id.status_text)
         val serviceStatusText = v.findViewById<TextView>(R.id.service_status_text)
         val btnPermission    = v.findViewById<Button>(R.id.btn_permission)
@@ -68,7 +73,13 @@ class HomeFragment : Fragment() {
         val btnStop          = v.findViewById<Button>(R.id.btn_stop)
 
         // Eagerly warm up the voice engine so it's ready when user wants to test
-        SherpaEngine.warmUp(requireContext().applicationContext)
+        SherpaEngine.warmUp(ctx.applicationContext)
+
+        // ── Storage permission for crash logs ─────────────────────────────────
+        // Crash logs are written to /storage/emulated/0/WW_Andene/
+        // On Android 11+ this needs MANAGE_EXTERNAL_STORAGE ("All files access")
+        // On Android ≤10 this needs WRITE_EXTERNAL_STORAGE
+        requestStoragePermissionIfNeeded()
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         btnPermission.setOnClickListener {
@@ -118,7 +129,7 @@ class HomeFragment : Fragment() {
 
         val modes = arrayOf("Full (App + Title + Text)", "App + Title", "App name only", "Text only")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only")
-        spinnerMode.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
+        spinnerMode.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, modes)
         spinnerMode.setSelection(modeVals.indexOf(prefs.getString("read_mode", "full")).coerceAtLeast(0))
         spinnerMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v2: View?, pos: Int, id: Long) {
@@ -199,6 +210,55 @@ class HomeFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "Error in onRequestPermissionsResult", e)
+        }
+    }
+
+    /**
+     * Ensures storage permission is granted so crash logs can be written to
+     * /storage/emulated/0/WW_Andene/.
+     *
+     * Android 11+ (API 30+): needs MANAGE_EXTERNAL_STORAGE → opens "All files access" settings.
+     * Android ≤10 (API ≤29): needs WRITE_EXTERNAL_STORAGE → standard permission dialog.
+     *
+     * Only prompts once per app install to avoid annoying the user if they decline.
+     */
+    private fun requestStoragePermissionIfNeeded() {
+        try {
+            val ctx = context ?: return
+            // Only prompt once — don't nag if user already declined
+            if (prefs.getBoolean("storage_permission_requested", false)) return
+            prefs.edit().putBoolean("storage_permission_requested", true).apply()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Android 11+ — check MANAGE_EXTERNAL_STORAGE
+                if (!Environment.isExternalStorageManager()) {
+                    try {
+                        val intent = Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:${ctx.packageName}")
+                        )
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        // Fallback for devices that don't support the per-app intent
+                        try {
+                            startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                        } catch (_: Exception) {
+                            android.util.Log.w("HomeFragment", "Cannot open all-files-access settings", e)
+                        }
+                    }
+                }
+            } else {
+                // Android ≤10 — check WRITE_EXTERNAL_STORAGE
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(
+                        arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                        STORAGE_PERMISSION_CODE
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeFragment", "Error requesting storage permission", e)
         }
     }
 

@@ -20,37 +20,38 @@ class ProfilesFragment : Fragment() {
     private var genderFilter = "All"
     private var languageFilter = "All"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var viewsBound = false
 
-    private lateinit var profileSpinner: Spinner
-    private lateinit var txtPreview: EditText
-    private lateinit var btnTest: Button
-    private lateinit var btnStop: Button
-    private lateinit var btnSave: Button
-    private lateinit var btnDelete: Button
-    private lateinit var btnNew: Button
-    private lateinit var btnResetSettings: Button
-    private lateinit var btnRenameVoice: Button
-    private lateinit var seekPitch: SeekBar;  private lateinit var tvPitch: TextView
-    private lateinit var seekSpeed: SeekBar;  private lateinit var tvSpeed: TextView
-    private lateinit var seekBreathInt: SeekBar;   private lateinit var tvBreathInt: TextView
-    private lateinit var seekBreathCurve: SeekBar; private lateinit var tvBreathCurve: TextView
-    private lateinit var seekBreathPause: SeekBar; private lateinit var tvBreathPause: TextView
-    private lateinit var seekStutterInt: SeekBar;  private lateinit var tvStutterInt: TextView
-    private lateinit var seekStutterPos: SeekBar;  private lateinit var tvStutterPos: TextView
-    private lateinit var seekStutterFreq: SeekBar; private lateinit var tvStutterFreq: TextView
-    private lateinit var seekStutterPause: SeekBar; private lateinit var tvStutterPause: TextView
-    private lateinit var seekIntonInt: SeekBar;    private lateinit var tvIntonInt: TextView
-    private lateinit var seekIntonVar: SeekBar;    private lateinit var tvIntonVar: TextView
-    private lateinit var voiceGrid: LinearLayout
-    private lateinit var presetsScroll: LinearLayout
-    private lateinit var gimmicksContainer: LinearLayout
-    private lateinit var genderRow: LinearLayout
-    private lateinit var nationRow: LinearLayout
-    private lateinit var tvEngineStatus: TextView
-    private lateinit var selectedVoiceBanner: LinearLayout
-    private lateinit var tvSelectedVoiceIcon: TextView
-    private lateinit var tvSelectedVoiceName: TextView
-    private lateinit var tvSelectedVoiceDetail: TextView
+    private var profileSpinner: Spinner? = null
+    private var txtPreview: EditText? = null
+    private var btnTest: Button? = null
+    private var btnStop: Button? = null
+    private var btnSave: Button? = null
+    private var btnDelete: Button? = null
+    private var btnNew: Button? = null
+    private var btnResetSettings: Button? = null
+    private var btnRenameVoice: Button? = null
+    private var seekPitch: SeekBar? = null;  private var tvPitch: TextView? = null
+    private var seekSpeed: SeekBar? = null;  private var tvSpeed: TextView? = null
+    private var seekBreathInt: SeekBar? = null;   private var tvBreathInt: TextView? = null
+    private var seekBreathCurve: SeekBar? = null; private var tvBreathCurve: TextView? = null
+    private var seekBreathPause: SeekBar? = null; private var tvBreathPause: TextView? = null
+    private var seekStutterInt: SeekBar? = null;  private var tvStutterInt: TextView? = null
+    private var seekStutterPos: SeekBar? = null;  private var tvStutterPos: TextView? = null
+    private var seekStutterFreq: SeekBar? = null; private var tvStutterFreq: TextView? = null
+    private var seekStutterPause: SeekBar? = null; private var tvStutterPause: TextView? = null
+    private var seekIntonInt: SeekBar? = null;    private var tvIntonInt: TextView? = null
+    private var seekIntonVar: SeekBar? = null;    private var tvIntonVar: TextView? = null
+    private var voiceGrid: LinearLayout? = null
+    private var presetsScroll: LinearLayout? = null
+    private var gimmicksContainer: LinearLayout? = null
+    private var genderRow: LinearLayout? = null
+    private var nationRow: LinearLayout? = null
+    private var tvEngineStatus: TextView? = null
+    private var selectedVoiceBanner: LinearLayout? = null
+    private var tvSelectedVoiceIcon: TextView? = null
+    private var tvSelectedVoiceName: TextView? = null
+    private var tvSelectedVoiceDetail: TextView? = null
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
         try { i.inflate(R.layout.fragment_profiles, c, false) }
@@ -58,7 +59,8 @@ class ProfilesFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         try {
-            prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            val ctx = context ?: return
+            prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
             bindViews(v)
             profiles = VoiceProfile.loadAll(prefs)
             activeProfileId = prefs.getString("active_profile_id", "") ?: ""
@@ -124,20 +126,20 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun updateEngineStatusUI() {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         val error = SherpaEngine.errorMessage
         when {
             SherpaEngine.isReady -> {
-                tvEngineStatus.text = "✓ Voice engine ready"
-                tvEngineStatus.setTextColor(0xFF00ff88.toInt())
+                tvEngineStatus?.text = "✓ Voice engine ready"
+                tvEngineStatus?.setTextColor(0xFF00ff88.toInt())
             }
             error != null -> {
-                tvEngineStatus.text = "✗ Engine error: $error"
-                tvEngineStatus.setTextColor(0xFFff4444.toInt())
+                tvEngineStatus?.text = "✗ Engine error: $error"
+                tvEngineStatus?.setTextColor(0xFFff4444.toInt())
             }
             else -> {
-                tvEngineStatus.text = "⏳ Initializing voice engine…"
-                tvEngineStatus.setTextColor(0xFFffaa00.toInt())
+                tvEngineStatus?.text = "⏳ Initializing voice engine…"
+                tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
             }
         }
     }
@@ -195,21 +197,22 @@ class ProfilesFragment : Fragment() {
         seekStutterPause= v.findViewById(R.id.seek_stutter_pause); tvStutterPause= v.findViewById(R.id.tv_stutter_pause)
         seekIntonInt    = v.findViewById(R.id.seek_intonation_int);tvIntonInt    = v.findViewById(R.id.tv_intonation_int)
         seekIntonVar    = v.findViewById(R.id.seek_intonation_var);tvIntonVar    = v.findViewById(R.id.tv_intonation_var)
+        viewsBound = true
     }
 
     private fun buildFilterButtons() {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         val ctx = context ?: return
-        genderRow.removeAllViews()
-        nationRow.removeAllViews()
+        genderRow?.removeAllViews()
+        nationRow?.removeAllViews()
 
         KokoroVoices.genders().forEach { g ->
-            genderRow.addView(filterBtn(ctx, g, genderFilter == g) {
+            genderRow?.addView(filterBtn(ctx, g, genderFilter == g) {
                 genderFilter = g; buildFilterButtons(); renderVoiceGrid()
             })
         }
         KokoroVoices.languages().forEach { l ->
-            nationRow.addView(filterBtn(ctx, l, languageFilter == l) {
+            nationRow?.addView(filterBtn(ctx, l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
             })
         }
@@ -228,23 +231,23 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun updateSelectedVoiceBanner() {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         val voiceId = currentProfile.voiceName
         val alias = currentProfile.voiceAlias
         val kokoroVoice = KokoroVoices.byId(voiceId)
         val piperVoice = PiperVoiceCatalog.byId(voiceId)
         when {
             kokoroVoice != null -> {
-                tvSelectedVoiceIcon.text = kokoroVoice.genderIcon
-                tvSelectedVoiceIcon.setTextColor(kokoroVoice.genderColor)
-                tvSelectedVoiceName.text = if (alias.isNotBlank()) "$alias (${kokoroVoice.displayName})" else kokoroVoice.displayName
-                tvSelectedVoiceDetail.text = "${kokoroVoice.flagEmoji} ${kokoroVoice.nationality} · ${kokoroVoice.gender} · Kokoro"
-                selectedVoiceBanner.setBackgroundColor(0xFF0d2a0d.toInt())
+                tvSelectedVoiceIcon?.text = kokoroVoice.genderIcon
+                tvSelectedVoiceIcon?.setTextColor(kokoroVoice.genderColor)
+                tvSelectedVoiceName?.text = if (alias.isNotBlank()) "$alias (${kokoroVoice.displayName})" else kokoroVoice.displayName
+                tvSelectedVoiceDetail?.text = "${kokoroVoice.flagEmoji} ${kokoroVoice.nationality} · ${kokoroVoice.gender} · Kokoro"
+                selectedVoiceBanner?.setBackgroundColor(0xFF0d2a0d.toInt())
             }
             piperVoice != null -> {
-                tvSelectedVoiceIcon.text = piperVoice.genderIcon
-                tvSelectedVoiceIcon.setTextColor(piperVoice.genderColor)
-                tvSelectedVoiceName.text = if (alias.isNotBlank()) "$alias (${piperVoice.displayName})" else piperVoice.displayName
+                tvSelectedVoiceIcon?.text = piperVoice.genderIcon
+                tvSelectedVoiceIcon?.setTextColor(piperVoice.genderColor)
+                tvSelectedVoiceName?.text = if (alias.isNotBlank()) "$alias (${piperVoice.displayName})" else piperVoice.displayName
                 val ctx = context
                 val status = when {
                     ctx != null && PiperVoiceManager.isVoiceReady(ctx, piperVoice.id) ->
@@ -252,23 +255,23 @@ class ProfilesFragment : Fragment() {
                     PiperVoiceManager.isBundled(piperVoice.id) -> "bundled · extracting"
                     else -> "not downloaded"
                 }
-                tvSelectedVoiceDetail.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
-                selectedVoiceBanner.setBackgroundColor(0xFF0d1a2a.toInt())
+                tvSelectedVoiceDetail?.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
+                selectedVoiceBanner?.setBackgroundColor(0xFF0d1a2a.toInt())
             }
             else -> {
-                tvSelectedVoiceIcon.text = "?"
-                tvSelectedVoiceIcon.setTextColor(0xFF666666.toInt())
-                tvSelectedVoiceName.text = if (alias.isNotBlank()) alias else voiceId.ifEmpty { "None selected" }
-                tvSelectedVoiceDetail.text = "Tap a voice below to select"
-                selectedVoiceBanner.setBackgroundColor(0xFF1a1a1a.toInt())
+                tvSelectedVoiceIcon?.text = "?"
+                tvSelectedVoiceIcon?.setTextColor(0xFF666666.toInt())
+                tvSelectedVoiceName?.text = if (alias.isNotBlank()) alias else voiceId.ifEmpty { "None selected" }
+                tvSelectedVoiceDetail?.text = "Tap a voice below to select"
+                selectedVoiceBanner?.setBackgroundColor(0xFF1a1a1a.toInt())
             }
         }
     }
 
     private fun renderVoiceGrid() {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         val ctx = context ?: return
-        voiceGrid.removeAllViews()
+        voiceGrid?.removeAllViews()
 
         // ── Filter Kokoro voices ──────────────────────────────────────────
         val kokoroFiltered = KokoroVoices.ALL.filter { v ->
@@ -285,7 +288,7 @@ class ProfilesFragment : Fragment() {
         }
 
         if (kokoroFiltered.isEmpty() && piperFiltered.isEmpty()) {
-            voiceGrid.addView(TextView(ctx).apply {
+            voiceGrid?.addView(TextView(ctx).apply {
                 text = "No voices match filter."; setTextColor(0xFF446644.toInt()); textSize = 12f
             }); return
         }
@@ -293,7 +296,7 @@ class ProfilesFragment : Fragment() {
         // ── Kokoro voices (grouped by language) ──────────────────────────
         if (kokoroFiltered.isNotEmpty()) {
             kokoroFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-                voiceGrid.addView(TextView(ctx).apply {
+                voiceGrid?.addView(TextView(ctx).apply {
                     text = "KOKORO · ${lang.uppercase()}  (${voices.size} bundled)"
                     textSize = 10f; setTextColor(0xFF446644.toInt())
                     setPadding(4, 14, 0, 6)
@@ -318,7 +321,7 @@ class ProfilesFragment : Fragment() {
                 val downloadable = deduped.filter { !PiperVoiceManager.isBundled(it.id) }
 
                 if (bundled.isNotEmpty()) {
-                    voiceGrid.addView(TextView(ctx).apply {
+                    voiceGrid?.addView(TextView(ctx).apply {
                         text = "PIPER · ${lang.uppercase()}  (${bundled.size} bundled)"
                         textSize = 10f; setTextColor(0xFF446644.toInt())
                         setPadding(4, 14, 0, 6)
@@ -335,7 +338,7 @@ class ProfilesFragment : Fragment() {
                 }
 
                 if (downloadable.isNotEmpty()) {
-                    voiceGrid.addView(TextView(ctx).apply {
+                    voiceGrid?.addView(TextView(ctx).apply {
                         text = "PIPER · ${lang.uppercase()}  (${downloadable.size} downloadable)"
                         textSize = 10f; setTextColor(0xFF446644.toInt())
                         setPadding(4, 14, 0, 6)
@@ -443,14 +446,14 @@ class ProfilesFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
                 })
             }
-            voiceGrid.addView(row)
+            voiceGrid?.addView(row)
         }
     }
 
     private fun buildPresets() {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         val ctx = context ?: return
-        presetsScroll.removeAllViews()
+        presetsScroll?.removeAllViews()
         VoiceProfile.PRESETS.forEach { preset ->
             val btn = Button(ctx).apply {
                 text = "${preset.emoji}\n${preset.name}"; textSize = 11f
@@ -462,7 +465,7 @@ class ProfilesFragment : Fragment() {
                     loadProfileToUI(preset.copy(id = currentProfile.id, name = currentProfile.name, voiceName = currentProfile.voiceName, voiceAlias = currentProfile.voiceAlias))
                 }
             }
-            presetsScroll.addView(btn)
+            presetsScroll?.addView(btn)
         }
     }
 
@@ -685,9 +688,9 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildGimmicksEditor() {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         val ctx = context ?: return
-        gimmicksContainer.removeAllViews()
+        gimmicksContainer?.removeAllViews()
         val allTypes = listOf("giggle","sigh","huh","mmm","woah","ugh","aww","gasp","yawn","hmm","laugh","tsk")
         allTypes.forEach { type ->
             val existing = currentProfile.gimmicks.find { it.type == type }
@@ -758,7 +761,7 @@ class ProfilesFragment : Fragment() {
                 posRow.addView(pb)
             }
             row.addView(posRow)
-            gimmicksContainer.addView(row)
+            gimmicksContainer?.addView(row)
         }
     }
 
@@ -772,11 +775,11 @@ class ProfilesFragment : Fragment() {
     private fun setupProfileSpinner() {
         val ctx = context ?: return
         if (profiles.isEmpty()) return
-        profileSpinner.adapter = ArrayAdapter(ctx,
+        profileSpinner?.adapter = ArrayAdapter(ctx,
             android.R.layout.simple_spinner_dropdown_item, profiles.map { "${it.emoji} ${it.name}" })
         val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
-        profileSpinner.setSelection(idx)
-        profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        profileSpinner?.setSelection(idx)
+        profileSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 if (!isAdded || view == null) return
                 val selected = profiles.getOrNull(pos) ?: return
@@ -789,7 +792,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun setupButtons() {
-        btnTest.setOnClickListener {
+        btnTest?.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
             if (!SherpaEngine.isReady) {
                 Toast.makeText(ctx, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
@@ -798,7 +801,7 @@ class ProfilesFragment : Fragment() {
             try {
                 val p = readProfileFromUI()
                 val rules = loadWordingRules()
-                val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
+                val text = txtPreview?.text?.toString()?.ifBlank { "Hello! This is how I sound." } ?: "Hello! This is how I sound."
                 // Use AudioPipeline directly — works without notification service
                 val appCtx = context?.applicationContext ?: return@setOnClickListener
                 AudioPipeline.testSpeak(appCtx, text, p, rules)
@@ -807,11 +810,11 @@ class ProfilesFragment : Fragment() {
                 Toast.makeText(ctx, "Error testing voice", Toast.LENGTH_SHORT).show()
             }
         }
-        btnStop.setOnClickListener {
+        btnStop?.setOnClickListener {
             AudioPipeline.stop()
             Toast.makeText(context ?: return@setOnClickListener, "Stopped", Toast.LENGTH_SHORT).show()
         }
-        btnResetSettings.setOnClickListener {
+        btnResetSettings?.setOnClickListener {
             loadProfileToUI(currentProfile.copy(
                 pitch = 1.0f, speed = 1.0f,
                 breathIntensity = 0, breathCurvePosition = 0f, breathPause = 0,
@@ -821,14 +824,14 @@ class ProfilesFragment : Fragment() {
             ))
             Toast.makeText(context ?: return@setOnClickListener, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
         }
-        btnSave.setOnClickListener {
+        btnSave?.setOnClickListener {
             val p = readProfileFromUI()
             val idx = profiles.indexOfFirst { it.id == p.id }
             if (idx >= 0) profiles[idx] = p else profiles.add(p)
             VoiceProfile.saveAll(profiles, prefs)
             Toast.makeText(context ?: return@setOnClickListener, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
         }
-        btnNew.setOnClickListener {
+        btnNew?.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
             val et = EditText(ctx).apply { hint = "Profile name" }
             try {
@@ -837,13 +840,13 @@ class ProfilesFragment : Fragment() {
                         val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
                         val p = VoiceProfile(name = name)
                         profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
-                        setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
+                        setupProfileSpinner(); profileSpinner?.setSelection(profiles.size - 1)
                     }.setNegativeButton("Cancel", null).show()
             } catch (e: Exception) {
                 Log.w("ProfilesFragment", "Failed to show new profile dialog", e)
             }
         }
-        btnDelete.setOnClickListener {
+        btnDelete?.setOnClickListener {
             if (profiles.size <= 1) { Toast.makeText(context ?: return@setOnClickListener, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val ctx = context ?: return@setOnClickListener
             try {
@@ -856,7 +859,7 @@ class ProfilesFragment : Fragment() {
                 Log.w("ProfilesFragment", "Failed to show delete dialog", e)
             }
         }
-        btnRenameVoice.setOnClickListener {
+        btnRenameVoice?.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
             val et = EditText(ctx).apply {
                 hint = "Voice nickname (leave empty to clear)"
@@ -891,33 +894,33 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun loadProfileToUI(p: VoiceProfile) {
-        if (!isAdded || view == null) return
+        if (!viewsBound || !isAdded || view == null) return
         currentProfile = p
-        seekPitch.max = 200; seekPitch.progress = ((p.pitch - 0.50f) / 1.50f * 200f).toInt().coerceIn(0, 200)
-        tvPitch.text = "Pitch: %.2f".format(p.pitch)
-        seekSpeed.max = 200; seekSpeed.progress = ((p.speed - 0.50f) / 2.50f * 200f).toInt().coerceIn(0, 200)
-        tvSpeed.text = "Speed: %.2f".format(p.speed)
-        seekBreathInt.max = 200; seekBreathInt.progress = progressiveToSlider(p.breathIntensity, 100); tvBreathInt.text = "Intensity: ${p.breathIntensity}"
-        seekBreathCurve.max = 200; seekBreathCurve.progress = progressiveToSlider((p.breathCurvePosition * 100).toInt(), 100); tvBreathCurve.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
-        seekBreathPause.max = 200; seekBreathPause.progress = progressiveToSlider(p.breathPause, 100); tvBreathPause.text = "Pause: ${p.breathPause}"
-        seekStutterInt.max = 200; seekStutterInt.progress = progressiveToSlider(p.stutterIntensity, 100); tvStutterInt.text = "Intensity: ${p.stutterIntensity}"
-        seekStutterPos.max = 200; seekStutterPos.progress = progressiveToSlider((p.stutterPosition*100).toInt(), 100); tvStutterPos.text = "Position: ${(p.stutterPosition*100).toInt()}%"
-        seekStutterFreq.max = 200; seekStutterFreq.progress = progressiveToSlider(p.stutterFrequency, 100); tvStutterFreq.text = "Frequency: ${p.stutterFrequency}%"
-        seekStutterPause.max = 200; seekStutterPause.progress = progressiveToSlider(p.stutterPause, 100); tvStutterPause.text = "Pause: ${p.stutterPause}"
-        seekIntonInt.max = 200; seekIntonInt.progress = progressiveToSlider(p.intonationIntensity, 100); tvIntonInt.text = "Intensity: ${p.intonationIntensity}"
-        seekIntonVar.max = 200; seekIntonVar.progress = progressiveToSlider((p.intonationVariation*100).toInt(), 100); tvIntonVar.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
+        seekPitch?.max = 200; seekPitch?.progress = ((p.pitch - 0.50f) / 1.50f * 200f).toInt().coerceIn(0, 200)
+        tvPitch?.text = "Pitch: %.2f".format(p.pitch)
+        seekSpeed?.max = 200; seekSpeed?.progress = ((p.speed - 0.50f) / 2.50f * 200f).toInt().coerceIn(0, 200)
+        tvSpeed?.text = "Speed: %.2f".format(p.speed)
+        seekBreathInt?.max = 200; seekBreathInt?.progress = progressiveToSlider(p.breathIntensity, 100); tvBreathInt?.text = "Intensity: ${p.breathIntensity}"
+        seekBreathCurve?.max = 200; seekBreathCurve?.progress = progressiveToSlider((p.breathCurvePosition * 100).toInt(), 100); tvBreathCurve?.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
+        seekBreathPause?.max = 200; seekBreathPause?.progress = progressiveToSlider(p.breathPause, 100); tvBreathPause?.text = "Pause: ${p.breathPause}"
+        seekStutterInt?.max = 200; seekStutterInt?.progress = progressiveToSlider(p.stutterIntensity, 100); tvStutterInt?.text = "Intensity: ${p.stutterIntensity}"
+        seekStutterPos?.max = 200; seekStutterPos?.progress = progressiveToSlider((p.stutterPosition*100).toInt(), 100); tvStutterPos?.text = "Position: ${(p.stutterPosition*100).toInt()}%"
+        seekStutterFreq?.max = 200; seekStutterFreq?.progress = progressiveToSlider(p.stutterFrequency, 100); tvStutterFreq?.text = "Frequency: ${p.stutterFrequency}%"
+        seekStutterPause?.max = 200; seekStutterPause?.progress = progressiveToSlider(p.stutterPause, 100); tvStutterPause?.text = "Pause: ${p.stutterPause}"
+        seekIntonInt?.max = 200; seekIntonInt?.progress = progressiveToSlider(p.intonationIntensity, 100); tvIntonInt?.text = "Intensity: ${p.intonationIntensity}"
+        seekIntonVar?.max = 200; seekIntonVar?.progress = progressiveToSlider((p.intonationVariation*100).toInt(), 100); tvIntonVar?.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
 
-        attachSeek(seekPitch)      { tvPitch.text = "Pitch: %.2f".format(0.50f + it / 200f * 1.50f) }
-        attachSeek(seekSpeed)      { tvSpeed.text = "Speed: %.2f".format(0.50f + it / 200f * 2.50f) }
-        attachSeek(seekBreathInt)  { tvBreathInt.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" }
-        attachSeek(seekBreathCurve){ tvBreathCurve.text = "Curve: ${progressiveFromSlider(it, 200, 100)}%" }
-        attachSeek(seekBreathPause){ tvBreathPause.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" }
-        attachSeek(seekStutterInt) { tvStutterInt.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" }
-        attachSeek(seekStutterPos) { tvStutterPos.text = "Position: ${progressiveFromSlider(it, 200, 100)}%" }
-        attachSeek(seekStutterFreq){ tvStutterFreq.text = "Frequency: ${progressiveFromSlider(it, 200, 100)}%" }
-        attachSeek(seekStutterPause){tvStutterPause.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" }
-        attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" }
-        attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: ${progressiveFromSlider(it, 200, 100)}%" }
+        seekPitch?.let { s -> attachSeek(s) { tvPitch?.text = "Pitch: %.2f".format(0.50f + it / 200f * 1.50f) } }
+        seekSpeed?.let { s -> attachSeek(s) { tvSpeed?.text = "Speed: %.2f".format(0.50f + it / 200f * 2.50f) } }
+        seekBreathInt?.let { s -> attachSeek(s) { tvBreathInt?.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" } }
+        seekBreathCurve?.let { s -> attachSeek(s) { tvBreathCurve?.text = "Curve: ${progressiveFromSlider(it, 200, 100)}%" } }
+        seekBreathPause?.let { s -> attachSeek(s) { tvBreathPause?.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" } }
+        seekStutterInt?.let { s -> attachSeek(s) { tvStutterInt?.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" } }
+        seekStutterPos?.let { s -> attachSeek(s) { tvStutterPos?.text = "Position: ${progressiveFromSlider(it, 200, 100)}%" } }
+        seekStutterFreq?.let { s -> attachSeek(s) { tvStutterFreq?.text = "Frequency: ${progressiveFromSlider(it, 200, 100)}%" } }
+        seekStutterPause?.let { s -> attachSeek(s) { tvStutterPause?.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" } }
+        seekIntonInt?.let { s -> attachSeek(s) { tvIntonInt?.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" } }
+        seekIntonVar?.let { s -> attachSeek(s) { tvIntonVar?.text = "Variation: ${progressiveFromSlider(it, 200, 100)}%" } }
 
         buildCommentaryEditor()
         buildGimmicksEditor()
@@ -937,17 +940,17 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun readProfileFromUI() = currentProfile.copy(
-        pitch               = 0.50f + seekPitch.progress / 200f * 1.50f,
-        speed               = 0.50f + seekSpeed.progress / 200f * 2.50f,
-        breathIntensity     = progressiveFromSlider(seekBreathInt.progress, 200, 100),
-        breathCurvePosition = progressiveFromSlider(seekBreathCurve.progress, 200, 100) / 100f,
-        breathPause         = progressiveFromSlider(seekBreathPause.progress, 200, 100),
-        stutterIntensity    = progressiveFromSlider(seekStutterInt.progress, 200, 100),
-        stutterPosition     = progressiveFromSlider(seekStutterPos.progress, 200, 100) / 100f,
-        stutterFrequency    = progressiveFromSlider(seekStutterFreq.progress, 200, 100),
-        stutterPause        = progressiveFromSlider(seekStutterPause.progress, 200, 100),
-        intonationIntensity = progressiveFromSlider(seekIntonInt.progress, 200, 100),
-        intonationVariation = progressiveFromSlider(seekIntonVar.progress, 200, 100) / 100f
+        pitch               = 0.50f + (seekPitch?.progress ?: 0) / 200f * 1.50f,
+        speed               = 0.50f + (seekSpeed?.progress ?: 0) / 200f * 2.50f,
+        breathIntensity     = progressiveFromSlider(seekBreathInt?.progress ?: 0, 200, 100),
+        breathCurvePosition = progressiveFromSlider(seekBreathCurve?.progress ?: 0, 200, 100) / 100f,
+        breathPause         = progressiveFromSlider(seekBreathPause?.progress ?: 0, 200, 100),
+        stutterIntensity    = progressiveFromSlider(seekStutterInt?.progress ?: 0, 200, 100),
+        stutterPosition     = progressiveFromSlider(seekStutterPos?.progress ?: 0, 200, 100) / 100f,
+        stutterFrequency    = progressiveFromSlider(seekStutterFreq?.progress ?: 0, 200, 100),
+        stutterPause        = progressiveFromSlider(seekStutterPause?.progress ?: 0, 200, 100),
+        intonationIntensity = progressiveFromSlider(seekIntonInt?.progress ?: 0, 200, 100),
+        intonationVariation = progressiveFromSlider(seekIntonVar?.progress ?: 0, 200, 100) / 100f
     )
 
     private fun loadWordingRules(): List<Pair<String, String>> {
@@ -970,6 +973,17 @@ class ProfilesFragment : Fragment() {
         mainHandler.removeCallbacksAndMessages(null)
         SherpaEngine.onReadyCallback = null
         PiperVoiceManager.downloadCallback = null
+        profileSpinner = null; txtPreview = null; btnTest = null; btnStop = null
+        btnSave = null; btnDelete = null; btnNew = null; btnResetSettings = null; btnRenameVoice = null
+        seekPitch = null; tvPitch = null; seekSpeed = null; tvSpeed = null
+        seekBreathInt = null; tvBreathInt = null; seekBreathCurve = null; tvBreathCurve = null
+        seekBreathPause = null; tvBreathPause = null; seekStutterInt = null; tvStutterInt = null
+        seekStutterPos = null; tvStutterPos = null; seekStutterFreq = null; tvStutterFreq = null
+        seekStutterPause = null; tvStutterPause = null; seekIntonInt = null; tvIntonInt = null
+        seekIntonVar = null; tvIntonVar = null; voiceGrid = null; presetsScroll = null
+        gimmicksContainer = null; genderRow = null; nationRow = null; tvEngineStatus = null
+        selectedVoiceBanner = null; tvSelectedVoiceIcon = null; tvSelectedVoiceName = null; tvSelectedVoiceDetail = null
+        viewsBound = false
         super.onDestroyView()
     }
 }

@@ -23,7 +23,8 @@ class RulesFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         try {
-            prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            val ctx = context ?: return
+            prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
             container = v.findViewById(R.id.rules_container)
             loadRules()
             if (rules.isEmpty()) {
@@ -78,6 +79,7 @@ class RulesFragment : Fragment() {
     }
 
     private fun renderRules() {
+        if (!isAdded || view == null) return
         val ctx = context ?: return
         val c = container ?: return
         c.removeAllViews()

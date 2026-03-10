@@ -186,7 +186,7 @@ object AudioDsp {
         for (i in fryStart until result.size) {
             val t = (i - fryStart).toFloat() / sampleRate
             val fryGain = 0.5f + 0.5f * sin(2.0 * PI * fryFreq * t).toFloat()
-            val fadeFactor = 1f - ((i - fryStart).toFloat() / (result.size - fryStart)) * 0.3f
+            val fadeFactor = 1f - ((i - fryStart).toFloat() / (result.size - fryStart).coerceAtLeast(1)) * 0.3f
             result[i] = (result[i] * fryGain * fadeFactor).coerceIn(-1f, 1f)
         }
         return result
@@ -199,7 +199,7 @@ object AudioDsp {
         if (fadeStart >= samples.size) return samples
         val result = samples.copyOf()
         for (i in fadeStart until result.size) {
-            val factor = 1f - ((i - fadeStart).toFloat() / (result.size - fadeStart))
+            val factor = 1f - ((i - fadeStart).toFloat() / (result.size - fadeStart).coerceAtLeast(1))
             result[i] *= factor.coerceAtLeast(0f)
         }
         return result

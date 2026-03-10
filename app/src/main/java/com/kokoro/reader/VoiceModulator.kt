@@ -92,19 +92,23 @@ object VoiceModulator {
             .coerceIn(0f, 1f)
 
         return ModulatedVoice(
-            pitch               = pitch,
-            speed               = speed,
+            pitch               = pitch.guardNaN(1.0f),
+            speed               = speed.guardNaN(1.0f),
             breathIntensity     = breathIntensity,
-            breathCurvePosition = profile.breathCurvePosition,
+            breathCurvePosition = profile.breathCurvePosition.guardNaN(0f),
             breathPause         = profile.breathPause,
             stutterIntensity    = stutterIntensity,
             stutterFrequency    = stutterFrequency,
-            stutterPosition     = profile.stutterPosition,
+            stutterPosition     = profile.stutterPosition.guardNaN(0f),
             stutterPause        = profile.stutterPause,
             intonationIntensity = intonationIntensity,
-            intonationVariation = intonationVariation
+            intonationVariation = intonationVariation.guardNaN(0.5f)
         )
     }
+
+    /** Replace NaN or Infinity with a safe default */
+    private fun Float.guardNaN(default: Float): Float =
+        if (this.isNaN() || this.isInfinite()) default else this
 
     // Linear interpolation
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)

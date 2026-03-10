@@ -91,6 +91,10 @@ object VoiceTransform {
     // Quadratic: low values are subtle, high values are dramatic
     private fun smooth(v: Int): Float = (v / 100f) * (v / 100f)  // x^2
 
+    /** Replace NaN or Infinity with a safe default to prevent IllegalArgumentException in roundToInt */
+    private fun Float.safeFloat(default: Float): Float =
+        if (this.isNaN() || this.isInfinite()) default else this
+
     // ── Breathiness ───────────────────────────────────────────────────────────
     fun applyBreathiness(text: String, intensity: Int, curvePosition: Float, pause: Int): String {
         if (intensity < 5) return text  // dead zone — below 5 is inaudible
@@ -135,10 +139,11 @@ object VoiceTransform {
 
     private fun stutterWord(word: String, intensity: Int, position: Float, pause: Int): String {
         if (word.length < 2) return word
+        val safePosition = position.safeFloat(0f)
         // Smooth curve: intensity 1-20 = 1 repeat, 50 = 2, 80+ = 3
         val repeats = (smooth(intensity) * 3f + 1f).toInt().coerceIn(1, 4)
         val pauseStr = "-".repeat((smooth(pause) * 3f).toInt().coerceIn(0, 3))
-        val idx = (word.length * position).roundToInt().coerceIn(0, word.length - 1)
+        val idx = (word.length * safePosition).roundToInt().coerceIn(0, word.length - 1)
         val endIdx = minOf(idx + 2, word.length)
         val syllable = word.substring(idx, endIdx)
         val stutter = (1..repeats).joinToString(pauseStr) { syllable } + pauseStr
@@ -148,9 +153,10 @@ object VoiceTransform {
     // ── Intonation ────────────────────────────────────────────────────────────
     fun applyIntonation(text: String, intensity: Int, variation: Float): String {
         if (intensity < 5) return text  // dead zone
+        val safeVariation = variation.safeFloat(0.5f)
         return text.split(" ").mapIndexed { i, word ->
-            val stressed = i % (3 - (variation * 2).roundToInt()).coerceAtLeast(1) == 0
-            if (stressed) intonateWord(word, intensity, variation) else word
+            val stressed = i % (3 - (safeVariation * 2).roundToInt()).coerceAtLeast(1) == 0
+            if (stressed) intonateWord(word, intensity, safeVariation) else word
         }.joinToString(" ")
     }
 

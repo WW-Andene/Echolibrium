@@ -70,23 +70,31 @@ class NotificationReaderService : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
-        AudioPipeline.start(this)
-        // Eagerly warm up the TTS engine so first synthesis has zero lag
-        SherpaEngine.warmUp(this)
-        // Load persisted mood state
-        currentMood = MoodState.load(prefs)
-        // Start foreground notification to keep the service alive in background
-        startForegroundNotification()
-        Log.d(TAG, "Service created, foreground notification started")
+        try {
+            instance = this
+            AudioPipeline.start(this)
+            // Eagerly warm up the TTS engine so first synthesis has zero lag
+            SherpaEngine.warmUp(this)
+            // Load persisted mood state
+            currentMood = MoodState.load(prefs)
+            // Start foreground notification to keep the service alive in background
+            startForegroundNotification()
+            Log.d(TAG, "Service created, foreground notification started")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error during service creation", e)
+        }
     }
 
     override fun onDestroy() {
-        // Persist mood before shutdown
-        currentMood?.let { MoodState.save(prefs, it) }
-        instance = null
-        VoiceCommandListener.stop()
-        AudioPipeline.shutdown()
+        try {
+            // Persist mood before shutdown
+            currentMood?.let { MoodState.save(prefs, it) }
+            instance = null
+            VoiceCommandListener.stop()
+            AudioPipeline.shutdown()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error during service destruction", e)
+        }
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
     }
@@ -97,9 +105,13 @@ class NotificationReaderService : NotificationListenerService() {
      */
     override fun onListenerConnected() {
         super.onListenerConnected()
-        instance = this
-        Log.d(TAG, "Listener connected — notification access is active")
-        prefs.edit().putBoolean("listener_connected", true).apply()
+        try {
+            instance = this
+            Log.d(TAG, "Listener connected — notification access is active")
+            prefs.edit().putBoolean("listener_connected", true).apply()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in onListenerConnected", e)
+        }
     }
 
     /**
@@ -107,13 +119,13 @@ class NotificationReaderService : NotificationListenerService() {
      */
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
-        Log.w(TAG, "Listener disconnected — notification access may have been revoked")
-        prefs.edit().putBoolean("listener_connected", false).apply()
-        // Request rebind — Android will reconnect the service if permission is still granted
         try {
+            Log.w(TAG, "Listener disconnected — notification access may have been revoked")
+            prefs.edit().putBoolean("listener_connected", false).apply()
+            // Request rebind — Android will reconnect the service if permission is still granted
             requestRebind(android.content.ComponentName(this, NotificationReaderService::class.java))
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to request rebind after disconnect", e)
+            Log.e(TAG, "Error in onListenerDisconnected", e)
         }
     }
 
@@ -301,36 +313,45 @@ class NotificationReaderService : NotificationListenerService() {
     // ── Foreground notification ──────────────────────────────────────────────
 
     private fun startForegroundNotification() {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Kokoro Reader Background",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Keeps Kokoro Reader active in the background"
-            setShowBadge(false)
-        }
-        nm.createNotificationChannel(channel)
-
-        val openIntent = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Kokoro Reader")
-            .setContentText("Listening for notifications")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(openIntent)
-            .setOngoing(true)
-            .build()
-
         try {
-            startForeground(FOREGROUND_ID, notification)
+            val nm = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
+            if (nm == null) {
+                Log.e(TAG, "NotificationManager unavailable — cannot start foreground")
+                return
+            }
+
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Kokoro Reader Background",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps Kokoro Reader active in the background"
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+
+            val openIntent = PendingIntent.getActivity(
+                this, 0,
+                Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                },
+                PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("Kokoro Reader")
+                .setContentText("Listening for notifications")
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentIntent(openIntent)
+                .setOngoing(true)
+                .build()
+
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                startForeground(FOREGROUND_ID, notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(FOREGROUND_ID, notification)
+            }
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to start foreground service", e)
         }

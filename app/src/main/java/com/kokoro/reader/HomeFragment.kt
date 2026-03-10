@@ -159,34 +159,46 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        view?.let {
-            updateStatus(
-                it.findViewById(R.id.status_text),
-                it.findViewById(R.id.service_status_text),
-                it.findViewById(R.id.btn_permission)
-            )
-            updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status))
+        try {
+            view?.let {
+                updateStatus(
+                    it.findViewById(R.id.status_text),
+                    it.findViewById(R.id.service_status_text),
+                    it.findViewById(R.id.btn_permission)
+                )
+                updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeFragment", "Error in onResume", e)
         }
     }
 
     override fun onDestroyView() {
-        VoiceCommandListener.onStatusChanged = null
+        try {
+            VoiceCommandListener.onStatusChanged = null
+        } catch (e: Exception) {
+            android.util.Log.e("HomeFragment", "Error in onDestroyView", e)
+        }
         super.onDestroyView()
     }
 
     @Deprecated("Deprecated in Java")
     @Suppress("DEPRECATION")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        if (requestCode == AUDIO_PERMISSION_CODE) {
-            val ctx = context ?: return
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                VoiceCommandListener.start(ctx.applicationContext)
-            } else {
-                prefs.edit().putBoolean("voice_commands_enabled", false).apply()
-                view?.findViewById<SwitchCompat>(R.id.switch_voice_commands)?.isChecked = false
-                Toast.makeText(ctx, "Microphone permission required for voice commands", Toast.LENGTH_SHORT).show()
+        try {
+            if (requestCode == AUDIO_PERMISSION_CODE) {
+                val ctx = context ?: return
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    VoiceCommandListener.start(ctx.applicationContext)
+                } else {
+                    prefs.edit().putBoolean("voice_commands_enabled", false).apply()
+                    view?.findViewById<SwitchCompat>(R.id.switch_voice_commands)?.isChecked = false
+                    Toast.makeText(ctx, "Microphone permission required for voice commands", Toast.LENGTH_SHORT).show()
+                }
+                view?.let { updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status)) }
             }
-            view?.let { updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status)) }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeFragment", "Error in onRequestPermissionsResult", e)
         }
     }
 

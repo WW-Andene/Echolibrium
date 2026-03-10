@@ -45,10 +45,11 @@ object AudioPipeline {
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    @Synchronized
     fun start(ctx: Context) {
         if (running) return
         running = true
-        Thread { loop(ctx) }.apply { isDaemon = true; start() }
+        Thread { loop(ctx) }.apply { name = "AudioPipeline-loop"; isDaemon = true; start() }
     }
 
     fun stop() {
@@ -113,7 +114,7 @@ object AudioPipeline {
                 Log.d(TAG, "Pipeline loop interrupted")
                 Thread.currentThread().interrupt()
                 break
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Error processing item", e)
             }
         }
@@ -201,24 +202,29 @@ object AudioPipeline {
     private fun playPcm(samples: FloatArray, sampleRate: Int, pitch: Float) {
         val bufferBytes = samples.size * 4  // Float = 4 bytes
 
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(maxOf(bufferBytes, 4096))
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setSessionId(AudioManager.AUDIO_SESSION_ID_GENERATE)
-            .build()
+        val track = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(maxOf(bufferBytes, 4096))
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setSessionId(AudioManager.AUDIO_SESSION_ID_GENERATE)
+                .build()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to create AudioTrack", e)
+            return
+        }
 
         synchronized(trackLock) { currentTrack = track }
 
@@ -244,11 +250,12 @@ object AudioPipeline {
 
             track.play()
             val completed = latch.await(60, TimeUnit.SECONDS)
+            track.setPlaybackPositionUpdateListener(null)
             if (!completed) Log.w(TAG, "Playback marker timeout")
 
         } finally {
-            try { track.stop() } catch (e: Exception) {}
-            try { track.release() } catch (e: Exception) {}
+            try { track.stop() } catch (e: Throwable) {}
+            try { track.release() } catch (e: Throwable) {}
             synchronized(trackLock) { if (currentTrack === track) currentTrack = null }
         }
     }
@@ -256,8 +263,8 @@ object AudioPipeline {
     private fun stopCurrentPlayback() {
         synchronized(trackLock) {
             currentTrack?.let {
-                try { it.stop() } catch (e: Exception) {}
-                try { it.release() } catch (e: Exception) {}
+                try { it.stop() } catch (e: Throwable) {}
+                try { it.release() } catch (e: Throwable) {}
             }
             currentTrack = null
         }

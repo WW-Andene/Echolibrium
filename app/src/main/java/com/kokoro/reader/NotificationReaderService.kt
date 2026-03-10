@@ -15,8 +15,17 @@ class NotificationReaderService : NotificationListenerService() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
-    private var dailyCount = 0
-    private var lastCountDay = -1
+    @Volatile private var dailyCount = 0
+    @Volatile private var lastCountDay = -1
+    private val countLock = Object()
+
+    /**
+     * Tracks the last notification content per package to avoid re-reading
+     * identical text when an app updates an existing notification
+     * (e.g. WhatsApp appending messages to the same notification).
+     */
+    private val lastNotificationContent = LinkedHashMap<String, String>(32, 0.75f, true)
+    private val dedupLock = Object()
 
     companion object {
         private const val TAG = "NotiReaderService"
@@ -95,9 +104,27 @@ class NotificationReaderService : NotificationListenerService() {
         val text    = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         if (title.isBlank() && text.isBlank()) return
 
+        // Skip duplicate content — apps like WhatsApp update the same notification
+        // repeatedly with identical text. Only read if content actually changed.
+        val contentKey = "${sbn.packageName}:${sbn.id}"
+        val contentValue = "$title|$text"
+        synchronized(dedupLock) {
+            if (lastNotificationContent[contentKey] == contentValue) return
+            lastNotificationContent[contentKey] = contentValue
+            // Evict least-recently-used entries to prevent unbounded growth
+            while (lastNotificationContent.size > 100) {
+                val it = lastNotificationContent.iterator()
+                it.next()
+                it.remove()
+            }
+        }
+
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
-        if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
-        dailyCount++
+        val floodCount = synchronized(countLock) {
+            if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
+            dailyCount++
+            dailyCount
+        }
 
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val signal = SignalExtractor.extract(
@@ -106,7 +133,7 @@ class NotificationReaderService : NotificationListenerService() {
             title       = title,
             text        = text,
             hourOfDay   = hour,
-            floodCount  = dailyCount
+            floodCount  = floodCount
         )
 
         val profiles  = VoiceProfile.loadAll(prefs)
@@ -224,7 +251,7 @@ class NotificationReaderService : NotificationListenerService() {
 
         try {
             startForeground(FOREGROUND_ID, notification)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to start foreground service", e)
         }
     }

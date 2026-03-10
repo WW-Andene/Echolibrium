@@ -155,10 +155,11 @@ class HomeFragment : Fragment() {
     }
 
     private fun updateStatus(tv: TextView, serviceStatusTv: TextView, btn: Button) {
+        val ctx = context ?: return
         val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
         tv.text = if (granted) "✓ Active — reading notifications with Kokoro"
                   else "✗ Notification access required"
-        tv.setTextColor(requireContext().getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
+        tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
         btn.text = if (granted) "Notification Settings" else "Grant Permission"
 
         // Show service instance and foreground status
@@ -176,8 +177,9 @@ class HomeFragment : Fragment() {
     }
 
     private fun updateVoiceCommandStatus(tv: TextView) {
+        val ctx = context ?: return
         val enabled = prefs.getBoolean("voice_commands_enabled", false)
-        val hasPerm = ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) ==
+        val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
         val listening = VoiceCommandListener.isListening
 

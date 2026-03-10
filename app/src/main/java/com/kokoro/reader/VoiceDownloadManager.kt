@@ -81,13 +81,14 @@ object VoiceDownloadManager {
                 Log.e(TAG, "Asset extraction failed", e)
                 updateState(State.ERROR)
             }
-        }.start()
+        }.apply { name = "ModelExtractor"; isDaemon = true; start() }
     }
 
     /**
      * Synchronous version — blocks until model is extracted.
-     * Use from background threads only.
+     * Use from background threads only. Synchronized to prevent concurrent extraction.
      */
+    @Synchronized
     fun ensureModelSync(ctx: Context): Boolean {
         if (isModelReady(ctx)) { updateState(State.READY); return true }
         return try {

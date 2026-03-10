@@ -39,30 +39,49 @@ object SherpaEngine {
     @Volatile var isReady = false
         private set
 
+    /** Non-null when the engine failed to initialize — contains the error reason */
+    @Volatile var errorMessage: String? = null
+        private set
+
     /**
      * Callback fired (on any thread) when the Kokoro engine becomes ready.
      * Useful for updating UI status.
      */
     @Volatile var onReadyCallback: (() -> Unit)? = null
 
+    private var isWarmingUp = false
+    private val warmUpLock = Object()
+
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
     /**
      * Extracts models from assets (if needed) and initializes the Kokoro engine
      * on a background thread. Also extracts bundled Piper voices.
+     * Guarded against duplicate concurrent calls.
      */
     fun warmUp(ctx: Context) {
         if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
+        synchronized(warmUpLock) {
+            if (isWarmingUp) return
+            isWarmingUp = true
+        }
         Thread {
-            // Step 1: extract Kokoro model from assets
-            VoiceDownloadManager.ensureModelSync(ctx)
-            // Step 2: extract bundled Piper voices from assets
-            PiperVoiceManager.extractBundledVoicesSync(ctx)
-            // Step 3: load the Kokoro engine
-            if (initializeKokoro(ctx)) {
-                onReadyCallback?.invoke()
+            try {
+                // Step 1: extract Kokoro model from assets
+                VoiceDownloadManager.ensureModelSync(ctx)
+                // Step 2: extract bundled Piper voices from assets
+                PiperVoiceManager.extractBundledVoicesSync(ctx)
+                // Step 3: load the Kokoro engine
+                if (initializeKokoro(ctx)) {
+                    onReadyCallback?.invoke()
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Warm-up failed", e)
+                errorMessage = e.message ?: "Unknown error during warm-up"
+            } finally {
+                synchronized(warmUpLock) { isWarmingUp = false }
             }
-        }.apply { isDaemon = true; start() }
+        }.apply { name = "SherpaEngine-warmup"; isDaemon = true; start() }
     }
 
     // ── Kokoro initialization ─────────────────────────────────────────────────
@@ -96,13 +115,15 @@ object SherpaEngine {
             val config = OfflineTtsConfig(model = modelConfig)
             kokoroTts = OfflineTts(config = config)
             isReady = true
+            errorMessage = null
             Log.d(TAG, "Kokoro engine ready")
             true
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to initialize Kokoro engine", e)
             kokoroTts = null
             isReady = false
+            errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             false
         }
     }
@@ -124,7 +145,7 @@ object SherpaEngine {
             val audio = engine.generate(text = text, sid = sid, speed = speed)
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Kokoro synthesis failed", e)
             null
         }
@@ -150,7 +171,7 @@ object SherpaEngine {
             val audio = engine.generate(text = text, sid = 0, speed = speed)
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Piper synthesis failed for $voiceId", e)
             null
         }
@@ -201,7 +222,7 @@ object SherpaEngine {
             Log.d(TAG, "Piper voice loaded: $voiceId")
             return true
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Piper voice $voiceId", e)
             return false
         }
@@ -221,8 +242,8 @@ object SherpaEngine {
 
     @Synchronized
     fun release() {
-        try { kokoroTts?.release() } catch (e: Exception) { /* ignore */ }
-        try { piperTts?.release() } catch (e: Exception) { /* ignore */ }
+        try { kokoroTts?.release() } catch (e: Throwable) { /* ignore */ }
+        try { piperTts?.release() } catch (e: Throwable) { /* ignore */ }
         kokoroTts = null
         piperTts = null
         piperLoadedVoiceId = null

@@ -198,18 +198,42 @@ object AudioDsp {
     }
 
     // ── Vocal fry at phrase endings (§5.3) ────────────────────────────────────
-    // Applies low-frequency amplitude modulation (30–70Hz) to the final ~200ms
-    // to approximate creaky voice / pulse register at phrase ends.
+    // Pulse-based fry: short glottal bursts (~30% duty cycle) separated by
+    // near-silence at 30-50Hz, with slight timing irregularity. This produces
+    // the characteristic "creaky" sound of vocal fry / pulse register.
     private fun applyVocalFry(pcm: FloatArray, sampleRate: Int) {
         if (pcm.size < sampleRate / 5) return  // skip very short samples
         val fryDurationSamples = (sampleRate * 0.2f).toInt()  // last 200ms
         val fryStart = (pcm.size - fryDurationSamples).coerceAtLeast(0)
-        val fryFreq = 45f  // Hz, typical vocal fry rate
+        val basePeriodSamples = sampleRate / 40  // ~40Hz base pulse rate
+        val dutyCycle = 0.30f  // glottis open 30% of each cycle
+        val rng = Random
+        var cyclePos = 0  // position within current pulse cycle
+        var currentPeriod = basePeriodSamples  // current cycle length (varies)
+        val openSamples get() = (currentPeriod * dutyCycle).toInt().coerceAtLeast(1)
+
         for (i in fryStart until pcm.size) {
-            val t = (i - fryStart).toFloat() / sampleRate
-            val fryGain = 0.5f + 0.5f * sin(2.0 * PI * fryFreq * t).toFloat()
-            val fadeFactor = 1f - ((i - fryStart).toFloat() / (pcm.size - fryStart).coerceAtLeast(1)) * 0.3f
-            pcm[i] = (pcm[i] * fryGain * fadeFactor).coerceIn(-1f, 1f)
+            val progress = (i - fryStart).toFloat() / (pcm.size - fryStart).coerceAtLeast(1)
+            val fadeFactor = 1f - progress * 0.3f  // gradual fade
+
+            val gain = if (cyclePos < openSamples) {
+                // Glottis open — let signal through with slight attenuation
+                0.7f + 0.3f * (1f - cyclePos.toFloat() / openSamples)
+            } else {
+                // Glottis closed — near-silence
+                0.05f
+            }
+
+            pcm[i] = (pcm[i] * gain * fadeFactor).coerceIn(-1f, 1f)
+            cyclePos++
+
+            // End of cycle — start new pulse with slight timing jitter
+            if (cyclePos >= currentPeriod) {
+                cyclePos = 0
+                // ±15% random period variation for irregular pulse timing
+                val jitter = 1f + (rng.nextFloat() - 0.5f) * 0.30f
+                currentPeriod = (basePeriodSamples * jitter).toInt().coerceAtLeast(1)
+            }
         }
     }
 

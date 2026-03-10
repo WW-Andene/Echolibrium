@@ -230,9 +230,9 @@ object SignalExtractor {
 
         val trajectory = when {
             lineScores.size <= 1 -> Trajectory.FLAT
-            lineScores.last() < lineScores.max() * 0.5f -> Trajectory.COLLAPSED
+            lineScores.last() < (lineScores.maxOrNull() ?: 0f) * 0.5f -> Trajectory.COLLAPSED
             lineScores.zipWithNext().all { (a, b) -> b >= a } -> Trajectory.BUILDING
-            lineScores.last() == lineScores.max() -> Trajectory.PEAKED
+            lineScores.last() == (lineScores.maxOrNull() ?: 0f) -> Trajectory.PEAKED
             else -> Trajectory.FLAT
         }
 

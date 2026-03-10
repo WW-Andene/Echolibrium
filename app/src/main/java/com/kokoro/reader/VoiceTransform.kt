@@ -357,7 +357,8 @@ object VoiceTransform {
             r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
             r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition,
                 modulated.stutterFrequency, modulated.stutterPause, profile.stutterType)  // §4.2
-            r = applyBreathiness(r, modulated.breathIntensity, modulated.breathCurvePosition, modulated.breathPause)
+            // Note: breathiness is handled exclusively by AudioDsp (noise + spectral tilt)
+            // to avoid triple-stacking with text "h" insertion + DSP noise + DSP tilt.
             r = applyTrailingText(r, signal, mood)                          // §4.3B/§5.3
             r
         } catch (e: Exception) {

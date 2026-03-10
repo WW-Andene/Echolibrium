@@ -87,12 +87,13 @@ class ReaderApplication : Application() {
                 // Include cause chain
                 var cause = throwable.cause
                 while (cause != null) {
+                    val currentCause = cause
                     val causeTrace = StringWriter().also { sw ->
-                        PrintWriter(sw).use { cause!!.printStackTrace(it) }
+                        PrintWriter(sw).use { currentCause.printStackTrace(it) }
                     }.toString()
                     appendLine("--- Caused by ---")
                     appendLine(causeTrace)
-                    cause = cause.cause
+                    cause = currentCause.cause
                 }
             }
 

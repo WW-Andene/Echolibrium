@@ -219,10 +219,16 @@ class HomeFragment : Fragment() {
      *
      * Android 11+ (API 30+): needs MANAGE_EXTERNAL_STORAGE → opens "All files access" settings.
      * Android ≤10 (API ≤29): needs WRITE_EXTERNAL_STORAGE → standard permission dialog.
+     *
+     * Only prompts once per app install to avoid annoying the user if they decline.
      */
     private fun requestStoragePermissionIfNeeded() {
         try {
             val ctx = context ?: return
+            // Only prompt once — don't nag if user already declined
+            if (prefs.getBoolean("storage_permission_requested", false)) return
+            prefs.edit().putBoolean("storage_permission_requested", true).apply()
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 // Android 11+ — check MANAGE_EXTERNAL_STORAGE
                 if (!Environment.isExternalStorageManager()) {

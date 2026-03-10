@@ -28,6 +28,7 @@ object AudioPipeline {
     // AudioTrack.SAMPLE_RATE_HZ_MIN / MAX are @hide in the public SDK; use literal values.
     private const val AUDIO_TRACK_MIN_SAMPLE_RATE_HZ = 4000
     private const val AUDIO_TRACK_MAX_SAMPLE_RATE_HZ = 192000
+    private const val DEFAULT_PITCH = 1.0f
 
     data class Item(
         val rawText: String,
@@ -124,14 +125,19 @@ object AudioPipeline {
 
     private fun processItem(ctx: Context, item: Item) {
         // ── Step 1: Transform text ─────────────────────────────────────────
-        val processed = VoiceTransform.process(
-            text      = item.rawText,
-            profile   = item.profile,
-            modulated = item.modulated,
-            signal    = item.signal,
-            rules     = item.rules,
-            mood      = item.mood
-        )
+        val processed = try {
+            VoiceTransform.process(
+                text      = item.rawText,
+                profile   = item.profile,
+                modulated = item.modulated,
+                signal    = item.signal,
+                rules     = item.rules,
+                mood      = item.mood
+            )
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in VoiceTransform.process", e)
+            item.rawText  // Fallback to raw text on transform error
+        }
         if (processed.isBlank()) return
 
         // ── Step 2: Synthesize (route to Kokoro or Piper engine) ──────────
@@ -194,7 +200,12 @@ object AudioPipeline {
         if (rawPcm.isEmpty()) return
 
         // ── Step 3: Apply DSP ─────────────────────────────────────────────
-        val pcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated)
+        val pcm = try {
+            AudioDsp.apply(rawPcm, sampleRate, item.modulated)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in AudioDsp.apply", e)
+            rawPcm  // Fallback to raw PCM on DSP error
+        }
 
         // ── Step 4: Play ──────────────────────────────────────────────────
         playPcm(pcm, sampleRate, item.modulated.pitch)
@@ -204,6 +215,11 @@ object AudioPipeline {
 
     private fun playPcm(samples: FloatArray, sampleRate: Int, pitch: Float) {
         if (samples.isEmpty()) return
+        if (sampleRate < AUDIO_TRACK_MIN_SAMPLE_RATE_HZ || sampleRate > AUDIO_TRACK_MAX_SAMPLE_RATE_HZ) {
+            Log.e(TAG, "Invalid sample rate: $sampleRate — skipping playback")
+            return
+        }
+        val safePitch = if (pitch.isNaN() || pitch.isInfinite() || pitch <= 0f) DEFAULT_PITCH else pitch
         val bufferBytes = samples.size * 4  // Float = 4 bytes
 
         val track = try {
@@ -238,7 +254,7 @@ object AudioPipeline {
 
             // Apply pitch shift via playback rate AFTER write
             // Setting playbackRate before write is unreliable on some devices in MODE_STATIC
-            val shiftedRate = (sampleRate * pitch).toInt().coerceIn(
+            val shiftedRate = (sampleRate * safePitch).toInt().coerceIn(
                 AUDIO_TRACK_MIN_SAMPLE_RATE_HZ,
                 AUDIO_TRACK_MAX_SAMPLE_RATE_HZ
             )

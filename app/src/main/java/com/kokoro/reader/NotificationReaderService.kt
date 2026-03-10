@@ -110,13 +110,17 @@ class NotificationReaderService : NotificationListenerService() {
         Log.w(TAG, "Listener disconnected — notification access may have been revoked")
         prefs.edit().putBoolean("listener_connected", false).apply()
         // Request rebind — Android will reconnect the service if permission is still granted
-        requestRebind(android.content.ComponentName(this, NotificationReaderService::class.java))
+        try {
+            requestRebind(android.content.ComponentName(this, NotificationReaderService::class.java))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to request rebind after disconnect", e)
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         try {
             handleNotification(sbn)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error handling notification from ${sbn.packageName}", e)
         }
     }

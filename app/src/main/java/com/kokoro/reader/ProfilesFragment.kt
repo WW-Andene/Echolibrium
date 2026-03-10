@@ -52,27 +52,49 @@ class ProfilesFragment : Fragment() {
     private lateinit var tvSelectedVoiceName: TextView
     private lateinit var tvSelectedVoiceDetail: TextView
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_profiles, c, false)
+    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
+        try { i.inflate(R.layout.fragment_profiles, c, false) }
+        catch (e: Exception) { Log.e("ProfilesFragment", "Layout inflation failed", e); null }
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        bindViews(v)
-        profiles = VoiceProfile.loadAll(prefs)
-        activeProfileId = prefs.getString("active_profile_id", "") ?: ""
-        if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
+        try {
+            prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            bindViews(v)
+            profiles = VoiceProfile.loadAll(prefs)
+            activeProfileId = prefs.getString("active_profile_id", "") ?: ""
+            if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
 
-        setupCollapsibleSections(v)
-        setupProfileSpinner()
-        buildPresets()
-        buildFilterButtons()
-        renderVoiceGrid()
-        setupButtons()
-        buildGimmicksEditor()
-        loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: VoiceProfile(name = "Default"))
+            setupCollapsibleSections(v)
+            setupProfileSpinner()
+            buildPresets()
+            buildFilterButtons()
+            renderVoiceGrid()
+            setupButtons()
+            buildGimmicksEditor()
+            loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: VoiceProfile(name = "Default"))
 
-        // Start engine warm-up and show status
-        setupEngineStatus()
+            // Start engine warm-up and show status
+            setupEngineStatus()
+        } catch (e: Exception) {
+            Log.e("ProfilesFragment", "Error initializing voice profiles view", e)
+            showErrorFallback(v, "Voice profiles failed to load: ${e.message}")
+        }
+    }
+
+    private fun showErrorFallback(v: View, message: String) {
+        try {
+            val ctx = context ?: return
+            val container = v.findViewById<ViewGroup>(R.id.voice_grid) ?: (v as? ViewGroup) ?: return
+            container.removeAllViews()
+            container.addView(TextView(ctx).apply {
+                text = "⚠ $message\n\nTry restarting the app."
+                setTextColor(0xFFff4444.toInt())
+                textSize = 14f
+                setPadding(20, 40, 20, 40)
+            })
+        } catch (e2: Exception) {
+            Log.e("ProfilesFragment", "Error showing fallback UI", e2)
+        }
     }
 
     private fun setupEngineStatus() {

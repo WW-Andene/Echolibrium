@@ -13,30 +13,52 @@ import org.json.JSONObject
 class RulesFragment : Fragment() {
     private lateinit var prefs: android.content.SharedPreferences
     private val rules = mutableListOf<Pair<String, String>>()
-    private lateinit var container: LinearLayout
+    private var container: LinearLayout? = null
     private val saveHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val saveRunnable = Runnable { saveRules() }
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_rules, c, false)
+    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
+        try { i.inflate(R.layout.fragment_rules, c, false) }
+        catch (e: Exception) { android.util.Log.e("RulesFragment", "Layout inflation failed", e); null }
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        container = v.findViewById(R.id.rules_container)
-        loadRules()
-        if (rules.isEmpty()) {
-            rules.addAll(listOf(
-                "WhatsApp" to "Message", "Gmail" to "Email",
-                "lol" to "laugh out loud", "tbh" to "to be honest",
-                "idk" to "I don't know", "omg" to "oh my god",
-                "brb" to "be right back", "ngl" to "not gonna lie",
-                "https://" to "link", "http://" to "link"
-            ))
-            saveRules()
+        try {
+            prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            container = v.findViewById(R.id.rules_container)
+            loadRules()
+            if (rules.isEmpty()) {
+                rules.addAll(listOf(
+                    "WhatsApp" to "Message", "Gmail" to "Email",
+                    "lol" to "laugh out loud", "tbh" to "to be honest",
+                    "idk" to "I don't know", "omg" to "oh my god",
+                    "brb" to "be right back", "ngl" to "not gonna lie",
+                    "https://" to "link", "http://" to "link"
+                ))
+                saveRules()
+            }
+            renderRules()
+            v.findViewById<Button>(R.id.btn_add_rule).setOnClickListener {
+                rules.add("" to ""); saveRules(); renderRules()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("RulesFragment", "Error initializing rules view", e)
+            showErrorFallback(v, "Wording rules failed to load: ${e.message}")
         }
-        renderRules()
-        v.findViewById<Button>(R.id.btn_add_rule).setOnClickListener {
-            rules.add("" to ""); saveRules(); renderRules()
+    }
+
+    private fun showErrorFallback(v: View, message: String) {
+        try {
+            val ctx = context ?: return
+            val fallback = v.findViewById<ViewGroup>(R.id.rules_container) ?: (v as? ViewGroup) ?: return
+            fallback.removeAllViews()
+            fallback.addView(TextView(ctx).apply {
+                text = "⚠ $message\n\nTry restarting the app."
+                setTextColor(0xFFff4444.toInt())
+                textSize = 14f
+                setPadding(20, 40, 20, 40)
+            })
+        } catch (e2: Exception) {
+            android.util.Log.e("RulesFragment", "Error showing fallback UI", e2)
         }
     }
 
@@ -57,7 +79,8 @@ class RulesFragment : Fragment() {
 
     private fun renderRules() {
         val ctx = context ?: return
-        container.removeAllViews()
+        val c = container ?: return
+        c.removeAllViews()
         rules.forEachIndexed { idx, (find, replace) ->
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -95,7 +118,7 @@ class RulesFragment : Fragment() {
             }
 
             row.addView(etFind); row.addView(arrow); row.addView(etReplace); row.addView(btnDel)
-            container.addView(row)
+            c.addView(row)
         }
     }
 

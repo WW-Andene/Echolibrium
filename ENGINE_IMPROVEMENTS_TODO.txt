@@ -1,0 +1,253 @@
+================================================================================
+ECHOLIBRIUM — ENGINE IMPROVEMENTS & SESSION NOTES
+================================================================================
+Last updated: 2026-03-10
+Purpose: Reference file for continuing work across sessions
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1 — CURRENT STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All 19 items from KkrR_System_Improvement_Plan.txt are IMPLEMENTED:
+  ✅ §1.0  MoodState system (valence/arousal/stability, decay, persistence)
+  ✅ §2.1  Negation detection (inverts urgency for "not", "don't", etc.)
+  ✅ §2.2  Intensity modifier scaling (amplifiers/diminishers/maximizers)
+  ✅ §2.3  Emotional blend detection (6 blend types)
+  ✅ §3.0  Personality sensitivity coefficients (per-preset tuning)
+  ✅ §4.1  Filler injection ("um", "uh", "well..." at clause breaks)
+  ✅ §4.2  Stutter type expansion (5 types: repetition/prolongation/block/revision/mixed)
+  ✅ §4.3A Breath injection (pre-speech breath markers)
+  ✅ §4.3B Trailing off (text "..." + PCM fade on collapsed/low-arousal)
+  ✅ §5.1  Jitter simulation (micro-amplitude variation on voiced regions)
+  ✅ §5.2  Spectral tilt filter (IIR low-pass proportional to breathiness)
+  ✅ §5.3  Vocal fry at phrase endings (pulse-based ~40Hz)
+  ✅ §5.4  Volume/gain modulation
+  ✅ §6.0  Time-of-day baseline modifiers (7 time periods)
+  ✅ §7.0  Sender history & relationship memory
+  ✅ §8.1  Question vs statement intonation
+  ✅ §8.2  Sarcasm detection (5 pattern types)
+  ✅ §8.3  Flood state tiers (CALM/ACTIVE/BUSY/FLOODED/OVERWHELMED)
+  ✅ §8.4  Intonation minimum floor
+  ✅ §8.5  Unknown sender vocal behavior
+  ✅ Phonic landmark detection (PhonicAnalyzer.kt)
+  ✅ Voice commands (repeat, how long ago, stop, what time, mood query)
+
+Voice bundling: ALL 44 Piper voices + Kokoro (30 voices) bundled in APK.
+No internet required at runtime.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2 — KNOWN ISSUES & WORKAROUNDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ISSUE 1: Native SIGSEGV crash from SherpaEngine.warmUp()
+  Status: WORKED AROUND (not fixed)
+  File: NotificationReaderService.kt, SherpaEngine.kt
+  Problem: The OfflineTts JNI constructor (sherpa-onnx native code) can crash
+    with SIGSEGV when loading the Kokoro model. This is a native crash that
+    Java try-catch CANNOT catch. It kills the entire app process.
+  Workaround: SherpaEngine.warmUp() was REMOVED from service onCreate().
+    The engine initializes lazily on first notification or test button press.
+    This means the first notification has a ~2-3 second delay while the model loads.
+  Proper fix ideas:
+    - Investigate WHY the native crash happens (corrupted model? race condition?)
+    - Run model init in a separate process so crash doesn't kill the main app
+    - Add a "safe init" mode that validates the .onnx file header before passing
+      it to the native constructor
+    - File a bug with sherpa-onnx upstream if reproducible
+
+ISSUE 2: Piper voice extraction slow on first launch
+  Status: NOT ADDRESSED
+  Problem: With 44 Piper voices bundled (~300-500 MB total), first launch
+    extraction from assets to internal storage takes significant time.
+    No progress indicator is shown to the user.
+  Improvement ideas:
+    - Add a progress bar/dialog during first extraction
+    - Extract in priority order (extract the user's selected voice first)
+    - Background extraction with notification showing progress
+    - Consider keeping voices compressed in assets and decompressing on demand
+
+ISSUE 3: Android 13+ restricted settings for sideloaded apps
+  Status: WORKAROUND IN PLACE
+  File: HomeFragment.kt
+  Problem: Sideloaded APKs on Android 13+ have notification listener toggle
+    greyed out until user enables "Allow restricted settings" from app info.
+  Current behavior: Button opens app info page with Toast instructing user
+    to tap ⋮ menu → "Allow restricted settings".
+  Improvement: Could detect if restricted settings are already allowed and
+    skip straight to notification listener settings in that case.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3 — UNIMPLEMENTED ENGINE IMPROVEMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+These are improvements discussed or identified but NOT yet implemented:
+
+──── 3.1 SAFE ENGINE WARM-UP ────────────────────────────────────────────────
+
+  Priority: HIGH
+  Impact: Eliminates first-notification delay without crash risk
+  Files: SherpaEngine.kt, NotificationReaderService.kt
+
+  Currently the engine initializes lazily (first notification = 2-3s delay).
+  A safe warm-up would:
+    1. Validate all model files exist and have correct size/header
+    2. Only then call OfflineTts constructor
+    3. If constructor crashes, catch at process level or retry once
+    4. Could run in onListenerConnected() instead of onCreate()
+       (service is fully bound at that point)
+
+──── 3.2 VOICE QUALITY SELECTOR IN UI ───────────────────────────────────────
+
+  Priority: MEDIUM
+  Impact: Users can choose low/medium/high quality per voice
+  Files: ProfilesFragment.kt, PiperVoiceCatalog.kt
+
+  Currently the voice grid de-duplicates by name, showing only medium quality.
+  All quality variants (low/medium/high) are bundled but hidden.
+  Improvement: Add a quality toggle or show quality variants as sub-options
+  when tapping a voice card. Low = faster synthesis, High = better quality.
+
+──── 3.3 STREAMING/CHUNKED SYNTHESIS ────────────────────────────────────────
+
+  Priority: MEDIUM
+  Impact: Lower latency for long messages
+  Files: SherpaEngine.kt, AudioPipeline.kt
+
+  Currently the entire message is synthesized in one shot, then played.
+  For long notifications, this means waiting for the full synthesis before
+  any audio plays. Chunked synthesis would:
+    1. Split text at sentence boundaries
+    2. Synthesize first sentence
+    3. Start playback while synthesizing the next sentence
+    4. Queue PCM buffers back-to-back
+  Note: sherpa-onnx may support streaming via generateWithCallback()
+
+──── 3.4 VOICE PREVIEW / SAMPLE PLAYBACK ───────────────────────────────────
+
+  Priority: MEDIUM
+  Impact: Users can hear a voice before selecting it
+  Files: ProfilesFragment.kt
+
+  Add a play button on each voice card that synthesizes a short sample
+  phrase like "Hello, I'm [voice name]. This is how I sound."
+  Could cache the sample WAV after first generation to avoid re-synthesis.
+
+──── 3.5 MULTI-LANGUAGE AUTO-DETECTION ──────────────────────────────────────
+
+  Priority: LOW
+  Impact: Auto-switch voice language based on notification text
+  Files: NotificationReaderService.kt, SherpaEngine.kt
+
+  Currently uses whichever voice the profile is set to, regardless of
+  notification language. Could detect French text and switch to a French
+  Piper voice automatically. Simple heuristic: check for French-specific
+  characters (é, è, ê, ç, à, etc.) or common French words.
+
+──── 3.6 PITCH SHIFTING AT DSP LEVEL ───────────────────────────────────────
+
+  Priority: LOW
+  Impact: Real pitch variation beyond TTS speed parameter
+  Files: AudioDsp.kt
+
+  Current pitch modulation only adjusts the TTS speed parameter and
+  AudioTrack playback rate. True pitch shifting (preserving duration)
+  would allow more natural prosodic variation. Could use:
+    - PSOLA (Pitch-Synchronous Overlap-Add)
+    - Phase vocoder
+    - Simple resampling + time-stretching
+  Heavy on CPU — may not be practical on low-end devices.
+
+──── 3.7 ADAPTIVE VOLUME BASED ON AMBIENT NOISE ────────────────────────────
+
+  Priority: LOW
+  Impact: Auto-adjusts speech volume based on environment
+  Files: AudioPipeline.kt, AudioDsp.kt
+
+  If voice commands are enabled (mic already active), could measure
+  ambient noise level and boost TTS volume in noisy environments.
+  Requires: mic permission already granted, background noise estimation.
+
+──── 3.8 CONVERSATION GROUPING ─────────────────────────────────────────────
+
+  Priority: MEDIUM
+  Impact: Smarter reading of rapid message chains
+  Files: NotificationReaderService.kt
+
+  When multiple messages arrive rapidly from the same sender (e.g. a chat
+  conversation), instead of reading each notification individually:
+    - Group messages arriving within N seconds
+    - Read as a batch: "3 messages from John: [msg1]. [msg2]. [msg3]."
+    - Reduces repetitive app name / sender name announcements
+    - Could use a short delay (1-2 seconds) to collect a burst before reading
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4 — ARCHITECTURE QUICK REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Pipeline flow (current, fully implemented):
+  1. Android OS → onNotificationPosted(sbn)
+  2. NotificationReaderService: filtering, dedup, sender history, flood count
+  3. SignalExtractor.extract(): keywords, emoji, intent, urgency, sentiment,
+     negation, intensity scaling, sarcasm, emotional blend
+  4. MoodState.decayed() → MoodUpdater.update()
+  5. VoiceModulator.modulate(): time-of-day → mood → signal × sensitivity
+     → blend → flood tier → clamp → ModulatedVoice
+  6. VoiceTransform.process(): wording rules → commentary → fillers →
+     breath → gimmicks → intonation → stutter → trailing off
+  7. SherpaEngine.synthesize() or synthesizePiper(): TTS → PCM samples
+  8. AudioDsp.apply(): saturation → formant smooth → breathiness noise →
+     spectral tilt → jitter → vocal fry → volume → trailing off fade
+  9. AudioPipeline.playPcm(): AudioTrack output with pitch adjustment
+
+Key files:
+  - SherpaEngine.kt        → TTS engine wrapper (Kokoro + Piper)
+  - AudioPipeline.kt       → FIFO queue, background playback thread
+  - AudioDsp.kt            → PCM-level effects (post-synthesis)
+  - VoiceModulator.kt      → Parameter computation (pitch/speed/breath/etc.)
+  - VoiceTransform.kt      → Text-level effects (pre-synthesis)
+  - SignalExtractor.kt     → Notification → signal map
+  - MoodState.kt           → Persistent mood (valence/arousal/stability)
+  - PhonicAnalyzer.kt      → Voiced region / phrase ending detection
+  - VoiceProfile.kt        → User-editable voice configuration
+  - NotificationReaderService.kt → Entry point, service lifecycle
+
+Design principles (from improvement plan Part 9 — "What Not To Change"):
+  - Single pipeline thread (serial FIFO, no concurrent synthesis)
+  - No LLM in signal extraction (pattern matching: honest, fast, offline)
+  - Quadratic smoothing curve for perceptual mapping
+  - Personality presets as first-class transparent objects
+  - Gimmick text variants coherent with TTS voice timbre
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5 — SESSION CONTEXT FOR CONTINUITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Branch: claude/project-review-zdqX6
+
+Recent changes (this session):
+  1. Bundle all 44 Piper voices in APK (CI + PiperVoiceManager + UI)
+     - Updated .github/workflows/build.yml to download all voices from HuggingFace
+     - Removed download-on-demand code from PiperVoiceManager.kt
+     - Simplified voice grid in ProfilesFragment.kt (no more "downloadable" section)
+
+  2. Fix startup crash (SIGSEGV)
+     - Removed SherpaEngine.warmUp() from NotificationReaderService.onCreate()
+     - Native OfflineTts JNI constructor crashes with SIGSEGV (uncatchable)
+     - Engine now initializes lazily on first notification / test button
+
+  3. Restore restricted settings navigation
+     - "Allow Notifications" button on Android 13+ opens app info page
+     - User can tap ⋮ menu → "Allow restricted settings"
+     - Falls back to notification listener settings on older Android
+
+Recurring issues to watch:
+  - The warmUp() SIGSEGV crash has been accidentally re-added multiple times.
+    DO NOT add SherpaEngine.warmUp() to NotificationReaderService.onCreate().
+    See commit 87b14f8 for the original fix explanation.
+  - Permission detection uses NotificationManagerCompat.getEnabledListenerPackages()
+    (reliable across OEMs). Do not revert to Settings.Secure string parsing.

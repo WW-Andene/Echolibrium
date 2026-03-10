@@ -176,8 +176,8 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildFilterButtons() {
+        if (!isAdded || view == null) return
         val ctx = context ?: return
-        if (view == null) return
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
@@ -206,6 +206,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun updateSelectedVoiceBanner() {
+        if (!isAdded || view == null) return
         val voiceId = currentProfile.voiceName
         val alias = currentProfile.voiceAlias
         val kokoroVoice = KokoroVoices.byId(voiceId)
@@ -243,6 +244,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun renderVoiceGrid() {
+        if (!isAdded || view == null) return
         val ctx = context ?: return
         voiceGrid.removeAllViews()
 
@@ -287,8 +289,8 @@ class ProfilesFragment : Fragment() {
             piperFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
                 // De-duplicate by name (show only recommended quality per voice name)
                 val deduped = voices.groupBy { it.name }.map { (_, variants) ->
-                    variants.find { it.quality == "medium" } ?: variants.first()
-                }
+                    variants.find { it.quality == "medium" } ?: variants.firstOrNull()
+                }.filterNotNull()
                 // Separate bundled voices from downloadable ones
                 val bundled = deduped.filter { PiperVoiceManager.isBundled(it.id) }
                 val downloadable = deduped.filter { !PiperVoiceManager.isBundled(it.id) }
@@ -420,6 +422,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildPresets() {
+        if (!isAdded || view == null) return
         val ctx = context ?: return
         presetsScroll.removeAllViews()
         VoiceProfile.PRESETS.forEach { preset ->
@@ -488,8 +491,9 @@ class ProfilesFragment : Fragment() {
             text = "✕"; textSize = 11f; setTextColor(0xFFff4444.toInt())
             setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 4, 12, 4)
             setOnClickListener {
-                if (idx < currentProfile.commentaryPools.size) {
-                    val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
+                val pools = currentProfile.commentaryPools
+                if (idx >= 0 && idx < pools.size) {
+                    val updated = pools.toMutableList().also { if (idx < it.size) it.removeAt(idx) }
                     currentProfile = currentProfile.copy(commentaryPools = updated)
                     buildCommentaryEditor()
                 }
@@ -539,9 +543,9 @@ class ProfilesFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     addTextChangedListener(object : android.text.TextWatcher {
                         override fun afterTextChanged(s: android.text.Editable?) {
-                            if (li < lines.size) lines[li] = s.toString()
+                            if (li >= 0 && li < lines.size) lines[li] = s.toString()
                             val updatedPools = currentProfile.commentaryPools.toMutableList()
-                            if (idx < updatedPools.size) {
+                            if (idx >= 0 && idx < updatedPools.size) {
                                 updatedPools[idx] = pool.copy(lines = lines.toList())
                                 currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                             }
@@ -554,9 +558,9 @@ class ProfilesFragment : Fragment() {
                     text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
                     setOnClickListener {
-                        if (li < lines.size) lines.removeAt(li)
+                        if (li >= 0 && li < lines.size) lines.removeAt(li)
                         val updatedPools = currentProfile.commentaryPools.toMutableList()
-                        if (idx < updatedPools.size) {
+                        if (idx >= 0 && idx < updatedPools.size) {
                             updatedPools[idx] = pool.copy(lines = lines.toList())
                             currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                         }
@@ -577,7 +581,7 @@ class ProfilesFragment : Fragment() {
             setOnClickListener {
                 lines.add("")
                 val updatedPools = currentProfile.commentaryPools.toMutableList()
-                if (idx < updatedPools.size) {
+                if (idx >= 0 && idx < updatedPools.size) {
                     updatedPools[idx] = pool.copy(lines = lines.toList())
                     currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                 }
@@ -654,6 +658,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun buildGimmicksEditor() {
+        if (!isAdded || view == null) return
         val ctx = context ?: return
         gimmicksContainer.removeAllViews()
         val allTypes = listOf("giggle","sigh","huh","mmm","woah","ugh","aww","gasp","yawn","hmm","laugh","tsk")
@@ -739,12 +744,14 @@ class ProfilesFragment : Fragment() {
 
     private fun setupProfileSpinner() {
         val ctx = context ?: return
+        if (profiles.isEmpty()) return
         profileSpinner.adapter = ArrayAdapter(ctx,
             android.R.layout.simple_spinner_dropdown_item, profiles.map { "${it.emoji} ${it.name}" })
         val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
         profileSpinner.setSelection(idx)
         profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (!isAdded || view == null) return
                 val selected = profiles.getOrNull(pos) ?: return
                 loadProfileToUI(selected)
                 activeProfileId = selected.id

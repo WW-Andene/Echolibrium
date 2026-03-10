@@ -32,7 +32,7 @@ class AppsFragment : Fragment() {
         btn.isEnabled = false
         btn.text = "LOADING..."
 
-        val ctx = context ?: return
+        val ctx = context?.applicationContext ?: return
         Thread {
             val pm = ctx.packageManager
             val apps = try {
@@ -63,6 +63,7 @@ class AppsFragment : Fragment() {
     }
 
     private fun renderRules() {
+        if (!isAdded || view == null) return
         val ctx = context ?: return
         container.removeAllViews()
         rules.forEach { container.addView(buildRow(ctx, it)) }

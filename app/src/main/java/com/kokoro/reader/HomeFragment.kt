@@ -3,7 +3,6 @@ package com.kokoro.reader
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -72,27 +71,16 @@ class HomeFragment : Fragment() {
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         btnPermission.setOnClickListener {
-            val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-            if (granted) {
-                // Already granted — open notification settings for management
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+: sideloaded apps need "Allow restricted settings" first.
-                // Open app info so user can enable restricted settings, then
-                // notification listener settings for the actual permission.
-                try {
-                    startActivity(Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:${ctx.packageName}")
-                    ))
+            // Always open notification listener settings directly
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            // On Android 13+ sideloaded apps may need "Allow restricted settings" first
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+                if (!granted) {
                     Toast.makeText(ctx,
-                        "Tap ⋮ menu → \"Allow restricted settings\", then come back and tap again",
+                        "If the toggle is greyed out: go to App Info → ⋮ menu → \"Allow restricted settings\"",
                         Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
-            } else {
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         }
 

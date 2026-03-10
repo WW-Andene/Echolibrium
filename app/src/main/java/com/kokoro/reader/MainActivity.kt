@@ -1,14 +1,12 @@
 package com.kokoro.reader
 
-import android.content.ComponentName
 import android.os.Bundle
-import android.provider.Settings
-import android.text.TextUtils
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.fragment.app.Fragment
 
 class MainActivity : AppCompatActivity() {
@@ -126,9 +124,8 @@ class MainActivity : AppCompatActivity() {
 
     fun isNotificationAccessGranted(): Boolean {
         return try {
-            val cn = ComponentName(this, NotificationReaderService::class.java)
-            val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
-            !TextUtils.isEmpty(flat) && flat.contains(cn.flattenToString())
+            val enabled = NotificationManagerCompat.getEnabledListenerPackages(this)
+            enabled.contains(packageName)
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Error checking notification access", e)
             false

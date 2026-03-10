@@ -122,7 +122,8 @@ object VoiceDownloadManager {
         val entries = assetManager.list(assetPath) ?: return
 
         if (entries.isEmpty()) {
-            // It's a file — copy it to dest
+            // It's a file — skip if already extracted with non-zero size
+            if (dest.exists() && dest.length() > 0) return
             dest.parentFile?.mkdirs()
             assetManager.open(assetPath).use { input ->
                 dest.outputStream().use { output ->

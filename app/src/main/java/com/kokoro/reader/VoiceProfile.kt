@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 // ── Voice classification — handles Kokoro naming + generic SherpaTTS voices ──
 // SherpaTTS voice names can be:
-//   Kokoro:  af_heart, am_adam, bf_emma, bm_george  → prefix encodes lang+gender
+//   Kokoro:  af_heart, am_adam, bf_emma, bm_george, ef_dora, em_alex → prefix encodes lang+gender
 //   Generic: en-us-amy-medium, fr-fr-gilles-low, de_DE-thorsten-high
 //   Or:      just a plain name like "default" or "en-US"
 data class VoiceInfo(
@@ -27,17 +27,18 @@ data class VoiceInfo(
         fun from(voiceName: String): VoiceInfo {
             val n = voiceName.lowercase().trim()
 
-            // ── Kokoro prefix format: af_ am_ bf_ bm_ ────────────────────────
+            // ── Kokoro prefix format: af_ am_ bf_ bm_ ef_ em_ ─────────────────
             if (n.length > 3 && n[2] == '_') {
                 val prefix = n.take(2)
                 val gender = when {
-                    prefix == "af" || prefix == "bf" -> "Female"
-                    prefix == "am" || prefix == "bm" -> "Male"
+                    prefix == "af" || prefix == "bf" || prefix == "ef" -> "Female"
+                    prefix == "am" || prefix == "bm" || prefix == "em" -> "Male"
                     else -> "Unknown"
                 }
                 val (language, nationality) = when {
                     prefix == "af" || prefix == "am" -> Pair("English (US)", "American")
                     prefix == "bf" || prefix == "bm" -> Pair("English (UK)", "British")
+                    prefix == "ef" || prefix == "em" -> Pair("Spanish", "Spanish")
                     else -> Pair("Unknown", "Unknown")
                 }
                 return VoiceInfo(voiceName, gender, language, nationality)

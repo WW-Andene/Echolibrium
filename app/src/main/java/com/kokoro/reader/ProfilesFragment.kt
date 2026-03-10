@@ -404,7 +404,7 @@ class ProfilesFragment : Fragment() {
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 lp.setMargins(0, 0, 10, 8); layoutParams = lp
                 setOnClickListener {
-                    loadProfileToUI(preset.copy(id = currentProfile.id, name = currentProfile.name, voiceName = currentProfile.voiceName))
+                    loadProfileToUI(preset.copy(id = currentProfile.id, name = currentProfile.name, voiceName = currentProfile.voiceName, voiceAlias = currentProfile.voiceAlias))
                 }
             }
             presetsScroll.addView(btn)
@@ -723,15 +723,7 @@ class ProfilesFragment : Fragment() {
         }
         btnStop.setOnClickListener {
             AudioPipeline.stop()
-            // Reset voice settings to defaults
-            loadProfileToUI(currentProfile.copy(
-                pitch = 1.0f, speed = 1.0f,
-                breathIntensity = 0, breathCurvePosition = 0f, breathPause = 0,
-                stutterIntensity = 0, stutterPosition = 0f, stutterFrequency = 0, stutterPause = 30,
-                intonationIntensity = 0, intonationVariation = 0.5f,
-                gimmicks = emptyList()
-            ))
-            Toast.makeText(context, "Stopped — voice settings reset", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Stopped", Toast.LENGTH_SHORT).show()
         }
         btnResetSettings.setOnClickListener {
             loadProfileToUI(currentProfile.copy(

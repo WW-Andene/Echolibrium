@@ -280,7 +280,7 @@ object VoiceTransform {
         val endIdx = minOf(idx + 2, word.length)
         val syllable = word.substring(idx, endIdx)
         val stutter = (1..repeats).joinToString(pauseStr) { syllable } + pauseStr
-        return word.substring(0, idx) + stutter + word.substring(idx)
+        return word.substring(0, idx) + stutter + word.substring(endIdx)
     }
 
     // PROLONGATION: stretch first consonant cluster (§4.2)

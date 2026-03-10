@@ -192,10 +192,10 @@ data class VoiceProfile(
             intonationIntensity = j.optInt("intonationIntensity", 0),
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
-                (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
+                (0 until arr.length()).mapNotNull { try { GimmickConfig.fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null } }
             } ?: emptyList(),
             commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
-                (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
+                (0 until arr.length()).mapNotNull { try { CommentaryPool.fromJson(arr.getJSONObject(it)) } catch (_: Exception) { null } }
             } ?: emptyList()
         )
 

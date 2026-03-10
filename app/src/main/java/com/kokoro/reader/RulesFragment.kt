@@ -55,9 +55,10 @@ class RulesFragment : Fragment() {
     }
 
     private fun renderRules() {
+        val ctx = context ?: return
         container.removeAllViews()
         rules.forEachIndexed { idx, (find, replace) ->
-            val row = LinearLayout(requireContext()).apply {
+            val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(0xFF111111.toInt()); setPadding(12, 10, 12, 10)
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -65,7 +66,7 @@ class RulesFragment : Fragment() {
             }
 
             fun editText(hint: String, value: String, onChanged: (String) -> Unit) =
-                EditText(requireContext()).apply {
+                EditText(ctx).apply {
                     setText(value); this.hint = hint; textSize = 13f
                     setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 8, 12, 8)
@@ -76,20 +77,20 @@ class RulesFragment : Fragment() {
                     })
                 }
 
-            val etFind = editText("Find…", find) { rules[idx] = it to rules[idx].second }
+            val etFind = editText("Find…", find) { if (idx < rules.size) rules[idx] = it to rules[idx].second }
             etFind.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
 
-            val arrow = TextView(requireContext()).apply {
+            val arrow = TextView(ctx).apply {
                 text = "→"; textSize = 14f; setTextColor(0xFF00ff88.toInt()); setPadding(8, 0, 8, 0)
             }
 
-            val etReplace = editText("Replace…", replace) { rules[idx] = rules[idx].first to it }
+            val etReplace = editText("Replace…", replace) { if (idx < rules.size) rules[idx] = rules[idx].first to it }
             etReplace.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
 
-            val btnDel = Button(requireContext()).apply {
+            val btnDel = Button(ctx).apply {
                 text = "✕"; textSize = 12f; setTextColor(0xFFff4444.toInt())
                 setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(16, 8, 16, 8)
-                setOnClickListener { rules.removeAt(idx); saveRules(); renderRules() }
+                setOnClickListener { if (idx < rules.size) { rules.removeAt(idx); saveRules(); renderRules() } }
             }
 
             row.addView(etFind); row.addView(arrow); row.addView(etReplace); row.addView(btnDel)

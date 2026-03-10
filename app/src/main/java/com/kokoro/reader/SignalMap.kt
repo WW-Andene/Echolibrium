@@ -4,13 +4,29 @@ package com.kokoro.reader
 
 enum class SourceType   { GAME, PERSONAL, SERVICE, PLATFORM, FINANCIAL, SYSTEM, UNKNOWN }
 enum class SenderType   { HUMAN, BOT, SYSTEM, UNKNOWN }
-enum class Intent       { INFORM, REQUEST, ALERT, INVITE, ACTION_REQUIRED, DENIAL, PLEA, GREETING, SHARING }
+enum class Intent       { INFORM, REQUEST, ALERT, INVITE, ACTION_REQUIRED, DENIAL, PLEA, GREETING, SHARING, REASSURANCE }
 enum class StakesLevel  { NONE, LOW, MEDIUM, HIGH }
 enum class StakesType   { NONE, FAKE, FINANCIAL, EMOTIONAL, TECHNICAL, PHYSICAL }
 enum class UrgencyType  { NONE, SOFT, REAL, EXPIRING, BLOCKING }
 enum class WarmthLevel  { NONE, LOW, MEDIUM, HIGH, DISTRESSED }
 enum class Register     { MINIMAL, CASUAL, FORMAL, DRAMATIC, RAW, TECHNICAL }
 enum class Trajectory   { FLAT, BUILDING, PEAKED, COLLAPSED }
+
+/** Blended emotional states — acoustically distinct from pure signals */
+enum class EmotionBlend { NONE, NERVOUS_EXCITEMENT, SUPPRESSED_TENSION, NOSTALGIC_WARMTH, RESIGNED_ACCEPTANCE, WORRIED_AFFECTION }
+
+/** Flood tiers based on daily notification count */
+enum class FloodTier { CALM, ACTIVE, BUSY, FLOODED, OVERWHELMED;
+    companion object {
+        fun from(count: Int) = when {
+            count <= 5  -> CALM
+            count <= 15 -> ACTIVE
+            count <= 30 -> BUSY
+            count <= 50 -> FLOODED
+            else        -> OVERWHELMED
+        }
+    }
+}
 
 data class SignalMap(
     // Source & sender
@@ -50,7 +66,17 @@ data class SignalMap(
 
     // Context
     val hourOfDay:      Int = 12,
-    val floodCount:     Int = 0
+    val floodCount:     Int = 0,
+
+    // ── New fields from improvement plan ──────────────────────────────────
+    val emotionBlend:    EmotionBlend = EmotionBlend.NONE,
+    val detectedSarcasm: Boolean      = false,
+    val floodTier:       FloodTier    = FloodTier.CALM,
+
+    // Sender history (populated by NotificationReaderService)
+    val senderRepeat:    Int   = 0,       // how many times this sender notified today
+    val senderRecency:   Long  = Long.MAX_VALUE, // ms since last notification from sender
+    val senderPressure:  Float = 0f       // repeat × recency_decay
 ) {
     // Convenience checks for condition matching
     fun has(intent: Intent) = intents.contains(intent)

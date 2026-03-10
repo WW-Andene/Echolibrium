@@ -99,6 +99,42 @@ data class VoiceInfo(
     }
 }
 
+// ── Stutter type enum (§4.2) ──────────────────────────────────────────────────
+enum class StutterType { REPETITION, PROLONGATION, BLOCK, REVISION, MIXED }
+
+// ── Personality sensitivity coefficients (§3.0) ──────────────────────────────
+data class PersonalitySensitivity(
+    val distressSensitivity: Float = 1.0f,   // 0.0 (numb) to 2.0 (hypersensitive)
+    val warmthSensitivity:   Float = 1.0f,
+    val fakeSensitivity:     Float = 1.0f,
+    val moodVelocity:        Float = 1.0f,   // how fast mood shifts
+    val moodDecayRate:       Float = 0.08f,  // per minute
+    val rangeReactivity:     Float = 1.0f,   // pitch range multiplier
+    val speedReactivity:     Float = 1.0f
+) {
+    fun toJson() = JSONObject().apply {
+        put("distressSensitivity", distressSensitivity)
+        put("warmthSensitivity", warmthSensitivity)
+        put("fakeSensitivity", fakeSensitivity)
+        put("moodVelocity", moodVelocity)
+        put("moodDecayRate", moodDecayRate)
+        put("rangeReactivity", rangeReactivity)
+        put("speedReactivity", speedReactivity)
+    }
+
+    companion object {
+        fun fromJson(j: JSONObject) = PersonalitySensitivity(
+            distressSensitivity = j.optDouble("distressSensitivity", 1.0).toFloat(),
+            warmthSensitivity   = j.optDouble("warmthSensitivity", 1.0).toFloat(),
+            fakeSensitivity     = j.optDouble("fakeSensitivity", 1.0).toFloat(),
+            moodVelocity        = j.optDouble("moodVelocity", 1.0).toFloat(),
+            moodDecayRate       = j.optDouble("moodDecayRate", 0.08).toFloat(),
+            rangeReactivity     = j.optDouble("rangeReactivity", 1.0).toFloat(),
+            speedReactivity     = j.optDouble("speedReactivity", 1.0).toFloat()
+        )
+    }
+}
+
 // ── Gimmick model ─────────────────────────────────────────────────────────────
 data class GimmickConfig(
     val type: String,
@@ -145,10 +181,17 @@ data class VoiceProfile(
     val stutterPosition: Float = 0f,
     val stutterFrequency: Int = 0,
     val stutterPause: Int = 30,
+    val stutterType: StutterType = StutterType.REPETITION,  // §4.2
 
     // Intonation
     val intonationIntensity: Int = 0,
     val intonationVariation: Float = 0.5f,
+
+    // Filler injection (§4.1)
+    val fillerIntensity: Int = 0,  // 0–100, default 0 (off for most presets)
+
+    // Personality sensitivity (§3.0)
+    val sensitivity: PersonalitySensitivity = PersonalitySensitivity(),
 
     // Gimmicks
     val gimmicks: List<GimmickConfig> = emptyList(),
@@ -167,8 +210,11 @@ data class VoiceProfile(
         put("stutterPosition", stutterPosition)
         put("stutterFrequency", stutterFrequency)
         put("stutterPause", stutterPause)
+        put("stutterType", stutterType.name)
         put("intonationIntensity", intonationIntensity)
         put("intonationVariation", intonationVariation)
+        put("fillerIntensity", fillerIntensity)
+        put("sensitivity", sensitivity.toJson())
         val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; put("gimmicks", ga)
         val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; put("commentaryPools", ca)
     }
@@ -189,8 +235,11 @@ data class VoiceProfile(
             stutterPosition = j.optDouble("stutterPosition", 0.0).toFloat(),
             stutterFrequency = j.optInt("stutterFrequency", 0),
             stutterPause = j.optInt("stutterPause", 30),
+            stutterType = try { StutterType.valueOf(j.optString("stutterType", "REPETITION")) } catch (_: IllegalArgumentException) { StutterType.REPETITION },
             intonationIntensity = j.optInt("intonationIntensity", 0),
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
+            fillerIntensity = j.optInt("fillerIntensity", 0),
+            sensitivity = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
                 (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList(),
@@ -212,12 +261,15 @@ data class VoiceProfile(
 
         val PRESETS = listOf(
             VoiceProfile(name = "Natural", emoji = "😐",
-                pitch = 1.0f, speed = 1.0f),
+                pitch = 1.0f, speed = 1.0f,
+                fillerIntensity = 10,
+                sensitivity = PersonalitySensitivity()),
 
             VoiceProfile(name = "Excited", emoji = "🎉",
                 pitch = 1.45f, speed = 1.4f,
                 intonationIntensity = 70, intonationVariation = 0.85f,
                 stutterIntensity = 20, stutterFrequency = 15, stutterPosition = 0.0f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.4f, warmthSensitivity = 1.9f, fakeSensitivity = 1.4f, moodVelocity = 1.4f, moodDecayRate = 0.12f, rangeReactivity = 1.8f, speedReactivity = 1.6f),
                 gimmicks = listOf(GimmickConfig("woah", 40, "START"), GimmickConfig("laugh", 30, "END")),
                 commentaryPools = pools(
                     pre = listOf("Oh my god listen to this!", "You are NOT gonna believe it—", "Okay this is huge—"), preFreq = 50,
@@ -228,11 +280,15 @@ data class VoiceProfile(
                 ) + pools(
                     pre = listOf("Someone's asking you something!"), preFreq = 55,
                     condition = CommentaryCondition("time_morning")
+                ) + pools(
+                    pre = listOf("Oh nice.","Sure.","Got it."), preFreq = 50,
+                    condition = CommentaryCondition("mood_content")
                 )),
 
             VoiceProfile(name = "Bored", emoji = "😒",
                 pitch = 0.85f, speed = 0.75f,
                 intonationIntensity = 10, intonationVariation = 0.1f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.3f, warmthSensitivity = 0.4f, fakeSensitivity = 1.8f, moodVelocity = 0.4f, moodDecayRate = 0.02f, rangeReactivity = 0.3f, speedReactivity = 0.4f),
                 gimmicks = listOf(GimmickConfig("yawn", 50, "START"), GimmickConfig("hmm", 35, "END")),
                 commentaryPools = pools(
                     pre = listOf("...this again.", "Oh look, another one.", "Sure."), preFreq = 45,
@@ -243,12 +299,16 @@ data class VoiceProfile(
                 ) + pools(
                     pre = listOf("Who texts at this hour."), preFreq = 60,
                     condition = CommentaryCondition("time_night")
+                ) + pools(
+                    pre = listOf("Another one...","When does it stop.","Fine."), preFreq = 60,
+                    condition = CommentaryCondition("mood_overwhelmed")
                 )),
 
             VoiceProfile(name = "Depressed", emoji = "😔",
                 pitch = 0.72f, speed = 0.65f,
                 breathIntensity = 30, breathCurvePosition = 1.0f, breathPause = 20,
                 intonationIntensity = 5, intonationVariation = 0.05f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 1.2f, warmthSensitivity = 0.3f, fakeSensitivity = 0.2f, moodVelocity = 0.6f, moodDecayRate = 0.02f, rangeReactivity = 0.4f, speedReactivity = 0.3f),
                 gimmicks = listOf(GimmickConfig("sigh", 70, "START"), GimmickConfig("hmm", 30, "END")),
                 commentaryPools = pools(
                     pre = listOf("Sure, why not.", "Not like anything matters anyway.", "Here we go..."), preFreq = 55,
@@ -259,12 +319,16 @@ data class VoiceProfile(
                 ) + pools(
                     post = listOf("I'll deal with it tomorrow. Or never."), postFreq = 50,
                     condition = CommentaryCondition("flooded")
+                ) + pools(
+                    pre = listOf("Another one...","...okay."), preFreq = 65,
+                    condition = CommentaryCondition("mood_tired")
                 )),
 
             VoiceProfile(name = "Flirty", emoji = "😏",
                 pitch = 1.25f, speed = 0.88f,
                 breathIntensity = 35, breathCurvePosition = 0.5f, breathPause = 30,
                 intonationIntensity = 55, intonationVariation = 0.7f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.8f, warmthSensitivity = 1.8f, fakeSensitivity = 0.6f, moodVelocity = 1.0f, moodDecayRate = 0.08f, rangeReactivity = 1.3f, speedReactivity = 0.7f),
                 gimmicks = listOf(GimmickConfig("giggle", 45, "END"), GimmickConfig("sigh", 25, "MID"), GimmickConfig("mmm", 30, "START")),
                 commentaryPools = pools(
                     pre = listOf("Ooh, someone's thinking of you~", "Well well well~"), preFreq = 50,
@@ -284,6 +348,7 @@ data class VoiceProfile(
                 pitch = 1.12f, speed = 0.82f,
                 breathIntensity = 25, breathCurvePosition = 0.4f, breathPause = 40,
                 intonationIntensity = 30, intonationVariation = 0.4f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 1.0f, warmthSensitivity = 1.4f, fakeSensitivity = 0.4f, moodVelocity = 0.8f, moodDecayRate = 0.06f, rangeReactivity = 0.9f, speedReactivity = 0.5f),
                 gimmicks = listOf(GimmickConfig("mmm", 25, "START"), GimmickConfig("aww", 20, "END")),
                 commentaryPools = pools(
                     pre = listOf("Someone reached out to you.", "A message for you."), preFreq = 40,
@@ -294,11 +359,15 @@ data class VoiceProfile(
                 ) + pools(
                     post = listOf("They seem to need something."), postFreq = 40,
                     condition = CommentaryCondition("intent_request")
+                ) + pools(
+                    pre = listOf("Oh nice.","Got it."), preFreq = 40,
+                    condition = CommentaryCondition("mood_content")
                 )),
 
             VoiceProfile(name = "Happy", emoji = "😄",
                 pitch = 1.35f, speed = 1.15f,
                 intonationIntensity = 60, intonationVariation = 0.75f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.3f, warmthSensitivity = 1.7f, fakeSensitivity = 1.2f, moodVelocity = 1.2f, moodDecayRate = 0.10f, rangeReactivity = 1.6f, speedReactivity = 1.3f),
                 gimmicks = listOf(GimmickConfig("laugh", 35, "END"), GimmickConfig("woah", 20, "START"), GimmickConfig("aww", 20, "RANDOM")),
                 commentaryPools = pools(
                     pre = listOf("Oh yay, a notification!", "Ooh ooh ooh—"), preFreq = 45,
@@ -314,6 +383,7 @@ data class VoiceProfile(
             VoiceProfile(name = "Hangry", emoji = "😤",
                 pitch = 1.05f, speed = 1.25f,
                 intonationIntensity = 65, intonationVariation = 0.6f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 1.4f, warmthSensitivity = 0.1f, fakeSensitivity = 0.8f, moodVelocity = 1.3f, moodDecayRate = 0.05f, rangeReactivity = 0.8f, speedReactivity = 1.5f),
                 gimmicks = listOf(GimmickConfig("ugh", 55, "START"), GimmickConfig("tsk", 40, "END"), GimmickConfig("huh", 35, "MID")),
                 commentaryPools = pools(
                     pre = listOf("Seriously?", "NOW what?", "Can I not have ONE minute?"), preFreq = 60,
@@ -324,11 +394,17 @@ data class VoiceProfile(
                 ) + pools(
                     pre = listOf("Who texts at this hour. Who DOES that."), preFreq = 75,
                     condition = CommentaryCondition("time_night")
+                ) + pools(
+                    pre = listOf("Them again.","Really?","I got it."), preFreq = 70,
+                    condition = CommentaryCondition("sender_persistent")
                 )),
 
             VoiceProfile(name = "Nervous", emoji = "😰",
                 pitch = 1.2f, speed = 1.1f,
                 stutterIntensity = 45, stutterFrequency = 40, stutterPosition = 0.0f, stutterPause = 60,
+                stutterType = StutterType.MIXED,
+                fillerIntensity = 40,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 1.8f, warmthSensitivity = 0.8f, fakeSensitivity = 0.4f, moodVelocity = 1.6f, moodDecayRate = 0.04f, rangeReactivity = 0.7f, speedReactivity = 1.4f),
                 gimmicks = listOf(GimmickConfig("huh", 30, "MID"), GimmickConfig("hmm", 25, "RANDOM")),
                 commentaryPools = pools(
                     pre = listOf("Oh no, what now—", "Is this bad? This might be bad.", "Don't panic—"), preFreq = 55,
@@ -339,11 +415,15 @@ data class VoiceProfile(
                 ) + pools(
                     pre = listOf("A question? What question? What did I do?"), preFreq = 60,
                     condition = CommentaryCondition("intent_request")
+                ) + pools(
+                    pre = listOf("Another one...","When does it stop.","...okay."), preFreq = 65,
+                    condition = CommentaryCondition("mood_tense")
                 )),
 
             VoiceProfile(name = "Whispery", emoji = "🤫",
                 pitch = 1.1f, speed = 0.72f,
                 breathIntensity = 65, breathCurvePosition = 0.55f, breathPause = 50,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.9f, warmthSensitivity = 1.2f, fakeSensitivity = 0.3f, moodVelocity = 0.7f, moodDecayRate = 0.07f, rangeReactivity = 0.6f, speedReactivity = 0.4f),
                 gimmicks = listOf(GimmickConfig("sigh", 20, "START")),
                 commentaryPools = pools(
                     pre = listOf("Psst...", "Hey, listen—", "Just between us—"), preFreq = 45,
@@ -356,6 +436,7 @@ data class VoiceProfile(
             VoiceProfile(name = "Robot", emoji = "🤖",
                 pitch = 0.5f, speed = 0.78f,
                 intonationIntensity = 0,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.0f, warmthSensitivity = 0.0f, fakeSensitivity = 0.0f, moodVelocity = 0.0f, moodDecayRate = 0.20f, rangeReactivity = 0.0f, speedReactivity = 0.0f),
                 commentaryPools = pools(
                     pre = listOf("Incoming transmission.", "Notification received.", "Alert."), preFreq = 60,
                     post = listOf("End of message.", "Transmission complete.", "Awaiting response."), postFreq = 50
@@ -370,7 +451,10 @@ data class VoiceProfile(
             VoiceProfile(name = "Drunk", emoji = "🥴",
                 pitch = 0.88f, speed = 0.82f,
                 stutterIntensity = 35, stutterFrequency = 45, stutterPosition = 0.4f,
+                stutterType = StutterType.MIXED,
+                fillerIntensity = 55,
                 intonationIntensity = 55, intonationVariation = 0.95f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.5f, warmthSensitivity = 0.9f, fakeSensitivity = 1.0f, moodVelocity = 0.6f, moodDecayRate = 0.03f, rangeReactivity = 1.4f, speedReactivity = 0.4f),
                 gimmicks = listOf(GimmickConfig("huh", 40, "RANDOM"), GimmickConfig("hmm", 30, "MID"), GimmickConfig("laugh", 25, "END")),
                 commentaryPools = pools(
                     pre = listOf("Okay okay okay—", "Wait, wait, listen—", "DUDE."), preFreq = 55,
@@ -386,6 +470,9 @@ data class VoiceProfile(
             VoiceProfile(name = "Elder", emoji = "🧓",
                 pitch = 0.78f, speed = 0.7f,
                 breathIntensity = 22, breathCurvePosition = 1.0f, breathPause = 15,
+                stutterType = StutterType.REPETITION,
+                fillerIntensity = 30,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.7f, warmthSensitivity = 1.1f, fakeSensitivity = 0.5f, moodVelocity = 0.5f, moodDecayRate = 0.03f, rangeReactivity = 0.7f, speedReactivity = 0.3f),
                 gimmicks = listOf(GimmickConfig("hmm", 40, "START"), GimmickConfig("yawn", 20, "END")),
                 commentaryPools = pools(
                     pre = listOf("Now let me see here...", "Mm, what's this now.", "Oh my, a message."), preFreq = 50,
@@ -396,11 +483,15 @@ data class VoiceProfile(
                 ) + pools(
                     post = listOf("So many messages. Back in my day we called."), postFreq = 55,
                     condition = CommentaryCondition("flooded")
+                ) + pools(
+                    pre = listOf("Them again.","I got it."), preFreq = 55,
+                    condition = CommentaryCondition("sender_repeat_3")
                 )),
 
             VoiceProfile(name = "Child", emoji = "🧒",
                 pitch = 1.85f, speed = 1.2f,
                 intonationIntensity = 45, intonationVariation = 0.7f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 1.5f, warmthSensitivity = 2.0f, fakeSensitivity = 1.5f, moodVelocity = 1.8f, moodDecayRate = 0.15f, rangeReactivity = 2.0f, speedReactivity = 1.7f),
                 gimmicks = listOf(GimmickConfig("woah", 35, "START"), GimmickConfig("giggle", 40, "END")),
                 commentaryPools = pools(
                     pre = listOf("OOOOH!", "Look look look!", "Is it a present?!"), preFreq = 55,
@@ -413,6 +504,7 @@ data class VoiceProfile(
             VoiceProfile(name = "Dramatic", emoji = "🎭",
                 pitch = 1.0f, speed = 0.82f,
                 intonationIntensity = 90, intonationVariation = 0.95f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 1.6f, warmthSensitivity = 1.6f, fakeSensitivity = 0.2f, moodVelocity = 1.5f, moodDecayRate = 0.06f, rangeReactivity = 2.0f, speedReactivity = 0.8f),
                 gimmicks = listOf(GimmickConfig("gasp", 50, "START"), GimmickConfig("sigh", 35, "END")),
                 commentaryPools = pools(
                     pre = listOf("Brace yourself.", "This... changes everything.", "Gather round."), preFreq = 65,
@@ -428,6 +520,7 @@ data class VoiceProfile(
             VoiceProfile(name = "Sarcastic", emoji = "🙄",
                 pitch = 1.15f, speed = 0.9f,
                 intonationIntensity = 70, intonationVariation = 0.8f,
+                sensitivity = PersonalitySensitivity(distressSensitivity = 0.6f, warmthSensitivity = 0.2f, fakeSensitivity = 2.0f, moodVelocity = 0.8f, moodDecayRate = 0.10f, rangeReactivity = 1.2f, speedReactivity = 0.9f),
                 gimmicks = listOf(GimmickConfig("hmm", 50, "START"), GimmickConfig("tsk", 40, "END"), GimmickConfig("huh", 35, "MID")),
                 commentaryPools = pools(
                     pre = listOf("Oh wow, shocking.", "Oh great, can't wait.", "Let me guess—"), preFreq = 60,
@@ -441,6 +534,9 @@ data class VoiceProfile(
                 ) + pools(
                     post = listOf("A question. How original."), postFreq = 60,
                     condition = CommentaryCondition("intent_request")
+                ) + pools(
+                    post = listOf("That's two.","They're not stopping.","Again."), postFreq = 65,
+                    condition = CommentaryCondition("sender_rapid")
                 )),
         )
 

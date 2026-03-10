@@ -20,7 +20,7 @@ import kotlin.random.Random
  *   6. Vocal fry — phrase-end amplitude modulation (§5.3)
  *   7. Trailing off — fade-out on fatigued/collapsed states (§4.3B)
  *
- * All effects are applied to the same FloatArray and normalised to [-1, 1].
+ * All effects are applied in-place on a single working copy and normalised to [-1, 1].
  */
 object AudioDsp {
 
@@ -51,95 +51,95 @@ object AudioDsp {
         sampleRate: Int,
         modulated: ModulatedVoice
     ): FloatArray {
-        var pcm = samples.copyOf()
+        // Single allocation — all effects modify this array in-place
+        val pcm = samples.copyOf()
 
         // 1. Soft saturation
-        pcm = applySoftSaturation(pcm)
+        applySoftSaturation(pcm)
 
         // 2. Formant smoothing
-        pcm = applyFormantSmoothing(pcm, sampleRate)
+        applyFormantSmoothing(pcm, sampleRate)
 
         // 3. Breathiness noise mixing
         if (modulated.breathIntensity >= 5) {
-            pcm = applyBreathiness(pcm, sampleRate, modulated.breathIntensity)
+            applyBreathiness(pcm, sampleRate, modulated.breathIntensity)
         }
 
         // 4. Spectral tilt — proportional to breathiness (§5.2)
         if (modulated.breathIntensity >= 5) {
-            pcm = applySpectralTilt(pcm, sampleRate, modulated.breathIntensity / 100f)
+            applySpectralTilt(pcm, sampleRate, modulated.breathIntensity / 100f)
         }
 
         // 5. Jitter simulation (§5.1)
         if (modulated.jitterAmount > 0.01f) {
-            pcm = applyJitter(pcm, sampleRate, modulated.jitterAmount)
+            applyJitter(pcm, sampleRate, modulated.jitterAmount)
         }
 
         // 6. Vocal fry at phrase endings (§5.3)
         if (modulated.shouldTrailOff) {
-            pcm = applyVocalFry(pcm, sampleRate)
+            applyVocalFry(pcm, sampleRate)
         }
 
         // 7. Trailing off — PCM fade (§4.3B)
         if (modulated.shouldTrailOff) {
-            pcm = applyTrailingOff(pcm)
+            applyTrailingOff(pcm)
         }
 
         return pcm
     }
 
     // ── Soft saturation ───────────────────────────────────────────────────────
-    private fun applySoftSaturation(samples: FloatArray): FloatArray {
+    private fun applySoftSaturation(pcm: FloatArray) {
         val drive = 1.2f
-        return FloatArray(samples.size) { i ->
-            tanh((samples[i] * drive).toDouble()).toFloat()
+        for (i in pcm.indices) {
+            pcm[i] = tanh((pcm[i] * drive).toDouble()).toFloat()
         }
     }
 
     // ── Formant smoothing ─────────────────────────────────────────────────────
-    private fun applyFormantSmoothing(samples: FloatArray, sampleRate: Int): FloatArray {
-        if (samples.isEmpty()) return samples
+    private fun applyFormantSmoothing(pcm: FloatArray, sampleRate: Int) {
+        if (pcm.isEmpty()) return
         val windowSamples = (sampleRate * 0.005).toInt().coerceAtLeast(1)
         val alpha = 1.0f / windowSamples
 
-        val envelope = FloatArray(samples.size)
-        envelope[0] = abs(samples[0])
-        for (i in 1 until samples.size) {
-            val amp = abs(samples[i])
+        // Envelope needs a temporary array (unavoidable — used as lookup)
+        val envelope = FloatArray(pcm.size)
+        envelope[0] = abs(pcm[0])
+        for (i in 1 until pcm.size) {
+            val amp = abs(pcm[i])
             envelope[i] = envelope[i - 1] + alpha * (amp - envelope[i - 1])
         }
 
-        return FloatArray(samples.size) { i ->
-            val originalAmp = abs(samples[i])
+        for (i in pcm.indices) {
+            val originalAmp = abs(pcm[i])
             if (originalAmp > 0.001f) {
                 val ratio = envelope[i] / originalAmp
                 val blended = 0.7f + 0.3f * ratio.coerceIn(0.5f, 2.0f)
-                (samples[i] * blended).coerceIn(-1f, 1f)
-            } else {
-                samples[i]
+                pcm[i] = (pcm[i] * blended).coerceIn(-1f, 1f)
             }
         }
     }
 
     // ── Breathiness ───────────────────────────────────────────────────────────
     private fun applyBreathiness(
-        samples: FloatArray,
+        pcm: FloatArray,
         sampleRate: Int,
         intensity: Int
-    ): FloatArray {
+    ) {
         val curve = (intensity / 100f) * (intensity / 100f)
         val noiseLevel = curve * 0.18f
         val alpha = 0.55f
         var prevNoise = 0f
 
         val envWindow = (sampleRate * 0.02).toInt().coerceAtLeast(1)
-        val envelope = computeEnvelope(samples, envWindow)
+        val envelope = computeEnvelope(pcm, envWindow)
 
-        return FloatArray(samples.size) { i ->
+        for (i in pcm.indices) {
             val rawNoise = Random.nextFloat() * 2f - 1f
             prevNoise = prevNoise * (1f - alpha) + rawNoise * alpha
             val breathNoise = prevNoise * noiseLevel
             val envShaped = breathNoise * (0.3f + envelope[i] * 0.7f)
-            (samples[i] + envShaped).coerceIn(-1f, 1f)
+            pcm[i] = (pcm[i] + envShaped).coerceIn(-1f, 1f)
         }
     }
 
@@ -148,21 +148,19 @@ object AudioDsp {
     // Real breathiness attenuates high frequencies (steep spectral tilt).
     // Applied AFTER noise-mixing so it shapes both speech and added noise.
     private fun applySpectralTilt(
-        samples: FloatArray,
+        pcm: FloatArray,
         sampleRate: Int,
         breathiness: Float
-    ): FloatArray {
-        if (breathiness < 0.1f) return samples
+    ) {
+        if (breathiness < 0.1f) return
         val normalizedBreath = breathiness.coerceIn(0f, 1f)
         val cutoffHz = lerp(8000f, 2500f, normalizedBreath)
         val alpha = exp(-2.0 * PI * cutoffHz / sampleRate).toFloat()
-        val result = samples.copyOf()
         var prev = 0f
-        for (i in result.indices) {
-            result[i] = (1f - alpha) * result[i] + alpha * prev
-            prev = result[i]
+        for (i in pcm.indices) {
+            pcm[i] = (1f - alpha) * pcm[i] + alpha * prev
+            prev = pcm[i]
         }
-        return result
     }
 
     // ── Jitter simulation (§5.1) ──────────────────────────────────────────────
@@ -170,53 +168,47 @@ object AudioDsp {
     // (~8ms windows) to approximate micro-F0 variation. Produces amplitude jitter
     // that perceptually correlates with vocal roughness/humanness.
     private fun applyJitter(
-        samples: FloatArray,
+        pcm: FloatArray,
         sampleRate: Int,
         jitterAmount: Float
-    ): FloatArray {
+    ) {
         val windowMs = 8
         val windowSamples = (sampleRate * windowMs / 1000).coerceAtLeast(1)
-        val result = samples.copyOf()
         val rng = Random
         var i = 0
-        while (i < result.size) {
+        while (i < pcm.size) {
             val gain = 1f + (rng.nextFloat() - 0.5f) * 2f * jitterAmount
-            val end = minOf(i + windowSamples, result.size)
-            for (j in i until end) result[j] = (result[j] * gain).coerceIn(-1f, 1f)
+            val end = minOf(i + windowSamples, pcm.size)
+            for (j in i until end) pcm[j] = (pcm[j] * gain).coerceIn(-1f, 1f)
             i = end
         }
-        return result
     }
 
     // ── Vocal fry at phrase endings (§5.3) ────────────────────────────────────
     // Applies low-frequency amplitude modulation (30–70Hz) to the final ~200ms
     // to approximate creaky voice / pulse register at phrase ends.
-    private fun applyVocalFry(samples: FloatArray, sampleRate: Int): FloatArray {
-        if (samples.size < sampleRate / 5) return samples  // skip very short samples
+    private fun applyVocalFry(pcm: FloatArray, sampleRate: Int) {
+        if (pcm.size < sampleRate / 5) return  // skip very short samples
         val fryDurationSamples = (sampleRate * 0.2f).toInt()  // last 200ms
-        val fryStart = (samples.size - fryDurationSamples).coerceAtLeast(0)
+        val fryStart = (pcm.size - fryDurationSamples).coerceAtLeast(0)
         val fryFreq = 45f  // Hz, typical vocal fry rate
-        val result = samples.copyOf()
-        for (i in fryStart until result.size) {
+        for (i in fryStart until pcm.size) {
             val t = (i - fryStart).toFloat() / sampleRate
             val fryGain = 0.5f + 0.5f * sin(2.0 * PI * fryFreq * t).toFloat()
-            val fadeFactor = 1f - ((i - fryStart).toFloat() / (result.size - fryStart).coerceAtLeast(1)) * 0.3f
-            result[i] = (result[i] * fryGain * fadeFactor).coerceIn(-1f, 1f)
+            val fadeFactor = 1f - ((i - fryStart).toFloat() / (pcm.size - fryStart).coerceAtLeast(1)) * 0.3f
+            pcm[i] = (pcm[i] * fryGain * fadeFactor).coerceIn(-1f, 1f)
         }
-        return result
     }
 
     // ── Trailing off (§4.3B) ──────────────────────────────────────────────────
     // Linear fade-out on the last 15% of the PCM buffer for fatigued/collapsed states.
-    private fun applyTrailingOff(samples: FloatArray): FloatArray {
-        val fadeStart = (samples.size * 0.85f).toInt()
-        if (fadeStart >= samples.size) return samples
-        val result = samples.copyOf()
-        for (i in fadeStart until result.size) {
-            val factor = 1f - ((i - fadeStart).toFloat() / (result.size - fadeStart).coerceAtLeast(1))
-            result[i] *= factor.coerceAtLeast(0f)
+    private fun applyTrailingOff(pcm: FloatArray) {
+        val fadeStart = (pcm.size * 0.85f).toInt()
+        if (fadeStart >= pcm.size) return
+        for (i in fadeStart until pcm.size) {
+            val factor = 1f - ((i - fadeStart).toFloat() / (pcm.size - fadeStart).coerceAtLeast(1))
+            pcm[i] *= factor.coerceAtLeast(0f)
         }
-        return result
     }
 
     // Compute per-sample RMS envelope (normalised 0-1) with a trailing sliding window
@@ -237,9 +229,12 @@ object AudioDsp {
             if (rms > maxRms) maxRms = rms
         }
 
-        return if (maxRms > 0f) {
-            FloatArray(envelope.size) { i -> (envelope[i] / maxRms).coerceIn(0f, 1f) }
-        } else envelope
+        if (maxRms > 0f) {
+            for (i in envelope.indices) {
+                envelope[i] = (envelope[i] / maxRms).coerceIn(0f, 1f)
+            }
+        }
+        return envelope
     }
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)

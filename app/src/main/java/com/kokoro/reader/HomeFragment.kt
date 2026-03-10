@@ -71,16 +71,24 @@ class HomeFragment : Fragment() {
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         btnPermission.setOnClickListener {
-            // Always open notification listener settings directly
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            // On Android 13+ sideloaded apps may need "Allow restricted settings" first
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-                if (!granted) {
+            val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Android 13+: sideloaded apps need "Allow restricted settings" first.
+                // Open app details where the user can enable it via the ⋮ menu.
+                try {
+                    val appDetails = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:${ctx.packageName}")
+                    )
+                    startActivity(appDetails)
                     Toast.makeText(ctx,
-                        "If the toggle is greyed out: go to App Info → ⋮ menu → \"Allow restricted settings\"",
+                        "Tap ⋮ menu → \"Allow restricted settings\", then grant notification access",
                         Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
+            } else {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         }
 

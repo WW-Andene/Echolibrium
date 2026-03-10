@@ -206,8 +206,8 @@ object PiperVoiceManager {
                 tempFile.delete()
             }
         } finally {
-            // Clean up temp file if anything went wrong
-            tempFile.delete()
+            // Clean up temp file if it still exists (e.g. download failed before rename)
+            if (tempFile.exists()) tempFile.delete()
         }
     }
 }

@@ -24,7 +24,7 @@ class NotificationReaderService : NotificationListenerService() {
      * identical text when an app updates an existing notification
      * (e.g. WhatsApp appending messages to the same notification).
      */
-    private val lastNotificationContent = mutableMapOf<String, String>()
+    private val lastNotificationContent = LinkedHashMap<String, String>(32, 0.75f, true)
     private val dedupLock = Object()
 
     companion object {
@@ -111,10 +111,11 @@ class NotificationReaderService : NotificationListenerService() {
         synchronized(dedupLock) {
             if (lastNotificationContent[contentKey] == contentValue) return
             lastNotificationContent[contentKey] = contentValue
-            // Evict old entries to prevent unbounded growth
-            if (lastNotificationContent.size > 100) {
-                val oldest = lastNotificationContent.keys.first()
-                lastNotificationContent.remove(oldest)
+            // Evict least-recently-used entries to prevent unbounded growth
+            while (lastNotificationContent.size > 100) {
+                val it = lastNotificationContent.iterator()
+                it.next()
+                it.remove()
             }
         }
 

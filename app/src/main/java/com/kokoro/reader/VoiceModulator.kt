@@ -257,7 +257,6 @@ object VoiceModulator {
         EmotionBlend.NONE -> Quad(pitch, speed, breath, intonation)
     }
 
-
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
 
     private fun blendAdd(base: Float, baseHasIt: Boolean, msgSignal: Float, traj: Float): Float {

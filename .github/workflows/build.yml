@@ -22,7 +22,7 @@ jobs:
           VERSION="1.12.28"
           URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${VERSION}/sherpa-onnx-${VERSION}.aar"
           echo "Downloading sherpa-onnx AAR from $URL"
-          curl -L "$URL" -o app/libs/sherpa_onnx.aar
+          curl -fL --retry 3 --retry-delay 5 "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar"
 
       # Bundle the Kokoro TTS model into assets (no internet needed at runtime)
@@ -31,7 +31,7 @@ jobs:
           MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
           ASSET_DIR="app/src/main/assets/kokoro-model"
           echo "Downloading Kokoro multi-lang model from $MODEL_URL"
-          curl -L "$MODEL_URL" -o kokoro-model.tar.bz2
+          curl -fL --retry 3 --retry-delay 5 "$MODEL_URL" -o kokoro-model.tar.bz2
           echo "Extracting model to $ASSET_DIR"
           mkdir -p "$ASSET_DIR"
           tar -xjf kokoro-model.tar.bz2 -C "$ASSET_DIR" --strip-components=1
@@ -51,7 +51,7 @@ jobs:
           # Download a full sherpa-onnx Piper package to get the shared tokens.txt
           LESSAC_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"
           echo "Downloading Piper package (lessac) for tokens.txt + model"
-          curl -L "$LESSAC_URL" -o piper-pkg.tar.bz2
+          curl -fL --retry 3 --retry-delay 5 "$LESSAC_URL" -o piper-pkg.tar.bz2
           mkdir -p tmp-piper
           tar -xjf piper-pkg.tar.bz2 -C tmp-piper
 
@@ -66,7 +66,7 @@ jobs:
           # Download additional Piper voices from sherpa-onnx releases
           RYAN_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ryan-medium.tar.bz2"
           echo "Downloading Piper voice: en_US-ryan-medium"
-          curl -L "$RYAN_URL" -o piper-ryan.tar.bz2
+          curl -fL --retry 3 --retry-delay 5 "$RYAN_URL" -o piper-ryan.tar.bz2
           mkdir -p tmp-ryan
           tar -xjf piper-ryan.tar.bz2 -C tmp-ryan
           find tmp-ryan -name "en_US-ryan-medium.onnx" -exec cp {} "$PIPER_DIR/en_US-ryan-medium.onnx" \;
@@ -74,7 +74,7 @@ jobs:
 
           SIWIS_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2"
           echo "Downloading Piper voice: fr_FR-siwis-medium"
-          curl -L "$SIWIS_URL" -o piper-siwis.tar.bz2
+          curl -fL --retry 3 --retry-delay 5 "$SIWIS_URL" -o piper-siwis.tar.bz2
           mkdir -p tmp-siwis
           tar -xjf piper-siwis.tar.bz2 -C tmp-siwis
           find tmp-siwis -name "fr_FR-siwis-medium.onnx" -exec cp {} "$PIPER_DIR/fr_FR-siwis-medium.onnx" \;

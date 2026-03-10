@@ -20,10 +20,19 @@ class HomeFragment : Fragment() {
         private const val AUDIO_PERMISSION_CODE = 1001
     }
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_home, c, false)
+    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
+        try { i.inflate(R.layout.fragment_home, c, false) }
+        catch (e: Exception) { android.util.Log.e("HomeFragment", "Layout inflation failed", e); null }
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        try {
+            initializeViews(v)
+        } catch (e: Exception) {
+            android.util.Log.e("HomeFragment", "Error initializing home view", e)
+        }
+    }
+
+    private fun initializeViews(v: View) {
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         val statusText       = v.findViewById<TextView>(R.id.status_text)
         val serviceStatusText = v.findViewById<TextView>(R.id.service_status_text)

@@ -13,18 +13,40 @@ class AppsFragment : Fragment() {
     private lateinit var prefs: android.content.SharedPreferences
     private var rules = mutableListOf<AppRule>()
     private var profiles = listOf<VoiceProfile>()
-    private lateinit var container: LinearLayout
+    private var container: LinearLayout? = null
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_apps, c, false)
+    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
+        try { i.inflate(R.layout.fragment_apps, c, false) }
+        catch (e: Exception) { android.util.Log.e("AppsFragment", "Layout inflation failed", e); null }
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        container = v.findViewById(R.id.apps_container)
-        rules = AppRule.loadAll(prefs)
-        profiles = VoiceProfile.loadAll(prefs)
-        v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
-        renderRules()
+        try {
+            prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            container = v.findViewById(R.id.apps_container)
+            rules = AppRule.loadAll(prefs)
+            profiles = VoiceProfile.loadAll(prefs)
+            v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
+            renderRules()
+        } catch (e: Exception) {
+            android.util.Log.e("AppsFragment", "Error initializing apps view", e)
+            showErrorFallback(v, "Apps failed to load: ${e.message}")
+        }
+    }
+
+    private fun showErrorFallback(v: View, message: String) {
+        try {
+            val ctx = context ?: return
+            val fallback = v.findViewById<ViewGroup>(R.id.apps_container) ?: (v as? ViewGroup) ?: return
+            fallback.removeAllViews()
+            fallback.addView(TextView(ctx).apply {
+                text = "⚠ $message\n\nTry restarting the app."
+                setTextColor(0xFFff4444.toInt())
+                textSize = 14f
+                setPadding(20, 40, 20, 40)
+            })
+        } catch (e2: Exception) {
+            android.util.Log.e("AppsFragment", "Error showing fallback UI", e2)
+        }
     }
 
     private fun loadInstalledApps() {
@@ -65,8 +87,9 @@ class AppsFragment : Fragment() {
     private fun renderRules() {
         if (!isAdded || view == null) return
         val ctx = context ?: return
-        container.removeAllViews()
-        rules.forEach { container.addView(buildRow(ctx, it)) }
+        val c = container ?: return
+        c.removeAllViews()
+        rules.forEach { c.addView(buildRow(ctx, it)) }
     }
 
     private fun buildRow(ctx: android.content.Context, rule: AppRule): View {

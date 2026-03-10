@@ -40,30 +40,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTab(id: Int) {
-        selectedTabId = id
-        val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.green)
-        val inactiveColor = androidx.core.content.ContextCompat.getColor(this, R.color.nav_inactive)
-        for (tabId in tabIds) {
-            val tab = findViewById<LinearLayout>(tabId)
-            val color = if (tabId == id) activeColor else inactiveColor
-            for (i in 0 until tab.childCount) {
-                when (val child = tab.getChildAt(i)) {
-                    is ImageView -> child.setColorFilter(color)
-                    is TextView  -> child.setTextColor(color)
+        try {
+            selectedTabId = id
+            val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.green)
+            val inactiveColor = androidx.core.content.ContextCompat.getColor(this, R.color.nav_inactive)
+            for (tabId in tabIds) {
+                val tab = findViewById<LinearLayout>(tabId)
+                val color = if (tabId == id) activeColor else inactiveColor
+                for (i in 0 until tab.childCount) {
+                    when (val child = tab.getChildAt(i)) {
+                        is ImageView -> child.setColorFilter(color)
+                        is TextView  -> child.setTextColor(color)
+                    }
                 }
             }
+            loadFragment(when (id) {
+                R.id.nav_home     -> HomeFragment()
+                R.id.nav_profiles -> ProfilesFragment()
+                R.id.nav_apps     -> AppsFragment()
+                R.id.nav_rules    -> RulesFragment()
+                else -> HomeFragment()
+            })
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error switching to tab $id", e)
         }
-        loadFragment(when (id) {
-            R.id.nav_home     -> HomeFragment()
-            R.id.nav_profiles -> ProfilesFragment()
-            R.id.nav_apps     -> AppsFragment()
-            R.id.nav_rules    -> RulesFragment()
-            else -> HomeFragment()
-        })
     }
 
-    private fun loadFragment(f: Fragment) =
-        supportFragmentManager.beginTransaction().replace(R.id.fragment_container, f).commitAllowingStateLoss()
+    private fun loadFragment(f: Fragment) {
+        try {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragment_container, f)
+                .commitAllowingStateLoss()
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error loading fragment ${f.javaClass.simpleName}", e)
+        }
+    }
 
     fun isNotificationAccessGranted(): Boolean {
         val cn = ComponentName(this, NotificationReaderService::class.java)

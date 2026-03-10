@@ -67,20 +67,21 @@ object VoiceTransform {
         return result
     }
 
-    // Maps gimmick type to the signal condition that should gate it
+    // Maps gimmick type to the signal condition that should gate it.
+    // Each gimmick fires only when its emotional context is appropriate.
     private fun String.toGimmickSignal() = when (this) {
-        "sigh"   -> "always"
-        "giggle" -> "always"
-        "huh"    -> "always"
-        "mmm"    -> "always"
+        "sigh"   -> "warmth_distressed"
+        "giggle" -> "emoji_happy"
+        "huh"    -> "sender_unknown"
+        "mmm"    -> "sender_human"
         "woah"   -> "intensity_high"
         "ugh"    -> "stakes_high"
-        "aww"    -> "always"
+        "aww"    -> "warmth_high"
         "gasp"   -> "urgency_expiring"
         "yawn"   -> "stakes_low"
-        "hmm"    -> "always"
+        "hmm"    -> "intent_request"
         "laugh"  -> "stakes_fake"
-        "tsk"    -> "always"
+        "tsk"    -> "emoji_angry"
         else     -> "always"
     }
 

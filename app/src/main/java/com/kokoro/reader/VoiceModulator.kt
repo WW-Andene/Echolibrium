@@ -190,8 +190,8 @@ object VoiceModulator {
 
         var intonationIntensity = (profile.intonationIntensity + msgInton * 35f * intonMoodMul)
             .coerceIn(0f, 100f).toInt()
-        // §8.4: Intonation floor — minimum natural variation (Robot exempt)
-        if (profile.name != "Robot") {
+        // §8.4: Intonation floor — minimum natural variation (skip for flat-intonation profiles)
+        if (!profile.suppressIntonationFloor) {
             intonationIntensity = maxOf(intonationIntensity, MIN_INTONATION_FLOOR)
         }
 

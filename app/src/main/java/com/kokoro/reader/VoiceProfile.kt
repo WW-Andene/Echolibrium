@@ -193,6 +193,9 @@ data class VoiceProfile(
     // Personality sensitivity (§3.0)
     val sensitivity: PersonalitySensitivity = PersonalitySensitivity(),
 
+    // Bypass intonation floor (for robotic/flat profiles)
+    val suppressIntonationFloor: Boolean = false,
+
     // Gimmicks
     val gimmicks: List<GimmickConfig> = emptyList(),
 
@@ -214,6 +217,7 @@ data class VoiceProfile(
         put("intonationIntensity", intonationIntensity)
         put("intonationVariation", intonationVariation)
         put("fillerIntensity", fillerIntensity)
+        put("suppressIntonationFloor", suppressIntonationFloor)
         put("sensitivity", sensitivity.toJson())
         val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; put("gimmicks", ga)
         val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; put("commentaryPools", ca)
@@ -239,6 +243,7 @@ data class VoiceProfile(
             intonationIntensity = j.optInt("intonationIntensity", 0),
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
             fillerIntensity = j.optInt("fillerIntensity", 0),
+            suppressIntonationFloor = j.optBoolean("suppressIntonationFloor", false),
             sensitivity = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
                 (0 until arr.length()).mapNotNull { i -> try { GimmickConfig.fromJson(arr.getJSONObject(i)) } catch (e: Exception) { android.util.Log.w("VoiceProfile", "Skipping corrupted gimmick at index $i", e); null } }
@@ -410,7 +415,7 @@ data class VoiceProfile(
                     pre = listOf("Oh no, what now—", "Is this bad? This might be bad.", "Don't panic—"), preFreq = 55,
                     post = listOf("...okay that's fine. Fine.", "Should I be worried?"), postFreq = 50
                 ) + pools(
-                    pre = listOf("Why is the email app notifying me?!"), preFreq = 65,
+                    pre = listOf("Oh no, someone messaged me personally...", "A personal message? Why me?!"), preFreq = 65,
                     condition = CommentaryCondition("source_personal")
                 ) + pools(
                     pre = listOf("A question? What question? What did I do?"), preFreq = 60,
@@ -436,6 +441,7 @@ data class VoiceProfile(
             VoiceProfile(name = "Robot", emoji = "🤖",
                 pitch = 0.5f, speed = 0.78f,
                 intonationIntensity = 0,
+                suppressIntonationFloor = true,
                 sensitivity = PersonalitySensitivity(distressSensitivity = 0.0f, warmthSensitivity = 0.0f, fakeSensitivity = 0.0f, moodVelocity = 0.0f, moodDecayRate = 0.20f, rangeReactivity = 0.0f, speedReactivity = 0.0f),
                 commentaryPools = pools(
                     pre = listOf("Incoming transmission.", "Notification received.", "Alert."), preFreq = 60,

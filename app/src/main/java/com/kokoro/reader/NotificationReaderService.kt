@@ -270,7 +270,11 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     private fun getAppName(pkg: String) = try {
-        val info = packageManager.getApplicationInfo(pkg, 0)
+        val info = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            packageManager.getApplicationInfo(pkg, android.content.pm.PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION") packageManager.getApplicationInfo(pkg, 0)
+        }
         packageManager.getApplicationLabel(info).toString()
     } catch (e: Exception) { pkg }
 
@@ -287,24 +291,7 @@ class NotificationReaderService : NotificationListenerService() {
 
     fun testSpeak(text: String, profile: VoiceProfile, rules: List<Pair<String, String>>) {
         try {
-            val signal = SignalMap(
-                sourceType     = SourceType.PERSONAL,
-                senderType     = SenderType.HUMAN,
-                warmth         = WarmthLevel.MEDIUM,
-                register       = Register.CASUAL,
-                stakesLevel    = StakesLevel.LOW,
-                urgencyType    = UrgencyType.NONE,
-                intensityLevel = 0.3f,
-                trajectory     = Trajectory.FLAT
-            )
-            val modulated = VoiceModulator.modulate(profile, signal)
-            AudioPipeline.enqueue(AudioPipeline.Item(
-                rawText   = text,
-                profile   = profile,
-                modulated = modulated,
-                signal    = signal,
-                rules     = rules
-            ))
+            AudioPipeline.testSpeak(this, text, profile, rules)
         } catch (e: Exception) {
             Log.e(TAG, "Error in testSpeak", e)
         }
@@ -324,10 +311,10 @@ class NotificationReaderService : NotificationListenerService() {
 
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Kokoro Reader Background",
+                "Kyōkan Background",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps Kokoro Reader active in the background"
+                description = "Keeps Kyōkan active in the background"
                 setShowBadge(false)
             }
             nm.createNotificationChannel(channel)
@@ -341,7 +328,7 @@ class NotificationReaderService : NotificationListenerService() {
             )
 
             val notification = Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Kokoro Reader")
+                .setContentTitle("Kyōkan")
                 .setContentText("Listening for notifications")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentIntent(openIntent)

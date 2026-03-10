@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:background="#0d0d0d" android:padding="20dp">
+    android:orientation="vertical" android:background="@color/bg" android:padding="20dp">
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="APP RULES" android:textSize="20sp" android:textStyle="bold"
-        android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="6dp"/>
+        android:textColor="@color/green" android:fontFamily="monospace" android:layout_marginBottom="6dp"/>
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="Per-app read mode and voice profile override."
-        android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+        android:textSize="12sp" android:textColor="@color/text_secondary" android:fontFamily="monospace"
         android:layout_marginBottom="12dp"/>
     <Button android:id="@+id/btn_load_apps" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:text="LOAD INSTALLED APPS"
-        android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+        android:backgroundTint="#1a2a1a" android:textColor="@color/green"
         android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
     <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
         <LinearLayout android:id="@+id/apps_container" android:layout_width="match_parent"

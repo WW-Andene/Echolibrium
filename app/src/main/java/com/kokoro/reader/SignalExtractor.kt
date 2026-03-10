@@ -90,6 +90,22 @@ object SignalExtractor {
         hourOfDay: Int,
         floodCount: Int
     ): SignalMap {
+        return try {
+            extractInternal(packageName, appName, title, text, hourOfDay, floodCount)
+        } catch (e: Exception) {
+            android.util.Log.e("SignalExtractor", "Error extracting signal", e)
+            SignalMap()  // Return safe defaults on extraction error
+        }
+    }
+
+    private fun extractInternal(
+        packageName: String,
+        appName: String,
+        title: String,
+        text: String,
+        hourOfDay: Int,
+        floodCount: Int
+    ): SignalMap {
 
         val fullText = "$title $text".trim()
         val lower    = fullText.lowercase()

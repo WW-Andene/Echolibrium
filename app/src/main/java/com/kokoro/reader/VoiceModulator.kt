@@ -57,6 +57,32 @@ object VoiceModulator {
         mood: MoodState = MoodState(),
         hourOfDay: Int = signal.hourOfDay
     ): ModulatedVoice {
+        return try {
+            modulateInternal(profile, signal, mood, hourOfDay)
+        } catch (e: Exception) {
+            // Fallback to safe defaults on any modulation error
+            ModulatedVoice(
+                pitch = profile.pitch.guardNaN(1.0f),
+                speed = profile.speed.guardNaN(1.0f),
+                breathIntensity = profile.breathIntensity,
+                breathCurvePosition = profile.breathCurvePosition.guardNaN(0f),
+                breathPause = profile.breathPause,
+                stutterIntensity = profile.stutterIntensity,
+                stutterFrequency = profile.stutterFrequency,
+                stutterPosition = profile.stutterPosition.guardNaN(0f),
+                stutterPause = profile.stutterPause,
+                intonationIntensity = profile.intonationIntensity,
+                intonationVariation = profile.intonationVariation.guardNaN(0.5f)
+            )
+        }
+    }
+
+    private fun modulateInternal(
+        profile: VoiceProfile,
+        signal: SignalMap,
+        mood: MoodState,
+        hourOfDay: Int
+    ): ModulatedVoice {
         val traj  = trajectoryMultiplier(signal.trajectory)
         val inten = signal.intensityLevel
         val sens  = profile.sensitivity

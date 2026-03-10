@@ -155,36 +155,50 @@ object VoiceCommandListener {
                 return
             }
 
+            // CLIENT errors often occur when recognizer is destroyed during stop —
+            // avoid restarting in that case to prevent crash loops
+            if (error == SpeechRecognizer.ERROR_CLIENT) {
+                Log.d(TAG, "Recognition client error — skipping restart")
+                return
+            }
+
             Log.w(TAG, "Recognition error: $errorName")
             // Longer delay for real errors
             if (isListening) {
                 mainHandler.postDelayed({
-                    if (isListening) startListeningInternal()
+                    if (isListening) {
+                        try { startListeningInternal() }
+                        catch (e: Exception) { Log.e(TAG, "Error restarting after error", e) }
+                    }
                 }, 3000L)
             }
         }
 
         override fun onResults(results: Bundle?) {
-            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            if (!matches.isNullOrEmpty()) {
-                Log.d(TAG, "Heard: ${matches.joinToString(" | ")}")
+            try {
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                if (!matches.isNullOrEmpty()) {
+                    Log.d(TAG, "Heard: ${matches.joinToString(" | ")}")
 
-                // Only process if the wake word is detected in the speech
-                val wake = wakeWord
-                if (wake.isNotBlank()) {
-                    val heardWakeWord = matches.any { it.lowercase().contains(wake) }
-                    if (!heardWakeWord) {
-                        Log.d(TAG, "Wake word '$wake' not detected — ignoring")
-                        scheduleRestart()
-                        return
+                    // Only process if the wake word is detected in the speech
+                    val wake = wakeWord
+                    if (wake.isNotBlank()) {
+                        val heardWakeWord = matches.any { it.lowercase().contains(wake) }
+                        if (!heardWakeWord) {
+                            Log.d(TAG, "Wake word '$wake' not detected — ignoring")
+                            scheduleRestart()
+                            return
+                        }
+                        Log.d(TAG, "Wake word '$wake' detected!")
                     }
-                    Log.d(TAG, "Wake word '$wake' detected!")
-                }
 
-                val handled = VoiceCommandHandler.handleCommand(ctx, matches)
-                if (handled) {
-                    Log.d(TAG, "Command handled successfully")
+                    val handled = VoiceCommandHandler.handleCommand(ctx, matches)
+                    if (handled) {
+                        Log.d(TAG, "Command handled successfully")
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing speech results", e)
             }
             // Continue listening
             scheduleRestart()

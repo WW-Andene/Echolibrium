@@ -82,10 +82,12 @@ class HomeFragment : Fragment() {
         }
 
         // Start voice commands if enabled and permission granted
-        if (prefs.getBoolean("voice_commands_enabled", false) &&
-            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
+        val voiceCmdCtx = context
+        if (voiceCmdCtx != null &&
+            prefs.getBoolean("voice_commands_enabled", false) &&
+            ContextCompat.checkSelfPermission(voiceCmdCtx, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED) {
-            VoiceCommandListener.start(requireContext().applicationContext)
+            VoiceCommandListener.start(voiceCmdCtx.applicationContext)
         }
 
         val modes = arrayOf("Full (App + Title + Text)", "App + Title", "App name only", "Text only")

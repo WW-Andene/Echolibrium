@@ -37,6 +37,20 @@ object AudioDsp {
         modulated: ModulatedVoice
     ): FloatArray {
         if (samples.isEmpty()) return samples
+        if (sampleRate <= 0) return samples
+        return try {
+            applyInternal(samples, sampleRate, modulated)
+        } catch (e: Exception) {
+            android.util.Log.e("AudioDsp", "Error in DSP pipeline", e)
+            samples.copyOf()  // Return unmodified copy on error
+        }
+    }
+
+    private fun applyInternal(
+        samples: FloatArray,
+        sampleRate: Int,
+        modulated: ModulatedVoice
+    ): FloatArray {
         var pcm = samples.copyOf()
 
         // 1. Soft saturation

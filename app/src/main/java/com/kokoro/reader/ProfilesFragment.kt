@@ -371,7 +371,7 @@ class ProfilesFragment : Fragment() {
                                 val appCtx = context?.applicationContext ?: return@setOnClickListener
                                 Thread {
                                     SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
-                                }.apply { isDaemon = true; start() }
+                                }.apply { name = "PiperPreload-${c.voiceId}"; isDaemon = true; start() }
                             }
                         } else {
                             // Piper voice not downloaded — trigger download
@@ -440,6 +440,7 @@ class ProfilesFragment : Fragment() {
     private fun buildCommentaryEditor() {
         val v = view ?: return
         val ctx = context ?: return
+        if (!isAdded) return
         val container = v.findViewById<LinearLayout>(R.id.commentary_pools_container)
         container.removeAllViews()
 
@@ -760,12 +761,17 @@ class ProfilesFragment : Fragment() {
                 Toast.makeText(ctx, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val p = readProfileFromUI()
-            val rules = loadWordingRules()
-            val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
-            // Use AudioPipeline directly — works without notification service
-            val appCtx = context?.applicationContext ?: return@setOnClickListener
-            AudioPipeline.testSpeak(appCtx, text, p, rules)
+            try {
+                val p = readProfileFromUI()
+                val rules = loadWordingRules()
+                val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
+                // Use AudioPipeline directly — works without notification service
+                val appCtx = context?.applicationContext ?: return@setOnClickListener
+                AudioPipeline.testSpeak(appCtx, text, p, rules)
+            } catch (e: Exception) {
+                Log.w("ProfilesFragment", "Error starting test speech", e)
+                Toast.makeText(ctx, "Error testing voice", Toast.LENGTH_SHORT).show()
+            }
         }
         btnStop.setOnClickListener {
             AudioPipeline.stop()
@@ -851,6 +857,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun loadProfileToUI(p: VoiceProfile) {
+        if (!isAdded || view == null) return
         currentProfile = p
         seekPitch.max = 200; seekPitch.progress = ((p.pitch - 0.50f) / 1.50f * 200f).toInt().coerceIn(0, 200)
         tvPitch.text = "Pitch: %.2f".format(p.pitch)

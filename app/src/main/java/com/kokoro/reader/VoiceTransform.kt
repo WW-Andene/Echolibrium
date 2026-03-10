@@ -346,17 +346,22 @@ object VoiceTransform {
         rules: List<Pair<String, String>>,
         mood: MoodState? = null
     ): String {
-        var r = applyWordingRules(text, rules)
-        r = applyCommentary(r, profile, signal, mood)
-        r = applyFillers(r, profile.fillerIntensity, signal, mood)      // §4.1
-        r = applyBreathInjection(r, signal, mood)                       // §4.3A
-        r = applyGimmicks(r, profile.gimmicks, signal)
-        r = applyQuestionIntonation(r)                                  // §8.1
-        r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
-        r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition,
-            modulated.stutterFrequency, modulated.stutterPause, profile.stutterType)  // §4.2
-        r = applyBreathiness(r, modulated.breathIntensity, modulated.breathCurvePosition, modulated.breathPause)
-        r = applyTrailingText(r, signal, mood)                          // §4.3B/§5.3
-        return r
+        return try {
+            var r = applyWordingRules(text, rules)
+            r = applyCommentary(r, profile, signal, mood)
+            r = applyFillers(r, profile.fillerIntensity, signal, mood)      // §4.1
+            r = applyBreathInjection(r, signal, mood)                       // §4.3A
+            r = applyGimmicks(r, profile.gimmicks, signal)
+            r = applyQuestionIntonation(r)                                  // §8.1
+            r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
+            r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition,
+                modulated.stutterFrequency, modulated.stutterPause, profile.stutterType)  // §4.2
+            r = applyBreathiness(r, modulated.breathIntensity, modulated.breathCurvePosition, modulated.breathPause)
+            r = applyTrailingText(r, signal, mood)                          // §4.3B/§5.3
+            r
+        } catch (e: Exception) {
+            android.util.Log.e("VoiceTransform", "Error in text processing pipeline", e)
+            text  // Fallback to original text on processing error
+        }
     }
 }

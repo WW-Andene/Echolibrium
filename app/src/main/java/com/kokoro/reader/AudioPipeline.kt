@@ -199,9 +199,17 @@ object AudioPipeline {
         val (rawPcm, sampleRate) = result
         if (rawPcm.isEmpty()) return
 
-        // ── Step 3: Apply DSP ─────────────────────────────────────────────
+        // ── Step 2.5: Phonic analysis (landmark detection) ──────────────
+        val landmarks = try {
+            PhonicAnalyzer.analyze(rawPcm, sampleRate)
+        } catch (e: Throwable) {
+            Log.w(TAG, "PhonicAnalyzer failed, DSP will run blind", e)
+            null
+        }
+
+        // ── Step 3: Apply DSP (landmark-aware) ─────────────────────────
         val pcm = try {
-            AudioDsp.apply(rawPcm, sampleRate, item.modulated)
+            AudioDsp.apply(rawPcm, sampleRate, item.modulated, landmarks)
         } catch (e: Throwable) {
             Log.e(TAG, "Error in AudioDsp.apply", e)
             rawPcm  // Fallback to raw PCM on DSP error

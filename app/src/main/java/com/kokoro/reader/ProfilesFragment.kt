@@ -75,7 +75,7 @@ class ProfilesFragment : Fragment() {
     private fun setupEngineStatus() {
         updateEngineStatusUI()
         SherpaEngine.onReadyCallback = {
-            mainHandler.post { updateEngineStatusUI() }
+            mainHandler.post { if (isAdded && view != null) updateEngineStatusUI() }
         }
         // Refresh voice grid when a Piper voice finishes downloading
         PiperVoiceManager.downloadCallback = { _, _ ->
@@ -89,12 +89,20 @@ class ProfilesFragment : Fragment() {
 
     private fun updateEngineStatusUI() {
         if (!isAdded || view == null) return
-        if (SherpaEngine.isReady) {
-            tvEngineStatus.text = "✓ Voice engine ready"
-            tvEngineStatus.setTextColor(0xFF00ff88.toInt())
-        } else {
-            tvEngineStatus.text = "⏳ Initializing voice engine…"
-            tvEngineStatus.setTextColor(0xFFffaa00.toInt())
+        val error = SherpaEngine.errorMessage
+        when {
+            SherpaEngine.isReady -> {
+                tvEngineStatus.text = "✓ Voice engine ready"
+                tvEngineStatus.setTextColor(0xFF00ff88.toInt())
+            }
+            error != null -> {
+                tvEngineStatus.text = "✗ Engine error: $error"
+                tvEngineStatus.setTextColor(0xFFff4444.toInt())
+            }
+            else -> {
+                tvEngineStatus.text = "⏳ Initializing voice engine…"
+                tvEngineStatus.setTextColor(0xFFffaa00.toInt())
+            }
         }
     }
 

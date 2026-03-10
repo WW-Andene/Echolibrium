@@ -14,6 +14,8 @@ class RulesFragment : Fragment() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private val rules = mutableListOf<Pair<String, String>>()
     private lateinit var container: LinearLayout
+    private val saveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val saveRunnable = Runnable { saveRules() }
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_rules, c, false)
@@ -68,7 +70,7 @@ class RulesFragment : Fragment() {
                     setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 8, 12, 8)
                     addTextChangedListener(object : TextWatcher {
-                        override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
+                        override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); debounceSave() }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     })
@@ -93,5 +95,18 @@ class RulesFragment : Fragment() {
             row.addView(etFind); row.addView(arrow); row.addView(etReplace); row.addView(btnDel)
             container.addView(row)
         }
+    }
+
+    /** Debounce saves to avoid writing SharedPreferences on every keystroke */
+    private fun debounceSave() {
+        saveHandler.removeCallbacks(saveRunnable)
+        saveHandler.postDelayed(saveRunnable, 500)
+    }
+
+    override fun onDestroyView() {
+        saveHandler.removeCallbacks(saveRunnable)
+        // Flush any pending save before destroying
+        if (rules.isNotEmpty()) saveRules()
+        super.onDestroyView()
     }
 }

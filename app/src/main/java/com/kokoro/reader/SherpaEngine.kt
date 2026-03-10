@@ -39,6 +39,10 @@ object SherpaEngine {
     @Volatile var isReady = false
         private set
 
+    /** Non-null when the engine failed to initialize — contains the error reason */
+    @Volatile var errorMessage: String? = null
+        private set
+
     /**
      * Callback fired (on any thread) when the Kokoro engine becomes ready.
      * Useful for updating UI status.
@@ -73,6 +77,7 @@ object SherpaEngine {
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "Warm-up failed", e)
+                errorMessage = e.message ?: "Unknown error during warm-up"
             } finally {
                 synchronized(warmUpLock) { isWarmingUp = false }
             }
@@ -110,6 +115,7 @@ object SherpaEngine {
             val config = OfflineTtsConfig(model = modelConfig)
             kokoroTts = OfflineTts(config = config)
             isReady = true
+            errorMessage = null
             Log.d(TAG, "Kokoro engine ready")
             true
 
@@ -117,6 +123,7 @@ object SherpaEngine {
             Log.e(TAG, "Failed to initialize Kokoro engine", e)
             kokoroTts = null
             isReady = false
+            errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             false
         }
     }

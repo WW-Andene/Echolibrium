@@ -15,8 +15,9 @@ class NotificationReaderService : NotificationListenerService() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
-    private var dailyCount = 0
-    private var lastCountDay = -1
+    @Volatile private var dailyCount = 0
+    @Volatile private var lastCountDay = -1
+    private val countLock = Object()
 
     companion object {
         private const val TAG = "NotiReaderService"
@@ -96,8 +97,11 @@ class NotificationReaderService : NotificationListenerService() {
         if (title.isBlank() && text.isBlank()) return
 
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
-        if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
-        dailyCount++
+        val floodCount = synchronized(countLock) {
+            if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
+            dailyCount++
+            dailyCount
+        }
 
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val signal = SignalExtractor.extract(
@@ -106,7 +110,7 @@ class NotificationReaderService : NotificationListenerService() {
             title       = title,
             text        = text,
             hourOfDay   = hour,
-            floodCount  = dailyCount
+            floodCount  = floodCount
         )
 
         val profiles  = VoiceProfile.loadAll(prefs)

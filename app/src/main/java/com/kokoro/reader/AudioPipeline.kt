@@ -253,6 +253,7 @@ object AudioPipeline {
             if (!completed) Log.w(TAG, "Playback marker timeout")
 
         } finally {
+            track.setPlaybackPositionUpdateListener(null)
             try { track.stop() } catch (e: Throwable) {}
             try { track.release() } catch (e: Throwable) {}
             synchronized(trackLock) { if (currentTrack === track) currentTrack = null }

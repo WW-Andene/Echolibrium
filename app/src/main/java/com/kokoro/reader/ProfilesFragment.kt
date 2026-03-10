@@ -511,12 +511,11 @@ class ProfilesFragment : Fragment() {
 
         fun renderLines() {
             linesContainer.removeAllViews()
-            val lineCtx = context ?: return
             lines.forEachIndexed { li, line ->
-                val row = LinearLayout(lineCtx).apply {
+                val row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL; setPadding(0, 3, 0, 3)
                 }
-                val et = android.widget.EditText(lineCtx).apply {
+                val et = android.widget.EditText(ctx).apply {
                     setText(line); hint = "Say something..."; textSize = 12f
                     setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 6, 10, 6)
@@ -534,7 +533,7 @@ class ProfilesFragment : Fragment() {
                         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     })
                 }
-                val del = Button(lineCtx).apply {
+                val del = Button(ctx).apply {
                     text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
                     setOnClickListener {

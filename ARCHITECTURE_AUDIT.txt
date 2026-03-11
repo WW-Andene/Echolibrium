@@ -1,0 +1,891 @@
+================================================================================
+                    ECHOLIBRIUM / KYŌKAN — DEEP ARCHITECTURAL AUDIT
+================================================================================
+
+Date: March 2026
+Scope: Complete codebase analysis — 26 Kotlin source files, 6,600 lines total
+Goal: Map every piece, identify what works, what doesn't, and how to fuse it
+      all into one coherent tool without losing anything.
+
+================================================================================
+ PART 1 — WHAT THE APP IS (THE SOUL)
+================================================================================
+
+Echolibrium is a notification reader with a soul. It doesn't just read text
+aloud — it interprets the emotional content of notifications and modulates
+HOW they are spoken. A sad message sounds different from an angry one. A
+flood of notifications makes the voice tired. Late-night messages get whispered.
+
+The pipeline:
+
+  Notification arrives
+       │
+       ▼
+  SignalExtractor ── NLP pattern matching on the raw text
+       │              Extracts: source type, sender, intent, stakes, urgency,
+       │              warmth, register, emoji sentiment, intensity, trajectory,
+       │              sarcasm, emotional blend, flood tier
+       ▼
+  MoodUpdater ────── Nudges the persistent MoodState based on accumulated signals
+       │              Three dimensions: valence, arousal, stability
+       │              Slow-moving background state, not per-notification
+       ▼
+  VoiceModulator ─── Combines profile baseline + signal + mood + time-of-day
+       │              Outputs: ModulatedVoice (pitch, speed, breath, stutter,
+       │              intonation, jitter, volume, trail-off)
+       ▼
+  VoiceTransform ─── Text-level effects: gimmicks, commentary, fillers,
+       │              breath injection, stuttering, intonation, pauses,
+       │              wording rules, trailing text
+       ▼
+  SherpaEngine ───── Local TTS synthesis (Kokoro 30 voices + Piper 44 voices)
+       │              No network needed — models bundled in APK
+       ▼
+  PhonicAnalyzer ─── PCM analysis: voiced/silence regions, onsets, stress
+       │              points, phrase endings, energy contour, pitch contour
+       ▼
+  AudioDsp ────────── PCM effects: saturation, formant smoothing, breathiness
+       │              noise, spectral tilt, jitter, vocal fry, trailing off
+       ▼
+  AudioTrack ──────── Playback with pitch-shifted sample rate
+
+
+This pipeline is genuinely impressive. The signal analysis, mood system,
+voice modulation, and DSP chain work together to create something that
+feels alive. The problem isn't the pipeline — the pipeline is the best
+part. The problem is everything AROUND the pipeline.
+
+
+================================================================================
+ PART 2 — COMPLETE FILE INVENTORY
+================================================================================
+
+26 files, all in one flat package: com.kokoro.reader
+
+ FILE                          LINES   ROLE                          QUALITY
+ ─────────────────────────────────────────────────────────────────────────────
+ SignalMap.kt                    89    Data: signal enums + data      ★★★★★
+ MoodState.kt                   126   Data: mood model + updater     ★★★★★
+ AppRule.kt                      34   Data: per-app rule             ★★★★☆
+ CommentaryPool.kt              180   Data: condition + pool         ★★★★☆
+ KokoroVoice.kt                  91   Data: voice catalog            ★★★★☆
+ PiperVoiceCatalog.kt           137   Data: Piper voice catalog      ★★★★☆
+ VoiceProfile.kt                564   Data: profile + presets        ★★★☆☆ GOD FILE
+ ─────────────────────────────────────────────────────────────────────────────
+ SignalExtractor.kt             386   Pipeline: notification → signal ★★★★★
+ VoiceModulator.kt              342   Pipeline: signal → voice params ★★★★★
+ VoiceTransform.kt              413   Pipeline: text transformation   ★★★★★
+ AudioDsp.kt                    360   Pipeline: PCM effects           ★★★★★
+ PhonicAnalyzer.kt              344   Pipeline: PCM analysis          ★★★★★
+ AudioPipeline.kt               322   Pipeline: queue + orchestration ★★★★☆
+ ─────────────────────────────────────────────────────────────────────────────
+ SherpaEngine.kt                367   Engine: TTS synthesis           ★★★★☆
+ PiperVoiceManager.kt            45   Engine: state queries           ★★★☆☆
+ VoiceDownloadManager.kt         28   Engine: legacy (dead code)      ★★☆☆☆
+ ─────────────────────────────────────────────────────────────────────────────
+ NotificationReaderService.kt   371   Service: notification listener  ★★★☆☆
+ VoiceCommandListener.kt        216   Service: speech recognition     ★★★☆☆
+ VoiceCommandHandler.kt         203   Service: command processing     ★★★★☆
+ BootReceiver.kt                 47   Service: boot restart           ★★★★★
+ ─────────────────────────────────────────────────────────────────────────────
+ ReaderApplication.kt           177   App: crash logs, warm-up        ★★★★☆
+ MainActivity.kt                134   UI: tab shell                   ★★★★☆
+ HomeFragment.kt                367   UI: settings + status           ★★★☆☆
+ ProfilesFragment.kt            940   UI: voice profile editor        ★★☆☆☆ GOD FILE
+ AppsFragment.kt                178   UI: per-app rules               ★★★☆☆
+ RulesFragment.kt               139   UI: wording substitution        ★★★☆☆
+ ─────────────────────────────────────────────────────────────────────────────
+ TOTAL                         6,600
+
+
+================================================================================
+ PART 3 — WHAT WORKS WELL (KEEP THESE)
+================================================================================
+
+3.1  THE PIPELINE PROCESSORS ARE CLEAN
+     SignalExtractor, VoiceModulator, VoiceTransform, AudioDsp, PhonicAnalyzer
+     are all `object` singletons with ZERO mutable state. Every method is a
+     pure function: input goes in, output comes out. No side effects. No
+     SharedPreferences. No threading concerns. This is the gold standard.
+
+3.2  THE DATA CLASSES ARE WELL-DESIGNED
+     SignalMap is immutable with 30+ fields, all with sane defaults.
+     MoodState is immutable with decay function.
+     ModulatedVoice is a clean value object.
+     PhonicLandmarks captures DSP analysis results cleanly.
+
+3.3  THE AUDIO PIPELINE ORCHESTRATION IS SOLID
+     Single background thread, ordered processing, priority interrupts for
+     phone calls. The wait-for-engine-ready logic with timeout is good.
+     Fallback from Piper to Kokoro on crash is defensive and smart.
+
+3.4  THE SIGNAL ANALYSIS IS GENUINELY SOPHISTICATED
+     Emoji sentiment, negation detection, intensity modifier scaling, sarcasm
+     detection, emotional blend detection, flood tiers, sender history
+     tracking, time-of-day modulation — this is a lot of thoughtful design.
+
+3.5  THE DSP CHAIN IS LANDMARK-AWARE
+     PhonicAnalyzer detects voiced regions, phrase endings, and energy contour.
+     AudioDsp uses these landmarks to apply effects precisely: jitter only on
+     voiced regions, vocal fry at actual phrase endings, trailing off from
+     speech end. This is a level above blind buffer processing.
+
+3.6  THE PRESET PERSONALITY SYSTEM IS CREATIVE
+     15 personality presets (Natural, Excited, Bored, Depressed, Flirty,
+     Gentle, Happy, Hangry, Nervous, Whispery, Robot, Drunk, Elder, Child,
+     Dramatic, Sarcastic) each with tuned sensitivity coefficients, gimmick
+     sets, and contextual commentary pools. The commentary reacts to mood,
+     flood state, time of day, and sender patterns.
+
+
+================================================================================
+ PART 4 — WHAT DOESN'T WORK (THE PROBLEMS)
+================================================================================
+
+The app has 8 structural problems that make it feel like a "mash up" rather
+than a coherent tool. None of them are about features — they're about how
+the pieces connect.
+
+
+PROBLEM 1: JSON RE-PARSED ON EVERY SINGLE NOTIFICATION
+─────────────────────────────────────────────────────────────────────────────
+Where: NotificationReaderService.handleNotification() lines 154, 224, 253
+
+Every time a notification arrives, the service does:
+  val rules    = AppRule.loadAll(prefs)        // parse JSON from SharedPrefs
+  val profiles = VoiceProfile.loadAll(prefs)   // parse JSON from SharedPrefs
+  val rules    = loadWordingRules()            // parse JSON from SharedPrefs
+
+That's 3 full JSON deserializations per notification. VoiceProfile JSON can be
+large (15+ profiles with commentary pools = kilobytes of JSON). For a user
+getting 50+ notifications/day, that's 150+ unnecessary JSON parses.
+
+Why this matters: This is the hot path. Every millisecond here adds latency
+between notification and speech. The data rarely changes (only when the user
+edits settings), but it's re-parsed every time as if it could be different.
+
+Fix: Cache in memory. Invalidate when the user saves changes. The service
+reads the same data 50 times between edits — it should read it once.
+
+
+PROBLEM 2: NO PERSISTENCE ABSTRACTION — 3 DIFFERENT PATTERNS
+─────────────────────────────────────────────────────────────────────────────
+The app uses SharedPreferences as its database, but with no consistency:
+
+Pattern A — JSON blob:
+  VoiceProfile: JSON array string in key "voice_profiles"
+  AppRule: JSON array string in key "app_rules"
+  Wording rules: JSON array string in key "wording_rules" (in RulesFragment)
+
+Pattern B — Individual typed keys:
+  MoodState: 5 separate keys ("mood_valence", "mood_arousal", etc.)
+  DND settings: "dnd_enabled", "dnd_start", "dnd_end"
+  Service state: "service_enabled", "listener_connected"
+
+Pattern C — Direct inline reads:
+  HomeFragment reads "read_mode", "read_app_name" directly
+  NotificationReaderService reads "service_enabled" directly every notification
+  VoiceCommandListener reads profiles + active ID on every wake word reload
+
+Each model class rolls its own toJson()/fromJson() + saveAll()/loadAll().
+There are 4 independent implementations of "serialize list to JSON, save to
+prefs, load from prefs, deserialize JSON to list" that all do the same thing
+with slightly different error handling.
+
+
+PROBLEM 3: GOD FILES — TWO OF THEM
+─────────────────────────────────────────────────────────────────────────────
+
+VoiceProfile.kt (564 lines) contains:
+  - VoiceInfo data class + voice name parser + language/gender classifier (100 lines)
+  - StutterType enum
+  - PersonalitySensitivity data class + JSON serialization
+  - GimmickConfig data class + JSON serialization + transform bridge
+  - VoiceProfile data class + JSON serialization (60 lines)
+  - 15 PRESET definitions with commentary pools (280 lines!)
+  - saveAll() / loadAll() persistence
+
+  This is 7 different concerns in one file. The PRESETS alone are larger than
+  most individual files in the project.
+
+ProfilesFragment.kt (940 lines) does:
+  - Profile CRUD (create, select, save, delete)
+  - Voice selection grid with filtering (Kokoro + Piper, 3-column cards)
+  - Personality preset application
+  - 11 SeekBar parameter controls (pitch, speed, breath x3, stutter x4, intonation x2)
+  - Filler intensity slider
+  - Stutter type selector
+  - Commentary pool editor (nested: pools with lines, conditions, frequency sliders)
+  - Gimmick editor (12 gimmick types x3 controls each)
+  - Voice rename dialog
+  - Engine status monitoring
+  - Piper voice preloading
+  - Collapsible sections
+  - Selected voice banner
+  - Filter buttons
+
+  This is at minimum 8 distinct UI sections crammed into one fragment.
+
+
+PROBLEM 4: STATEFUL SINGLETONS PRETENDING TO BE STATELESS
+─────────────────────────────────────────────────────────────────────────────
+
+SherpaEngine (object) holds:
+  - kokoroTts: OfflineTts? — the TTS engine
+  - piperTts: OfflineTts? — cached Piper engine
+  - piperLoadedVoiceId: String? — which Piper voice is loaded
+  - isReady: Boolean — volatile
+  - errorMessage: String? — volatile
+  - statusMessage: String — volatile
+  - isWarmingUp: Boolean — volatile
+  - onReadyCallback: (() -> Unit)? — volatile lambda
+
+VoiceCommandListener (object) holds:
+  - recognizer: SpeechRecognizer? — Android system resource
+  - isListening: Boolean — volatile
+  - wakeWord: String — volatile
+  - onStatusChanged: ((Boolean) -> Unit)? — mutable lambda
+
+These are lifecycle-dependent resources stuffed into Kotlin objects. They
+can't be garbage collected, can't be tested, can't be injected, and their
+lifecycle doesn't match any Android component lifecycle.
+
+The onReadyCallback / onStatusChanged pattern is particularly fragile:
+fragments set these callbacks in onViewCreated and null them in onDestroyView,
+but if the callback fires between view destruction and nulling, it will
+operate on stale view references.
+
+
+PROBLEM 5: DUPLICATED CODE ACROSS FILES
+─────────────────────────────────────────────────────────────────────────────
+
+Utility functions copied between files:
+  VoiceModulator.guardNaN() (line 261) ↔ VoiceTransform.safeFloat() (line 204)
+  — Identical logic: replace NaN/Infinity with default
+
+  VoiceModulator.lerp() (line 324) ↔ AudioDsp.lerp() (line 359)
+  — Identical implementation: a + (b - a) * t.coerceIn(0f, 1f)
+
+  VoiceTransform.smooth() (line 106) — unique but the concept of mapping
+  0-100 sliders to 0.0-1.0 with nonlinear curves is used implicitly elsewhere
+
+UI duplicated across 4 fragments:
+  showErrorFallback() — copy-pasted identically in HomeFragment (line 39),
+  ProfilesFragment (line 86), AppsFragment (line 37), RulesFragment (line 50)
+  — Same logic: clear container, add red error TextView
+
+  SharedPreferences initialization:
+  prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
+  — Repeated in every fragment's onViewCreated
+
+  SeekBar.OnSeekBarChangeListener boilerplate:
+  — Repeated ~15 times across HomeFragment and ProfilesFragment
+
+
+PROBLEM 6: NO REACTIVE STATE — UI SHOWS STALE DATA BETWEEN TABS
+─────────────────────────────────────────────────────────────────────────────
+
+The app uses show/hide fragment caching (not replace). All 4 fragments stay
+alive in memory once created. Data is loaded in onViewCreated only:
+
+  ProfilesFragment.onViewCreated → profiles = VoiceProfile.loadAll(prefs)
+  AppsFragment.onViewCreated     → rules = AppRule.loadAll(prefs)
+                                   profiles = VoiceProfile.loadAll(prefs)
+
+If you create a new voice profile in ProfilesFragment then switch to
+AppsFragment, the new profile WON'T appear in the per-app profile spinner.
+AppsFragment loaded its profile list when it was first created and never
+refreshes it.
+
+HomeFragment partially solves this with onHiddenChanged + onResume refresh,
+but the other 3 fragments don't implement onHiddenChanged at all.
+
+The service side is the opposite problem: it re-reads everything from prefs
+on every notification (Problem 1), which means it's always up-to-date but
+at a performance cost.
+
+
+PROBLEM 7: FLAT PACKAGE — NO CONCEPTUAL GROUPING
+─────────────────────────────────────────────────────────────────────────────
+
+All 26 files live in com.kokoro.reader. There's no visual separation between:
+  - Data types (SignalMap, MoodState, VoiceProfile, AppRule)
+  - Pipeline processors (SignalExtractor, VoiceModulator, VoiceTransform, AudioDsp)
+  - TTS engine (SherpaEngine, KokoroVoice, PiperVoiceCatalog)
+  - Services (NotificationReaderService, VoiceCommandListener)
+  - UI (4 fragments, MainActivity)
+  - Utilities (ReaderApplication, BootReceiver, VoiceDownloadManager)
+
+Opening the package shows 26 files in alphabetical order with no grouping.
+SignalExtractor sits next to SignalMap sits next to SherpaEngine. You have
+to read each file to understand what it does.
+
+
+PROBLEM 8: NO RECYCLERVIEW — ALL LISTS REBUILT FROM SCRATCH
+─────────────────────────────────────────────────────────────────────────────
+
+Every list in the app uses the pattern:
+  container.removeAllViews()
+  items.forEach { container.addView(buildRow(it)) }
+
+This means:
+  - AppsFragment: potentially 100+ app rows, each with 2 Spinners, all
+    inflated in a loop every time any rule changes
+  - RulesFragment: all wording rules rebuilt on every text change
+  - ProfilesFragment: all voice cards (70+ cards) rebuilt on filter change
+  - ProfilesFragment: all gimmick rows (12) rebuilt on profile switch
+  - ProfilesFragment: all commentary pools rebuilt on any edit
+
+No view recycling, no diff-based updates, no ViewHolder pattern.
+For small lists this is fine. For the apps list (100+ items) and voice
+grid (70+ cards), this creates noticeable UI jank.
+
+
+================================================================================
+ PART 5 — DEAD CODE AND VESTIGIAL ORGANS
+================================================================================
+
+5.1  VoiceDownloadManager.kt (28 lines)
+     Comment says "Legacy model path manager... kept only for backward
+     compatibility." The state is hardcoded to READY, isModelReady() always
+     returns true, getSherpaDir/getModelDir create directories that nothing
+     uses. No other file references getSherpaDir or getModelDir.
+     VERDICT: Dead code. Can be deleted entirely.
+
+5.2  VoiceInfo data class in VoiceProfile.kt (lines 11-99)
+     A 99-line voice name parser that classifies voices by gender/language
+     from their string ID. But KokoroVoice and PiperVoice already have
+     explicit gender, language, nationality fields in their catalog entries.
+     VoiceInfo.from() is only called in a few places where the catalog
+     lookup would give better results.
+     VERDICT: Partially dead. The catalog already has this data.
+
+5.3  PiperVoiceManager.isBundled() always returns true
+     PiperVoiceManager.isVoiceReady() just checks catalog presence
+     PiperVoiceManager.getAvailableVoiceIds() just maps catalog IDs
+     The entire object is a thin wrapper over PiperVoiceCatalog that adds
+     no value. It exists because voices used to be downloadable.
+     VERDICT: Can be collapsed into PiperVoiceCatalog.
+
+
+================================================================================
+ PART 6 — STATE MANAGEMENT MAP
+================================================================================
+
+Where every piece of state lives and who accesses it:
+
+STATE                    LOCATION              READ BY                  WRITE BY
+─────────────────────────────────────────────────────────────────────────────────
+Voice profiles           SP "voice_profiles"   Service (every notif)    ProfilesFragment
+                                               AppsFragment (once)      (also presets)
+                                               VoiceCommandListener
+                                               VoiceCommandHandler
+
+App rules                SP "app_rules"        Service (every notif)    AppsFragment
+                                               AppsFragment (once)
+
+Wording rules            SP "wording_rules"    Service (every notif)    RulesFragment
+                                               ProfilesFragment (test)
+
+Active profile ID        SP "active_profile_id" Service (every notif)  ProfilesFragment
+                                                VoiceCommandListener
+
+Mood state               SP mood_* keys        Service (load once)      Service (every 10th)
+                         + in-memory volatile   VoiceCommandHandler
+
+Service enabled          SP "service_enabled"  Service (every notif)    HomeFragment
+Read mode                SP "read_mode"        Service (every notif)    HomeFragment
+Read app name            SP "read_app_name"    Service (every notif)    HomeFragment
+DND settings             SP "dnd_*"            Service (every notif)    HomeFragment
+Listener connected       SP "listener_connected" HomeFragment           Service
+Voice commands enabled   SP "voice_commands_*" HomeFragment             HomeFragment
+
+Daily flood count        In-memory volatile    Service internally       Service (per notif)
+Sender history           In-memory LinkedHashMap Service internally     Service (per notif)
+Dedup cache              In-memory LinkedHashMap Service internally     Service (per notif)
+Last spoken text         Static volatile        VoiceCommandHandler     Service
+Last notification time   Static volatile        VoiceCommandHandler     Service
+TTS engine state         Static volatile fields HomeFragment            SherpaEngine
+                                                ProfilesFragment
+Voice command state      Static volatile fields HomeFragment            VoiceCommandListener
+
+SP = SharedPreferences
+
+
+KEY OBSERVATIONS:
+
+1. The service reads 6 different SharedPreferences keys on EVERY notification.
+   Five of these (profiles, rules, wording rules, active profile, read mode)
+   could be cached.
+
+2. Fragments and the service never communicate directly. They both read/write
+   SharedPreferences independently. The service sees changes because it re-reads
+   every time. Fragments see changes only if they happen to reload.
+
+3. In-memory state (flood count, sender history, dedup cache) is lost on
+   service restart. Flood count resetting means the voice won't get the
+   "flooded" personality shift until notifications accumulate again.
+
+4. Static volatile fields on singletons (SherpaEngine.isReady,
+   VoiceCommandListener.isListening, NotificationReaderService.instance)
+   are the only cross-component communication mechanism.
+
+
+================================================================================
+ PART 7 — THREADING MAP
+================================================================================
+
+COMPONENT                          THREAD            CONCERN
+─────────────────────────────────────────────────────────────────────────────────
+NotificationReaderService          Binder thread     JSON parsing, signal
+  .onNotificationPosted()          (system)          extraction, mood update
+                                                     all on binder thread
+
+AudioPipeline.loop()               Dedicated daemon  TTS synthesis, DSP, playback
+
+SherpaEngine.warmUp()              Dedicated daemon  Native JNI model loading
+SherpaEngine.synthesize()          Pipeline thread   Native JNI synthesis
+SherpaEngine.synthesizePiper()     Pipeline thread   Native JNI synthesis
+
+VoiceCommandListener               Main thread       SpeechRecognizer requires
+                                   (via Handler)     main thread
+
+HomeFragment polling               Main thread       Handler.postDelayed every 1s
+                                   (via Handler)     while engine loads
+
+AppsFragment.loadInstalledApps()   Dedicated daemon  PackageManager query,
+                                                     then UI update on main
+
+ProfilesFragment Piper preload     Dedicated daemon  SherpaEngine.preloadPiperVoice
+
+ReaderApplication crash handler    Crashing thread   File I/O for crash log
+
+CONCERNS:
+- handleNotification() does all JSON parsing + signal extraction + mood update
+  on the system binder thread. Under high notification volume this could slow
+  the system's notification delivery pipeline.
+- VoiceProfile.loadAll() and AppRule.loadAll() have no synchronization.
+  The service calls them from the binder thread, fragments call them from the
+  main thread. SharedPreferences is internally thread-safe, but the in-memory
+  list returned could be mutated concurrently if fragments use it as mutable.
+
+
+================================================================================
+ PART 8 — DEPENDENCY GRAPH
+================================================================================
+
+Arrow means "depends on" (imports, calls, references).
+
+                    ┌─────────────────────────────────────────────┐
+                    │               SignalMap.kt                  │
+                    │  (enums + data class — depends on nothing)  │
+                    └─────────────┬───────────────────────────────┘
+                                  │
+          ┌───────────────────────┼──────────────────────────┐
+          │                       │                          │
+          ▼                       ▼                          ▼
+   SignalExtractor         VoiceModulator              VoiceTransform
+   (→ SignalMap)           (→ SignalMap,                (→ SignalMap,
+                            VoiceProfile,               VoiceProfile,
+                            MoodState)                  MoodState,
+                                │                       CommentaryPool)
+                                │                          │
+                                ▼                          │
+                           ModulatedVoice ◄────────────────┘
+                                │
+                ┌───────────────┼────────────────┐
+                │               │                │
+                ▼               ▼                ▼
+           AudioDsp      PhonicAnalyzer     AudioPipeline
+           (→ ModulatedVoice,              (→ VoiceTransform,
+            PhonicLandmarks)                SherpaEngine,
+                                            PhonicAnalyzer,
+                                            AudioDsp,
+                                            VoiceModulator,
+                                            KokoroVoices,
+                                            PiperVoiceCatalog)
+                                                 │
+                                                 ▼
+                                           AudioTrack (Android)
+
+   NotificationReaderService
+   (→ AppRule, VoiceProfile, SignalExtractor, VoiceModulator,
+    MoodState, MoodUpdater, AudioPipeline, SherpaEngine,
+    VoiceCommandListener, SharedPreferences)
+
+   VoiceCommandListener → VoiceCommandHandler → AudioPipeline
+                                               → VoiceProfile
+                                               → MoodState
+                                               → SharedPreferences
+
+   ProfilesFragment → VoiceProfile, SherpaEngine, PiperVoiceManager,
+                       PiperVoiceCatalog, KokoroVoices, AudioPipeline,
+                       CommentaryCondition, SharedPreferences
+
+   AppsFragment → AppRule, VoiceProfile, SharedPreferences
+   RulesFragment → SharedPreferences (direct JSON)
+   HomeFragment → NotificationReaderService, SherpaEngine,
+                  VoiceCommandListener, ReaderApplication, SharedPreferences
+
+   ReaderApplication → SherpaEngine
+   BootReceiver → NotificationReaderService
+
+OBSERVATIONS:
+- SignalMap is the true leaf node — nothing depends on it except consumers
+- VoiceProfile is the most depended-on file in the project (8+ dependents)
+- SharedPreferences is the implicit dependency of everything
+- The UI layer has direct dependencies on engine/service singletons
+  (no abstraction boundary)
+
+
+================================================================================
+ PART 9 — COMMENTARY CONDITION SYSTEM (SPECIAL NOTE)
+================================================================================
+
+CommentaryCondition uses a stringly-typed dispatch table: the `type` field
+is a String matched in a `when` block with 69 branches:
+
+  "always", "source_game", "source_personal", "source_financial",
+  "source_service", "source_platform", "source_system", "sender_human",
+  "sender_unknown", "intent_request", "intent_plea", "intent_denial",
+  "intent_alert", "intent_greeting", "intent_invite", "intent_action",
+  "intent_reassurance", "stakes_fake", "stakes_financial", "stakes_emotional",
+  "stakes_high", "stakes_low", "urgency_none", "urgency_real",
+  "urgency_expiring", "warmth_high", "warmth_distressed", "emoji_sad",
+  "emoji_happy", "emoji_angry", "emoji_love", "intensity_low",
+  "intensity_high", "traj_building", "traj_peaked", "traj_collapsed",
+  "time_night", "time_morning", "flooded", "sarcasm_detected",
+  "mood_tired", "mood_tense", "mood_content", "mood_overwhelmed",
+  "mood_flat", "sender_repeat_2", "sender_repeat_3", "sender_rapid",
+  "sender_persistent", "flood_busy", "flood_overwhelmed"
+
+The label() function has an identical parallel `when` block with the same
+51 branches, mapping each type string to a human-readable label.
+
+If a condition string is mistyped (e.g., "source_perosnal"), it silently
+falls through to `else -> false`. No compile-time check, no runtime warning.
+
+The ALL_TYPES companion list must be manually kept in sync with the
+matches() when block and the label() when block — three places to update
+for every new condition type.
+
+This could be a sealed class or enum with associated matching logic, giving
+compile-time safety and eliminating the sync requirement. However, the
+current approach does work and changing it would require migrating all
+persisted commentary pools, so the cost/benefit needs careful consideration.
+
+
+================================================================================
+ PART 10 — WHAT A UNIFIED ARCHITECTURE WOULD LOOK LIKE
+================================================================================
+
+The goal: fuse everything into a coherent tool where every piece knows its
+place, data flows through clear channels, and adding a feature means touching
+one place, not five.
+
+PROPOSED STRUCTURE:
+
+  com.kokoro.reader/
+  ├── ReaderApplication.kt          (app entry, crash logging)
+  ├── MainActivity.kt               (tab shell)
+  │
+  ├── model/                         ← PURE DATA (no Android deps)
+  │   ├── SignalMap.kt               (signal enums + data class)
+  │   ├── MoodState.kt              (mood data class + updater)
+  │   ├── VoiceProfile.kt           (profile data class only — no presets)
+  │   ├── VoicePresets.kt           (extracted: 15 preset definitions)
+  │   ├── VoiceTypes.kt             (extracted: VoiceInfo, PersonalitySensitivity,
+  │   │                              GimmickConfig, StutterType)
+  │   ├── AppRule.kt                (rule data class)
+  │   └── CommentaryPool.kt         (condition + pool)
+  │
+  ├── data/                          ← PERSISTENCE LAYER
+  │   ├── PrefsStore.kt             (generic cached JSON-in-SharedPrefs store)
+  │   ├── ProfileRepository.kt      (VoiceProfile CRUD with in-memory cache)
+  │   ├── RuleRepository.kt         (AppRule + WordingRule CRUD with cache)
+  │   └── MoodRepository.kt         (MoodState persistence with cache)
+  │
+  ├── pipeline/                      ← PROCESSING CHAIN (stateless)
+  │   ├── SignalExtractor.kt         (notification → signal)
+  │   ├── VoiceModulator.kt          (signal → voice params)
+  │   ├── VoiceTransform.kt          (text transformation)
+  │   ├── AudioDsp.kt               (PCM effects)
+  │   ├── PhonicAnalyzer.kt          (PCM analysis)
+  │   └── AudioPipeline.kt           (queue + orchestration)
+  │
+  ├── engine/                        ← TTS ENGINE
+  │   ├── SherpaEngine.kt            (Kokoro + Piper synthesis)
+  │   ├── KokoroVoices.kt            (voice catalog)
+  │   └── PiperVoiceCatalog.kt       (voice catalog)
+  │
+  ├── service/                       ← BACKGROUND SERVICES
+  │   ├── NotificationReaderService.kt (leaner — delegates to repos)
+  │   ├── SenderTracker.kt           (extracted: sender history + dedup)
+  │   ├── VoiceCommandListener.kt
+  │   └── VoiceCommandHandler.kt
+  │
+  ├── ui/                            ← UI LAYER
+  │   ├── BaseFragment.kt            (shared: prefs, error fallback)
+  │   ├── HomeFragment.kt
+  │   ├── ProfilesFragment.kt        (coordinator only)
+  │   ├── profiles/                  (extracted UI builders)
+  │   │   ├── VoiceGridBuilder.kt
+  │   │   ├── ParameterSlidersBuilder.kt
+  │   │   ├── CommentaryEditorBuilder.kt
+  │   │   └── GimmickEditorBuilder.kt
+  │   ├── AppsFragment.kt
+  │   └── RulesFragment.kt
+  │
+  └── util/                          ← SHARED UTILITIES
+      └── FloatExt.kt                (guardNaN, lerp, smooth)
+
+KEY PRINCIPLES:
+
+1. DATA FLOWS DOWN, EVENTS FLOW UP
+   Repositories cache data. Fragments read from repositories.
+   Repositories notify listeners on save. Fragments refresh on notification.
+   The service reads from repositories (cached, not re-parsed).
+
+2. ONE RESPONSIBILITY PER FILE
+   VoiceProfile is a data class. Presets are in VoicePresets.
+   ProfilesFragment coordinates. VoiceGridBuilder builds the voice grid.
+   SenderTracker tracks senders. NotificationReaderService listens.
+
+3. PIPELINE PROCESSORS DON'T CHANGE
+   SignalExtractor, VoiceModulator, VoiceTransform, AudioDsp, PhonicAnalyzer
+   are already perfect. They stay exactly as they are, just in a sub-package.
+
+4. CACHED PERSISTENCE ELIMINATES HOT-PATH JSON PARSING
+   PrefsStore<T> holds the deserialized list in memory. Reads return the cache.
+   Saves update cache + persist to SharedPreferences. Thread-safe with a lock.
+   The service reads from cache (0ms) instead of parsing JSON (5-50ms).
+
+5. REACTIVE REFRESH ELIMINATES STALE DATA
+   When ProfilesFragment saves profiles, the ProfileRepository notifies all
+   listeners. AppsFragment's listener invalidates its profile spinner data.
+   Fragment.onHiddenChanged triggers a cheap refresh from cache.
+
+
+================================================================================
+ PART 11 — EXECUTION STRATEGY
+================================================================================
+
+If you decide to proceed with the restructuring, here's the order that
+minimizes risk while maximizing early wins:
+
+PHASE 1 — FOUNDATION (zero behavioral changes)
+  Step 1: Extract FloatExt.kt (guardNaN, lerp, smooth)
+          Remove duplicates from VoiceModulator, VoiceTransform, AudioDsp
+          Risk: None. Impact: Eliminates code duplication.
+
+  Step 2: Create BaseFragment
+          Move showErrorFallback() + prefs lazy init to shared base
+          All 4 fragments extend BaseFragment
+          Risk: None. Impact: Eliminates 4x copy-paste.
+
+  Step 3: Build PrefsStore<T> with in-memory caching
+          Wrap VoiceProfile, AppRule, wording rules persistence
+          NotificationReaderService reads from cache instead of re-parsing
+          Risk: Low. Impact: Major performance improvement on hot path.
+
+PHASE 2 — SPLIT GOD FILES (zero behavioral changes)
+  Step 4: Split VoiceProfile.kt → VoiceProfile + VoicePresets + VoiceTypes
+          Risk: None (just moving code to new files).
+
+  Step 5: Extract SenderTracker from NotificationReaderService
+          Risk: Low (encapsulate existing logic, no behavior change).
+
+  Step 6: Split ProfilesFragment into coordinator + builders
+          Risk: Medium (UI refactor, need to verify all interactions still work).
+
+PHASE 3 — REACTIVE STATE (fixes real bugs)
+  Step 7: Add change listeners to PrefsStore
+          Add onHiddenChanged refresh to all fragments
+          Risk: Low. Impact: Fixes the stale data bug between tabs.
+
+PHASE 4 — PACKAGE ORGANIZATION (cosmetic but important)
+  Step 8: Move files into sub-packages
+          Update all import statements
+          Risk: Low (IDE refactor). Impact: Conceptual clarity.
+
+PHASE 5 — UI MODERNIZATION (optional, higher risk)
+  Step 9: RecyclerView for apps list, wording rules, voice grid
+          Risk: Medium. Impact: Better scroll performance on large lists.
+
+
+================================================================================
+ PART 12 — WHAT YOU SHOULD NOT CHANGE
+================================================================================
+
+ - The pipeline architecture (it's the core innovation)
+ - The signal analysis patterns (they work and are extensible)
+ - The mood system (it's unique and well-designed)
+ - The DSP chain (landmark-aware processing is sophisticated)
+ - The commentary/gimmick system (creative and user-customizable)
+ - The preset personalities (they define the product's character)
+ - The voice catalog structure (Kokoro + Piper dual-engine is smart)
+ - The AudioPipeline queue model (single thread, ordered, priority interrupts)
+ - The foreground service lifecycle (notification channel, rebind on disconnect)
+ - The crash logging system (robust, multi-location fallback)
+
+These are the soul of the app. The restructuring is about giving the soul
+a better body to live in.
+
+
+================================================================================
+ PART 13 — UNIMPLEMENTED ENGINE IMPROVEMENTS (from ENGINE_IMPROVEMENTS_TODO.txt)
+================================================================================
+
+Cross-referenced against current codebase. Only items that are STILL RELEVANT
+and NOT YET IMPLEMENTED are listed here.
+
+
+── KNOWN ISSUES (still active) ────────────────────────────────────────────────
+
+ISSUE 1: Native SIGSEGV on SherpaEngine.warmUp()                    [ACTIVE]
+  SherpaEngine.kt:93-112 — warmUp() is called from both
+  ReaderApplication.onCreate() (line 44) AND NotificationReaderService (line 89).
+  Current workaround: guard with isWarmingUp flag + synchronized block, catch
+  Throwable. But the underlying native crash risk remains. A proper fix would
+  use a retry-with-backoff strategy and process-level isolation (see §3.1).
+
+ISSUE 2: Piper voice extraction slow on first launch                [OBSOLETE]
+  No longer relevant. PiperVoiceManager now returns isBundled()=true for all
+  voices. Voices load directly from assets via AssetManager. No extraction step
+  exists in the current code. VoiceDownloadManager is dead code.
+
+ISSUE 3: Android 13+ restricted settings for NotificationListener   [ACTIVE]
+  Users must manually enable the notification listener in Settings. The app
+  shows a dialog guiding them, but Android 13+ makes it harder to discover.
+  No programmatic workaround exists — this is an OS-level restriction.
+  Mitigation: Improve onboarding UX with clearer step-by-step instructions.
+
+
+── UNIMPLEMENTED IMPROVEMENTS ─────────────────────────────────────────────────
+
+§3.1 — SAFE ENGINE WARM-UP                                   [HIGH PRIORITY]
+  Status: NOT implemented.
+  Problem: SherpaEngine.warmUp() runs on a raw daemon Thread with no retry,
+  no backoff, and a bare catch(Throwable). If native init crashes (SIGSEGV),
+  the engine stays dead for the session.
+  What to build:
+    - Retry with exponential backoff (3 attempts, 1s → 2s → 4s)
+    - State machine: IDLE → WARMING_UP → READY | FAILED(retryCount)
+    - Livedata/callback to notify UI of warm-up progress
+    - Consider moving native init to a separate process (isolates SIGSEGV)
+  Where it fits in restructuring: Part of SherpaEngine refactor (Phase 1).
+  Related code: SherpaEngine.kt:93-112, ReaderApplication.kt:44,
+                NotificationReaderService.kt:89
+
+§3.2 — VOICE QUALITY SELECTOR IN UI                          [MEDIUM PRIORITY]
+  Status: NOT implemented.
+  Problem: Piper voices come in low/medium/high quality variants (see
+  PiperVoiceCatalog.kt — e.g., lessac has all 3 qualities). The UI shows all
+  variants as separate entries. No quality picker per voice exists.
+  What to build:
+    - Group Piper voices by name, show quality as a sub-selector (low/med/high)
+    - Default to "medium" for bandwidth/quality balance
+    - Show model size estimates per quality tier
+  Where it fits: ProfilesFragment voice grid refactor (Phase 5 in audit).
+  Related code: PiperVoiceCatalog.kt:65-92 (multiple quality entries per voice)
+
+§3.3 — STREAMING / CHUNKED SYNTHESIS                         [MEDIUM PRIORITY]
+  Status: NOT implemented.
+  Problem: SherpaEngine synthesizes the entire text in one blocking call
+  (generate()), then returns the full PCM buffer. Long notifications cause
+  noticeable latency before playback begins.
+  What to build:
+    - Split text into sentence-level chunks
+    - Synthesize chunk N while playing chunk N-1
+    - Use AudioPipeline's existing queue for chunk sequencing
+  Where it fits: AudioPipeline + SherpaEngine refactor (Phase 1).
+  Complexity: Medium-high. Requires careful handling of DSP effects across
+  chunk boundaries (breathiness, trailing-off, vocal fry need continuity).
+  Related code: SherpaEngine.kt (generate), AudioPipeline.kt:180-240
+
+§3.4 — VOICE PREVIEW / SAMPLE PLAYBACK                      [MEDIUM PRIORITY]
+  Status: PARTIALLY implemented.
+  ProfilesFragment.kt:755 has a "test voice" button that synthesizes
+  "Hello! This is how I sound." — but only for the currently selected profile.
+  What's missing:
+    - Preview button on each voice in the voice selection grid
+    - Pre-rendered audio samples (avoids synthesis delay for previews)
+    - Quick A/B comparison between voices
+  Where it fits: ProfilesFragment voice grid refactor (Phase 5).
+  Related code: ProfilesFragment.kt:755-770
+
+§3.5 — MULTI-LANGUAGE AUTO-DETECTION                         [LOW PRIORITY]
+  Status: NOT implemented.
+  Problem: The app always uses the voice's language for synthesis. If a
+  notification contains mixed languages (e.g., English text with French words),
+  pronunciation is wrong for the foreign words.
+  What to build:
+    - Lightweight language detection on text segments (trigram-based, no network)
+    - Automatic voice switching or phoneme adaptation per segment
+  Where it fits: SignalExtractor enhancement (Phase 2 — after core refactor).
+  Complexity: High. Requires multi-voice orchestration within a single
+  utterance and cross-engine coordination (Kokoro vs Piper per language).
+  Related code: SignalExtractor.kt, SherpaEngine.kt
+
+§3.6 — PITCH SHIFTING AT DSP LEVEL                          [LOW PRIORITY]
+  Status: PARTIALLY implemented.
+  AudioPipeline.kt:285 applies pitch shift via AudioTrack playback rate.
+  VoiceTransform already carries pitchShiftSemitones. But the current approach
+  (playback rate) also changes speed, not just pitch.
+  What to build:
+    - True pitch shifting via PSOLA or phase vocoder in AudioDsp
+    - Decouple pitch from speed so emotional modulation doesn't alter pacing
+  Where it fits: AudioDsp enhancement (Phase 2).
+  Complexity: Medium. PSOLA is well-documented but tricky to get artifact-free.
+  Related code: AudioPipeline.kt:285, VoiceTransform.kt (pitchShiftSemitones),
+                AudioDsp.kt
+
+§3.7 — ADAPTIVE VOLUME BASED ON AMBIENT NOISE               [LOW PRIORITY]
+  Status: NOT implemented.
+  Problem: Notification volume is fixed. In noisy environments, the TTS is
+  too quiet; in quiet environments, it's too loud.
+  What to build:
+    - Microphone sampling to estimate ambient noise level
+    - Dynamic gain adjustment in AudioDsp before AudioTrack output
+    - User-configurable sensitivity and min/max volume bounds
+  Where it fits: AudioDsp / AudioPipeline enhancement (Phase 2+).
+  Complexity: Medium. Requires RECORD_AUDIO permission and careful feedback
+  loop prevention (don't amplify based on own TTS output).
+  Related code: AudioDsp.kt, AudioPipeline.kt
+
+§3.8 — CONVERSATION GROUPING                                [MEDIUM PRIORITY]
+  Status: NOT implemented.
+  Problem: Rapid-fire messages from the same sender are read individually,
+  each with full voice modulation setup. This creates a "robotic" feel for
+  chat conversations.
+  What to build:
+    - Group messages from same sender within a time window (e.g., 5 seconds)
+    - Batch-read grouped messages with natural pauses between them
+    - Maintain mood continuity across the group (don't reset MoodState)
+    - Use sender history (NotificationReaderService.kt:SenderRecord) for
+      grouping decisions
+  Where it fits: NotificationReaderService + AudioPipeline refactor (Phase 1).
+  Related code: NotificationReaderService.kt:120-140 (SenderRecord tracking),
+                AudioPipeline.kt
+
+
+── PRIORITY SUMMARY ───────────────────────────────────────────────────────────
+
+  RESTRUCTURING PHASE 1 (do first — these have the highest user impact):
+    §3.1 Safe warm-up        — Prevents dead engine after crash
+    §3.3 Chunked synthesis   — Reduces perceived latency
+    §3.8 Conversation group  — Improves chat readback quality
+
+  RESTRUCTURING PHASE 2 (after core refactor):
+    §3.2 Quality selector    — Better UX for voice picking
+    §3.4 Voice preview       — Already partially working, easy win
+    §3.6 True pitch shift    — Decouples pitch from speed
+
+  NICE-TO-HAVE (low priority, high complexity):
+    §3.5 Language detection   — Hard, requires multi-engine orchestration
+    §3.7 Adaptive volume      — Needs new permission, feedback loop risk
+
+
+================================================================================
+ END OF AUDIT
+================================================================================

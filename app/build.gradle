@@ -2,6 +2,35 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
+
+// ── Auto-download TTS models before build ───────────────────────────────────
+// Ensures the AAR, Kokoro model, and all Piper voices are present.
+// Skips files that already exist (idempotent). First build takes ~10-15 min
+// to download everything; subsequent builds are instant.
+
+task downloadTtsModels(type: Exec) {
+    description = 'Downloads sherpa-onnx AAR, Kokoro model, and Piper voices if missing'
+    group = 'setup'
+
+    workingDir projectDir
+    commandLine 'bash', 'download-models.sh'
+
+    // Only run if key files are missing
+    onlyIf {
+        def aar = file("${projectDir}/libs/sherpa_onnx.aar")
+        def model = file("${projectDir}/src/main/assets/kokoro-model/model.onnx")
+        def tokens = file("${projectDir}/src/main/assets/piper-models/tokens.txt")
+        def missing = !aar.exists() || !model.exists() || !tokens.exists()
+        if (missing) {
+            logger.lifecycle("TTS models missing — running download-models.sh")
+        }
+        return missing
+    }
+}
+
+// Hook into the build: download models before any compilation starts
+preBuild.dependsOn downloadTtsModels
+
 android {
     namespace 'com.kokoro.reader'
     compileSdk 34
@@ -26,8 +55,9 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
-    // Allow large asset files (model.onnx is ~120MB)
-    aaptOptions { noCompress "onnx", "bin" }
+    // Allow large asset files (model.onnx is ~120MB) — must NOT compress for direct loading
+    // Must NOT compress model files — sherpa-onnx loads them directly via AssetManager
+    aaptOptions { noCompress "onnx", "ort", "bin" }
 }
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
@@ -37,6 +67,6 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
 
-    // Sherpa-onnx Android library (pre-built AAR downloaded by CI — see build.yml)
+    // Sherpa-onnx Android library (auto-downloaded by downloadTtsModels task)
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
 }

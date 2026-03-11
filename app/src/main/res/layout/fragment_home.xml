@@ -16,6 +16,16 @@
         <TextView android:id="@+id/service_status_text" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
             android:fontFamily="monospace" android:textSize="12sp" android:textColor="@color/text_dim"
+            android:layout_marginBottom="2dp"/>
+
+        <TextView android:id="@+id/engine_status_text" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
+            android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/text_dim"
+            android:layout_marginBottom="2dp"/>
+
+        <TextView android:id="@+id/log_path_text" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
+            android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/text_hint"
             android:layout_marginBottom="8dp"/>
 
         <Button android:id="@+id/btn_permission" android:layout_width="match_parent"

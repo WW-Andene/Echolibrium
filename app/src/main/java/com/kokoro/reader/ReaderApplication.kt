@@ -23,15 +23,25 @@ class ReaderApplication : Application() {
     companion object {
         private const val TAG = "ReaderApplication"
         private const val LOG_SUBDIR = "Kyokan/Logs"
-    }
 
-    /** Resolved log directory — set during onCreate, used by crash handler */
-    private var logDir: File? = null
+        /** Resolved log directory — accessible from other components for "view logs" UI */
+        @Volatile var resolvedLogDir: File? = null
+            private set
+
+        /** Human description of where logs are stored */
+        @Volatile var logLocationDescription: String = "not initialized"
+            private set
+    }
 
     override fun onCreate() {
         super.onCreate()
-        logDir = resolveLogDirectory()
+        resolvedLogDir = resolveLogDirectory()
         installUncaughtExceptionHandler()
+
+        // Start loading the TTS engine immediately on app launch.
+        // By the time the user grants notification permission and the service
+        // starts, the engine will already be warm and ready — zero delay.
+        SherpaEngine.warmUp(this)
     }
 
     /**
@@ -40,8 +50,8 @@ class ReaderApplication : Application() {
      *
      * Priority:
      *   1. Shared storage /storage/emulated/0/Kyokan/Logs/ (user-visible in file manager)
-     *   2. App-private external /Android/data/<pkg>/files/Kyokan/Logs/ (no permission needed)
-     *   3. Internal storage (always available)
+     *   2. App-private external /Android/data/<pkg>/files/Kyokan/Logs/ (visible via file manager on some devices)
+     *   3. Internal storage (always available, needs adb to access)
      */
     private fun resolveLogDirectory(): File? {
         // Try shared storage (visible in file manager)
@@ -59,6 +69,7 @@ class ReaderApplication : Application() {
                     if (testFile.createNewFile()) {
                         testFile.delete()
                         Log.i(TAG, "Log directory: ${dir.absolutePath}")
+                        logLocationDescription = dir.absolutePath
                         return dir
                     }
                 }
@@ -67,13 +78,14 @@ class ReaderApplication : Application() {
             Log.w(TAG, "Shared storage log dir unavailable", e)
         }
 
-        // Try app-private external storage
+        // Try app-private external storage (visible in some file managers)
         try {
             val appExt = getExternalFilesDir(null)
             if (appExt != null) {
                 val dir = File(appExt, LOG_SUBDIR)
                 if (dir.mkdirs() || dir.isDirectory) {
                     Log.i(TAG, "Log directory: ${dir.absolutePath}")
+                    logLocationDescription = dir.absolutePath
                     return dir
                 }
             }
@@ -81,14 +93,16 @@ class ReaderApplication : Application() {
             Log.w(TAG, "App-private external log dir unavailable", e)
         }
 
-        // Fallback: internal storage (always works)
+        // Fallback: internal storage (always works, needs adb)
         return try {
             val dir = File(filesDir, LOG_SUBDIR)
             dir.mkdirs()
             Log.i(TAG, "Log directory (internal): ${dir.absolutePath}")
+            logLocationDescription = "${dir.absolutePath} (internal — use adb to access)"
             dir
         } catch (e: Throwable) {
             Log.e(TAG, "Cannot create any log directory", e)
+            logLocationDescription = "unavailable"
             null
         }
     }
@@ -118,7 +132,7 @@ class ReaderApplication : Application() {
      */
     private fun writeCrashLog(thread: Thread, throwable: Throwable) {
         try {
-            val dir = logDir ?: return
+            val dir = resolvedLogDir ?: return
             if (!dir.exists()) dir.mkdirs()
 
             val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())

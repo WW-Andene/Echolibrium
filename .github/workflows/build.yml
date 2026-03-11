@@ -14,9 +14,13 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
 
+      # Install onnxruntime for model optimization (ORT format conversion)
+      - name: Install onnxruntime
+        run: pip install onnxruntime
+
       # Downloads sherpa-onnx AAR, Kokoro model, and all 44 Piper voices.
-      # Same script used for local builds — single source of truth.
-      - name: Download TTS models and AAR
+      # Then converts models to ORT format for faster loading on device.
+      - name: Download and optimize TTS models
         run: cd app && bash download-models.sh
 
       - run: chmod +x gradlew

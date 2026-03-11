@@ -166,14 +166,36 @@ done
 echo ""
 echo "  Piper voices: $SKIPPED already present, $DOWNLOADED downloaded, $FAILED failed (of $TOTAL total)"
 
+# ── 4. Optimize models (ORT format + strip languages) ────────────────────────
+
+echo ""
+echo "═══ Step 4/4: Optimize models (ORT format) ═══"
+
+# Check if ORT conversion has already been done (idempotent)
+if [ -f "$KOKORO_DIR/model.ort" ]; then
+    echo "  ✓ Models already optimized — skipping"
+else
+    if command -v python3 &>/dev/null && python3 -c "import onnxruntime" 2>/dev/null; then
+        python3 "$SCRIPT_DIR/optimize-models.py"
+    else
+        echo "  ⚠ python3 + onnxruntime not available — skipping ORT optimization"
+        echo "    Install with: pip install onnxruntime"
+        echo "    The app will still work with .onnx files (slower first load)"
+    fi
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""
 echo "═══════════════════════════════════════════════"
 PIPER_COUNT=$(ls -1 "$PIPER_DIR"/*.onnx 2>/dev/null | wc -l)
+ORT_COUNT=$(ls -1 "$KOKORO_DIR"/*.ort "$PIPER_DIR"/*.ort 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
 echo "  Kokoro: $(du -sh "$KOKORO_DIR" 2>/dev/null | cut -f1 || echo 'MISSING')"
 echo "  Piper:  ${PIPER_COUNT} voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"
+if [ "$ORT_COUNT" -gt 0 ]; then
+    echo "  ORT:    ${ORT_COUNT} pre-optimized models (faster load)"
+fi
 echo ""
 echo "  Ready to build: ./gradlew assembleDebug"
 echo "═══════════════════════════════════════════════"

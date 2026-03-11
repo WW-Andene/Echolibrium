@@ -56,7 +56,8 @@ android {
     }
     kotlinOptions { jvmTarget = '17' }
     // Allow large asset files (model.onnx is ~120MB) — must NOT compress for direct loading
-    aaptOptions { noCompress "onnx", "bin" }
+    // Must NOT compress model files — sherpa-onnx loads them directly via AssetManager
+    aaptOptions { noCompress "onnx", "ort", "bin" }
 }
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'

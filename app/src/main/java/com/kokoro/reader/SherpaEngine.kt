@@ -67,6 +67,22 @@ object SherpaEngine {
     @Volatile private var isWarmingUp = false
     private val warmUpLock = Object()
 
+    // ── Asset resolution ──────────────────────────────────────────────────────
+
+    /**
+     * Prefer pre-optimized .ort model over .onnx if available.
+     * ORT format loads 5-10x faster (pre-optimized flatbuffer, no graph optimization at runtime).
+     */
+    private fun resolveModel(ctx: Context, onnxPath: String): String {
+        val ortPath = onnxPath.replace(".onnx", ".ort")
+        val ortExists = try { ctx.assets.open(ortPath).use { true } } catch (_: Throwable) { false }
+        if (ortExists) {
+            Log.i(TAG, "│ Using pre-optimized ORT model: $ortPath")
+            return ortPath
+        }
+        return onnxPath
+    }
+
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
     /**
@@ -108,16 +124,22 @@ object SherpaEngine {
 
             // ── Pre-flight: verify required assets exist BEFORE calling native code ──
             // Missing assets cause OfflineTts() to hang or SIGSEGV with no error message.
+            // Accept either .ort (pre-optimized) or .onnx format for the model.
             val requiredFiles = listOf(
-                "$KOKORO_DIR/model.onnx",
+                "$KOKORO_DIR/model.onnx",  // or model.ort — checked via resolveModel()
                 "$KOKORO_DIR/voices.bin",
                 "$KOKORO_DIR/tokens.txt"
             )
             val missingFiles = mutableListOf<String>()
             for (path in requiredFiles) {
+                // For model files, also accept .ort pre-optimized variant
+                val ortPath = path.replace(".onnx", ".ort")
                 val exists = try {
                     ctx.assets.open(path).use { true }
-                } catch (_: Throwable) { false }
+                } catch (_: Throwable) {
+                    if (ortPath != path) try { ctx.assets.open(ortPath).use { true } } catch (_: Throwable) { false }
+                    else false
+                }
                 Log.i(TAG, "│ asset %-30s %s".format(path, if (exists) "✓" else "✗ MISSING"))
                 if (!exists) missingFiles.add(path)
             }
@@ -141,8 +163,9 @@ object SherpaEngine {
             }
 
             statusMessage = "preparing Kokoro config…"
+            val modelPath = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
             val kokoroConfig = OfflineTtsKokoroModelConfig(
-                model   = "$KOKORO_DIR/model.onnx",
+                model   = modelPath,
                 voices  = "$KOKORO_DIR/voices.bin",
                 tokens  = "$KOKORO_DIR/tokens.txt",
                 dataDir = "$KOKORO_DIR/espeak-ng-data"
@@ -157,7 +180,8 @@ object SherpaEngine {
 
             val config = OfflineTtsConfig(model = modelConfig)
 
-            statusMessage = "loading native model (this may take 10-30s)…"
+            val isOrt = modelPath.endsWith(".ort")
+            statusMessage = if (isOrt) "loading optimized model…" else "loading native model (this may take 10-30s)…"
             Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
             initStartTime.set(System.currentTimeMillis())
 
@@ -277,11 +301,11 @@ object SherpaEngine {
 
     private fun loadPiperVoice(ctx: Context, voiceId: String): Boolean {
         try {
-            // Verify the voice model file exists before calling native code
-            val modelPath = "$PIPER_DIR/$voiceId.onnx"
-            val modelExists = try { ctx.assets.open(modelPath).use { true } } catch (_: Throwable) { false }
+            // Verify the voice model file exists (prefer .ort over .onnx)
+            val resolvedPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
+            val modelExists = try { ctx.assets.open(resolvedPath).use { true } } catch (_: Throwable) { false }
             if (!modelExists) {
-                Log.e(TAG, "Piper voice model missing from assets: $modelPath")
+                Log.e(TAG, "Piper voice model missing from assets: $resolvedPath")
                 return false
             }
 
@@ -290,10 +314,10 @@ object SherpaEngine {
             piperTts = null
             piperLoadedVoiceId = null
 
-            Log.d(TAG, "Loading Piper voice from assets: $voiceId")
+            Log.d(TAG, "Loading Piper voice from assets: $voiceId (${if (resolvedPath.endsWith(".ort")) "ORT" else "ONNX"})")
 
             val vitsConfig = OfflineTtsVitsModelConfig(
-                model   = "$PIPER_DIR/$voiceId.onnx",
+                model   = resolvedPath,
                 tokens  = "$PIPER_DIR/tokens.txt",
                 dataDir = "$KOKORO_DIR/espeak-ng-data"
             )

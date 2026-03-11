@@ -24,8 +24,83 @@ jobs:
       - name: Download and optimize TTS models
         run: cd app && bash download-models.sh
 
+      # Fail fast if critical assets are missing before building
+      - name: Verify TTS assets
+        run: |
+          set -euo pipefail
+          echo "Checking critical build assets..."
+          MISSING=0
+
+          check() { if [ ! -e "$1" ]; then echo "✗ MISSING: $1"; MISSING=1; else echo "✓ $1"; fi; }
+
+          check "app/libs/sherpa_onnx.aar"
+          check "app/src/main/assets/kokoro-model/tokens.txt"
+          check "app/src/main/assets/kokoro-model/voices.bin"
+          check "app/src/main/assets/kokoro-model/espeak-ng-data"
+
+          # Accept either .ort (optimized) or .onnx for the model
+          if [ -f "app/src/main/assets/kokoro-model/model.ort" ]; then
+            echo "✓ kokoro model (ORT optimized)"
+          elif [ -f "app/src/main/assets/kokoro-model/model.onnx" ]; then
+            echo "✓ kokoro model (ONNX)"
+          else
+            echo "✗ MISSING: kokoro model (no .ort or .onnx)"
+            MISSING=1
+          fi
+
+          PIPER_COUNT=$(find app/src/main/assets/piper-models -name '*.onnx' -o -name '*.ort' 2>/dev/null | wc -l)
+          echo "  Piper voices: $PIPER_COUNT"
+          if [ "$PIPER_COUNT" -lt 1 ]; then
+            echo "✗ No Piper voice models found"
+            MISSING=1
+          fi
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "═══════════════════════════════════════════════════════"
+            echo "BUILD BLOCKED: Required TTS assets are missing."
+            echo ""
+            echo "Have you run the 'Upload TTS Assets' workflow?"
+            echo "  → Go to Actions → 'Upload TTS Assets to Release'"
+            echo "  → Click 'Run workflow' (manual trigger)"
+            echo ""
+            echo "This creates the tts-assets-v1 release that"
+            echo "download-models.sh fetches from."
+            echo "═══════════════════════════════════════════════════════"
+            exit 1
+          fi
+
+          echo ""
+          echo "All TTS assets verified ✓"
+
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
+
+      # Verify the APK contains the native library
+      - name: Verify APK contents
+        run: |
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          echo "APK size: $(du -h "$APK" | cut -f1)"
+
+          # Check for native library
+          if unzip -l "$APK" | grep -q "lib/arm64-v8a/.*\.so"; then
+            echo "✓ Native library (arm64-v8a) present"
+          else
+            echo "✗ WARNING: No arm64-v8a native library found in APK!"
+            echo "  The app will crash with UnsatisfiedLinkError on launch."
+            exit 1
+          fi
+
+          # Check for model assets
+          ASSETS=$(unzip -l "$APK" | grep "assets/kokoro-model/" | wc -l)
+          echo "  Kokoro model files in APK: $ASSETS"
+          if [ "$ASSETS" -lt 3 ]; then
+            echo "✗ WARNING: Kokoro model may be incomplete"
+            exit 1
+          fi
+
+          echo "APK verification passed ✓"
+
       - uses: actions/upload-artifact@v4
         with:
           name: KokoroReader-v4

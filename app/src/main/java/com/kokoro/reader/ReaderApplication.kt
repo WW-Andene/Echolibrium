@@ -56,7 +56,15 @@ class ReaderApplication : Application() {
         // Start loading the TTS engine immediately on app launch.
         // By the time the user grants notification permission and the service
         // starts, the engine will already be warm and ready — zero delay.
-        SherpaEngine.warmUp(this)
+        try {
+            SherpaEngine.warmUp(this)
+        } catch (e: Throwable) {
+            // This catches class loading failures (NoClassDefFoundError,
+            // UnsatisfiedLinkError) that occur if sherpa-onnx AAR is missing
+            // or the native library can't be loaded for this architecture.
+            Log.e(TAG, "Engine warm-up failed on main thread — native library may be missing", e)
+            storeCrashForReport(Thread.currentThread(), e)
+        }
     }
 
     override fun onTrimMemory(level: Int) {

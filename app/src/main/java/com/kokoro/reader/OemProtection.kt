@@ -44,6 +44,8 @@ object OemProtection {
         ),
         "samsung" to listOf(
             ComponentName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"),
+            ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"),
+            ComponentName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.usage.CheckableAppListActivity"),
             ComponentName("com.samsung.android.sm", "com.samsung.android.sm.app.dashboard.SmartManagerDashBoardActivity"),
             ComponentName("com.samsung.android.sm_cn", "com.samsung.android.sm.app.dashboard.SmartManagerDashBoardActivity"),
         ),
@@ -79,7 +81,8 @@ object OemProtection {
         ),
         "asus" to listOf(
             ComponentName("com.asus.mobilemanager", "com.asus.mobilemanager.autostart.AutoStartActivity"),
-            ComponentName("com.asus.mobilemanager", "com.asus.mobilemanager.entry.FunctionActivity"),
+            ComponentName("com.asus.mobilemanager", "com.asus.mobilemanager.powersaver.PowerSaverSettings"),
+            ComponentName("com.asus.mobilemanager", "com.asus.mobilemanager.MainActivity"),
         ),
         "lenovo" to listOf(
             ComponentName("com.lenovo.security", "com.lenovo.security.purebackground.PureBackgroundActivity"),
@@ -98,6 +101,9 @@ object OemProtection {
         ),
         "infinix" to listOf(
             ComponentName("com.transsion.phonemanager", "com.itel.autobootmanager.activity.AutoBootMgrActivity"),
+        ),
+        "htc" to listOf(
+            ComponentName("com.htc.pitroad", "com.htc.pitroad.landingpage.activity.LandingPageActivity"),
         ),
     )
 

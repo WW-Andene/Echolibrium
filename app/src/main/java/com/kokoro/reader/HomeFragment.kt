@@ -18,6 +18,7 @@ class HomeFragment : Fragment() {
     private lateinit var prefs: android.content.SharedPreferences
     private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var engineRefreshRunnable: Runnable? = null
+    private var permissionRefreshRunnable: Runnable? = null
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
@@ -169,11 +170,13 @@ class HomeFragment : Fragment() {
         super.onResume()
         refreshStatus()
         startEngineStatusRefresh()
+        startPermissionRefresh()
     }
 
     override fun onPause() {
         super.onPause()
         stopEngineStatusRefresh()
+        stopPermissionRefresh()
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
@@ -181,8 +184,10 @@ class HomeFragment : Fragment() {
         if (!hidden) {
             refreshStatus()
             startEngineStatusRefresh()
+            startPermissionRefresh()
         } else {
             stopEngineStatusRefresh()
+            stopPermissionRefresh()
         }
     }
 
@@ -213,6 +218,32 @@ class HomeFragment : Fragment() {
         engineRefreshRunnable = null
     }
 
+    /** Polls permission status every 2s for up to 30s after returning from settings. */
+    private fun startPermissionRefresh() {
+        stopPermissionRefresh()
+        val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+        if (granted) return  // Already granted, no need to poll
+        var attempts = 0
+        permissionRefreshRunnable = object : Runnable {
+            override fun run() {
+                if (!isAdded) return
+                val nowGranted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+                if (nowGranted || ++attempts > 15) {
+                    if (nowGranted) refreshStatus()
+                    return
+                }
+                refreshStatus()
+                refreshHandler.postDelayed(this, 2000)
+            }
+        }
+        refreshHandler.postDelayed(permissionRefreshRunnable!!, 2000)
+    }
+
+    private fun stopPermissionRefresh() {
+        permissionRefreshRunnable?.let { refreshHandler.removeCallbacks(it) }
+        permissionRefreshRunnable = null
+    }
+
     private fun refreshStatus() {
         try {
             view?.let {
@@ -233,6 +264,7 @@ class HomeFragment : Fragment() {
     override fun onDestroyView() {
         try {
             stopEngineStatusRefresh()
+            stopPermissionRefresh()
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "Error in onDestroyView", e)
         }
@@ -267,6 +299,27 @@ class HomeFragment : Fragment() {
         tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
         btn.text = if (granted) "Notification Settings" else "Grant Permission"
 
+        // Update contextual permission instructions
+        val instructionsTv = view?.findViewById<TextView>(R.id.permission_instructions)
+        if (granted) {
+            val serviceAlive = TtsBridge.readStatus(ctx).alive
+            if (serviceAlive) {
+                instructionsTv?.visibility = android.view.View.GONE
+            } else {
+                instructionsTv?.visibility = android.view.View.VISIBLE
+                instructionsTv?.text = "Permission granted. Service is starting — this may take a moment."
+                instructionsTv?.setTextColor(ctx.getColor(R.color.status_warning))
+            }
+        } else {
+            instructionsTv?.visibility = android.view.View.VISIBLE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                instructionsTv?.text = "Step 1: Tap button below → tap ⋮ menu → \"Allow restricted settings\"\nStep 2: Go back → tap button again → enable Kyōkan in the list"
+            } else {
+                instructionsTv?.text = "Tap the button below → find Kyōkan in the list → enable it"
+            }
+            instructionsTv?.setTextColor(ctx.getColor(R.color.status_warning))
+        }
+
         // Check service alive status via cross-process status file
         val serviceAlive = TtsBridge.readStatus(ctx).alive
         serviceStatusTv.text = when {
@@ -284,17 +337,26 @@ class HomeFragment : Fragment() {
     private fun updateEngineStatus(tv: TextView) {
         val ctx = context ?: return
         val s = TtsBridge.readStatus(ctx)
+        val progressBar = view?.findViewById<android.widget.ProgressBar>(R.id.engine_progress_bar)
 
         tv.text = when {
             s.ready -> "⬤ TTS engine: ready"
             s.error != null -> "✗ TTS engine: ${s.error}"
-            else -> "◯ TTS engine: ${s.status}"
+            else -> "◯ TTS engine: ${s.status} (${s.initProgress}%)"
         }
         tv.setTextColor(ctx.getColor(when {
             s.ready -> R.color.status_active
             s.error != null -> R.color.status_error
             else -> R.color.status_warning
         }))
+
+        // Show/hide progress bar during initialization
+        if (!s.ready && s.error == null && s.initProgress > 0) {
+            progressBar?.visibility = android.view.View.VISIBLE
+            progressBar?.progress = s.initProgress
+        } else {
+            progressBar?.visibility = android.view.View.GONE
+        }
     }
 
     private fun updateLogPath(tv: TextView) {

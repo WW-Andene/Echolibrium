@@ -135,18 +135,25 @@ class ProfilesFragment : Fragment() {
         if (!viewsBound || !isAdded || view == null) return
         val ctx = context ?: return
         val s = TtsBridge.readStatus(ctx)
+        val progressBar = view?.findViewById<ProgressBar>(R.id.engine_progress_bar)
         when {
             s.ready -> {
                 tvEngineStatus?.text = "✓ Voice engine ready"
                 tvEngineStatus?.setTextColor(0xFF00ff88.toInt())
+                progressBar?.visibility = View.GONE
             }
             s.error != null -> {
                 tvEngineStatus?.text = "✗ Engine error: ${s.error}"
                 tvEngineStatus?.setTextColor(0xFFff4444.toInt())
+                progressBar?.visibility = View.GONE
             }
             else -> {
-                tvEngineStatus?.text = "⏳ Initializing voice engine…"
+                tvEngineStatus?.text = if (s.initProgress > 0) "⏳ ${s.status} (${s.initProgress}%)" else "⏳ Initializing voice engine…"
                 tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
+                if (s.initProgress > 0) {
+                    progressBar?.visibility = View.VISIBLE
+                    progressBar?.progress = s.initProgress
+                }
             }
         }
     }
@@ -359,7 +366,8 @@ class ProfilesFragment : Fragment() {
 
     private fun renderVoiceCardRows(cards: List<VoiceCardData>) {
         val ctx = context ?: return
-        val chunkSize = 3
+        // Use 2-column layout for small groups (≤4 voices) so they don't look sparse
+        val chunkSize = if (cards.size <= 4) 2 else 3
         cards.chunked(chunkSize).forEach { rowCards ->
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL

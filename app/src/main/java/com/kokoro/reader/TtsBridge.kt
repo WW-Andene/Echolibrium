@@ -65,7 +65,8 @@ object TtsBridge {
         val error: String? = null,
         val alive: Boolean = false,
         val voiceCmdListening: Boolean = false,
-        val voiceCmdWakeWord: String = ""
+        val voiceCmdWakeWord: String = "",
+        val initProgress: Int = 0
     )
 
     fun readStatus(ctx: Context): EngineStatus {
@@ -79,7 +80,8 @@ object TtsBridge {
                 error = json.optString("error", "").ifEmpty { null },
                 alive = json.optBoolean("alive"),
                 voiceCmdListening = json.optBoolean("voiceCmdListening"),
-                voiceCmdWakeWord = json.optString("voiceCmdWakeWord", "")
+                voiceCmdWakeWord = json.optString("voiceCmdWakeWord", ""),
+                initProgress = json.optInt("initProgress", 0)
             )
         } catch (_: Throwable) {
             EngineStatus()
@@ -97,7 +99,8 @@ object TtsBridge {
         error: String?,
         alive: Boolean,
         voiceCmdListening: Boolean = false,
-        voiceCmdWakeWord: String = ""
+        voiceCmdWakeWord: String = "",
+        initProgress: Int = 0
     ) {
         try {
             val json = JSONObject().apply {
@@ -107,6 +110,7 @@ object TtsBridge {
                 put("alive", alive)
                 put("voiceCmdListening", voiceCmdListening)
                 put("voiceCmdWakeWord", voiceCmdWakeWord)
+                put("initProgress", initProgress)
                 put("ts", System.currentTimeMillis())
             }
             val file = File(ctx.filesDir, STATUS_FILE)

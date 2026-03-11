@@ -36,6 +36,13 @@ class ReaderApplication : Application() {
         private const val KEY_SESSION_ACTIVE = "session_active"
         private const val KEY_LAST_CRASH_LOG = "last_crash_log"
         private const val KEY_CRASH_PENDING = "crash_pending"
+        private const val KEY_RAPID_CRASH_COUNT = "rapid_crash_count"
+        private const val KEY_LAST_CRASH_TIME = "last_crash_time"
+        /** If the app crashes more than this many times within RAPID_CRASH_WINDOW_MS, skip recovery */
+        private const val MAX_RAPID_CRASHES = 3
+        private const val RAPID_CRASH_WINDOW_MS = 60_000L
+        /** Delay before running logcat capture to let HWUI finish initializing */
+        private const val LOGCAT_CAPTURE_DELAY_MS = 5_000L
 
         /** Resolved log directory — accessible from other components for "view logs" UI */
         @Volatile var resolvedLogDir: File? = null
@@ -94,6 +101,11 @@ class ReaderApplication : Application() {
      * Checks if the previous session crashed (session_active flag still set).
      * If so, tries to recover the crash log from file or logcat, and stores it
      * for CrashReportActivity to show.
+     *
+     * Includes a rapid-crash limiter: if the app has crashed more than [MAX_RAPID_CRASHES]
+     * times within [RAPID_CRASH_WINDOW_MS], skip logcat capture entirely to avoid
+     * compounding the crash loop (logcat subprocess spawning competes with HWUI init
+     * on resource-constrained devices like Xiaomi).
      */
     private fun detectPreviousCrash() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -103,10 +115,36 @@ class ReaderApplication : Application() {
 
         Log.w(TAG, "Previous session did not exit cleanly — recovering crash info")
 
-        // Run crash recovery off the main thread — captureLogcat() spawns subprocesses
-        // and reads their output, which blocks the main thread during startup and
-        // adds pressure during the critical HWUI initialization window.
+        // Track rapid crash frequency
+        val now = System.currentTimeMillis()
+        val lastCrashTime = prefs.getLong(KEY_LAST_CRASH_TIME, 0)
+        var rapidCount = prefs.getInt(KEY_RAPID_CRASH_COUNT, 0)
+
+        if (now - lastCrashTime < RAPID_CRASH_WINDOW_MS) {
+            rapidCount++
+        } else {
+            rapidCount = 1  // Reset counter — crash was not rapid
+        }
+
+        prefs.edit()
+            .putInt(KEY_RAPID_CRASH_COUNT, rapidCount)
+            .putLong(KEY_LAST_CRASH_TIME, now)
+            .apply()
+
+        if (rapidCount > MAX_RAPID_CRASHES) {
+            Log.e(TAG, "Rapid crash loop detected ($rapidCount crashes in <${RAPID_CRASH_WINDOW_MS/1000}s) — skipping logcat capture to break loop")
+            // Reset the counter so next cold start can try again
+            prefs.edit().putInt(KEY_RAPID_CRASH_COUNT, 0).apply()
+            return
+        }
+
+        // Run crash recovery off the main thread with a delay to let HWUI finish initializing.
+        // captureLogcat() spawns subprocesses which compete with HWUI during startup.
         Thread {
+            try {
+                Thread.sleep(LOGCAT_CAPTURE_DELAY_MS)
+            } catch (_: InterruptedException) { return@Thread }
+
             val crashLog = recoverCrashLog()
             if (crashLog != null) {
                 prefs.edit()
@@ -114,6 +152,9 @@ class ReaderApplication : Application() {
                     .putBoolean(KEY_CRASH_PENDING, true)
                     .apply()
             }
+
+            // Clear rapid crash counter on successful recovery
+            prefs.edit().putInt(KEY_RAPID_CRASH_COUNT, 0).apply()
         }.apply { name = "crash-recovery"; isDaemon = true; start() }
     }
 

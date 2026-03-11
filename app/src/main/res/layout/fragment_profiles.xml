@@ -12,7 +12,15 @@
         <TextView android:id="@+id/tv_engine_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="⏳ Initializing voice engine…"
             android:textSize="11sp" android:textColor="@color/status_warning" android:fontFamily="monospace"
-            android:layout_marginBottom="14dp"/>
+            android:layout_marginBottom="2dp"/>
+
+        <ProgressBar android:id="@+id/engine_progress_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="6dp"
+            android:max="100" android:progress="0"
+            android:progressTint="@color/green" android:progressBackgroundTint="#222222"
+            android:layout_marginBottom="14dp"
+            android:visibility="gone"/>
 
         <!-- Profile selector -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

@@ -69,12 +69,17 @@ object SherpaEngine {
             error = errorMessage,
             alive = true,
             voiceCmdListening = VoiceCommandListener.isListening,
-            voiceCmdWakeWord = VoiceCommandListener.wakeWord
+            voiceCmdWakeWord = VoiceCommandListener.wakeWord,
+            initProgress = initProgress
         )
     }
 
     /** Timestamp (ms) when initialization started, 0 if not initializing */
     private val initStartTime = AtomicLong(0)
+
+    /** Approximate init progress 0–100. Drives progress bar in the UI. */
+    @Volatile var initProgress: Int = 0
+        private set
 
     /**
      * Callback fired (on any thread) when the Kokoro engine becomes ready.
@@ -137,7 +142,9 @@ object SherpaEngine {
         if (isReady && kokoroTts != null) return true
 
         return try {
+            initProgress = 5
             statusMessage = "verifying model assets…"
+            syncStatus()
             Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
             Log.i(TAG, "│ Model dir: assets/$KOKORO_DIR")
 
@@ -182,7 +189,9 @@ object SherpaEngine {
                 return false
             }
 
+            initProgress = 20
             statusMessage = "preparing Kokoro config…"
+            syncStatus()
             val modelPath = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = modelPath,
@@ -200,8 +209,10 @@ object SherpaEngine {
 
             val config = OfflineTtsConfig(model = modelConfig)
 
+            initProgress = 35
             val isOrt = modelPath.endsWith(".ort")
             statusMessage = if (isOrt) "loading optimized model…" else "loading native model (this may take 10-30s)…"
+            syncStatus()
             Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
             initStartTime.set(System.currentTimeMillis())
 
@@ -221,7 +232,21 @@ object SherpaEngine {
                 }
             }.apply { name = "SherpaEngine-native-init"; isDaemon = true; start() }
 
+            // Sync progress periodically while native init runs
+            val progressThread = Thread {
+                try {
+                    val start = System.currentTimeMillis()
+                    while (!latch.await(500, TimeUnit.MILLISECONDS)) {
+                        val elapsed = System.currentTimeMillis() - start
+                        // Asymptotic progress: approaches 90% over ~30s
+                        initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
+                        syncStatus()
+                    }
+                } catch (_: InterruptedException) {}
+            }.apply { name = "SherpaEngine-progress"; isDaemon = true; start() }
+
             val completed = latch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            progressThread.interrupt()
             val elapsed = System.currentTimeMillis() - initStartTime.get()
             initStartTime.set(0)
 
@@ -252,6 +277,7 @@ object SherpaEngine {
                 return false
             }
 
+            initProgress = 100
             isReady = true
             errorMessage = null
             statusMessage = "ready"

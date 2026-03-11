@@ -23,11 +23,21 @@ PIPER_DIR  = os.path.join(SCRIPT_DIR, "src", "main", "assets", "piper-models")
 KEEP_LANGUAGES = {"en", "fr", "es"}
 
 
-def convert_to_ort(onnx_path: str) -> bool:
-    """Convert a .onnx model to .ort format using ONNX Runtime."""
+def convert_to_ort(onnx_path: str, delete_original: bool = True) -> bool:
+    """Convert a .onnx model to .ort format using ONNX Runtime.
+
+    If delete_original is True, removes the .onnx file after successful
+    conversion to avoid doubling APK size (both formats are stored
+    uncompressed via aaptOptions noCompress).
+    """
     ort_path = onnx_path.replace(".onnx", ".ort")
     if os.path.exists(ort_path):
-        print(f"  ✓ {os.path.basename(ort_path)} already exists")
+        # ORT already exists — delete original .onnx if still present
+        if delete_original and os.path.exists(onnx_path):
+            os.remove(onnx_path)
+            print(f"  ✓ {os.path.basename(ort_path)} already exists, removed {os.path.basename(onnx_path)}")
+        else:
+            print(f"  ✓ {os.path.basename(ort_path)} already exists")
         return True
 
     try:
@@ -47,6 +57,10 @@ def convert_to_ort(onnx_path: str) -> bool:
             orig_size = os.path.getsize(onnx_path) / (1024 * 1024)
             opt_size = os.path.getsize(ort_path) / (1024 * 1024)
             print(f"  ✓ {os.path.basename(ort_path)}: {orig_size:.1f}MB → {opt_size:.1f}MB")
+            # Remove original .onnx to keep APK under ZIP32 4GB limit
+            if delete_original:
+                os.remove(onnx_path)
+                print(f"    Removed {os.path.basename(onnx_path)} (ORT replaces it)")
             return True
         else:
             print(f"  ✗ Conversion produced no output for {os.path.basename(onnx_path)}")

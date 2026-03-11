@@ -6,6 +6,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -53,18 +55,22 @@ class ReaderApplication : Application() {
         detectPreviousCrash()
         markSessionActive()
 
-        // Start loading the TTS engine immediately on app launch.
-        // By the time the user grants notification permission and the service
-        // starts, the engine will already be warm and ready — zero delay.
-        try {
-            SherpaEngine.warmUp(this)
-        } catch (e: Throwable) {
-            // This catches class loading failures (NoClassDefFoundError,
-            // UnsatisfiedLinkError) that occur if sherpa-onnx AAR is missing
-            // or the native library can't be loaded for this architecture.
-            Log.e(TAG, "Engine warm-up failed on main thread — native library may be missing", e)
-            storeCrashForReport(Thread.currentThread(), e)
-        }
+        // Delay TTS engine warm-up to avoid a race between ONNX Runtime's native
+        // memory allocation and HWUI's CommonPool initialization. On some devices
+        // (notably Xiaomi/MediaTek), simultaneous init causes ONNX's large mmap to
+        // corrupt HWUI's pthread mutexes, resulting in:
+        //   FORTIFY: pthread_mutex_lock called on a destroyed mutex
+        //   Fatal signal 6 (SIGABRT) in hwuiTask threads
+        // Posting with a delay lets HWUI finish its first frame and thread pool
+        // setup before ONNX starts allocating.
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                SherpaEngine.warmUp(this)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Engine warm-up failed — native library may be missing", e)
+                storeCrashForReport(Thread.currentThread(), e)
+            }
+        }, 1500)
     }
 
     override fun onTrimMemory(level: Int) {
@@ -100,13 +106,18 @@ class ReaderApplication : Application() {
 
         Log.w(TAG, "Previous session did not exit cleanly — recovering crash info")
 
-        val crashLog = recoverCrashLog()
-        if (crashLog != null) {
-            prefs.edit()
-                .putString(KEY_LAST_CRASH_LOG, crashLog)
-                .putBoolean(KEY_CRASH_PENDING, true)
-                .apply()
-        }
+        // Run crash recovery off the main thread — captureLogcat() spawns subprocesses
+        // and reads their output, which blocks the main thread during startup and
+        // adds pressure during the critical HWUI initialization window.
+        Thread {
+            val crashLog = recoverCrashLog()
+            if (crashLog != null) {
+                prefs.edit()
+                    .putString(KEY_LAST_CRASH_LOG, crashLog)
+                    .putBoolean(KEY_CRASH_PENDING, true)
+                    .apply()
+            }
+        }.apply { name = "crash-recovery"; isDaemon = true; start() }
     }
 
     /**

@@ -77,10 +77,11 @@ object TtsBridge {
     )
 
     fun readStatus(ctx: Context): EngineStatus {
-        val file = File(ctx.filesDir, STATUS_FILE)
-        if (!file.exists()) return EngineStatus()
         return try {
-            val json = JSONObject(file.readText())
+            // Read directly — avoid exists() + readText() TOCTOU race where
+            // the :tts process could be mid-rename between the two calls.
+            val text = File(ctx.filesDir, STATUS_FILE).readText()
+            val json = JSONObject(text)
             EngineStatus(
                 ready = json.optBoolean("ready"),
                 status = json.optString("status", "idle"),
@@ -123,7 +124,11 @@ object TtsBridge {
             val file = File(ctx.filesDir, STATUS_FILE)
             val tmp = File(ctx.filesDir, "$STATUS_FILE.tmp")
             tmp.writeText(json.toString())
-            tmp.renameTo(file)
+            if (!tmp.renameTo(file)) {
+                // renameTo can silently fail on some Android filesystems — fall back to copy
+                tmp.copyTo(file, overwrite = true)
+                tmp.delete()
+            }
         } catch (_: Throwable) {
             // Best-effort — don't crash the TTS process over status reporting
         }

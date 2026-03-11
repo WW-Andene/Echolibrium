@@ -2,20 +2,19 @@ package com.kokoro.reader
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
+import android.os.IBinder
 import android.util.Log
 import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuRemoteProcess
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.SystemServiceHelper
 
 /**
  * Programmatically bypasses Xiaomi MIUI/HyperOS aggressive background killing
  * using Shizuku (shell-level access without root).
  *
- * When Shizuku is running, this class executes the same ADB commands a developer
- * would run manually — device idle whitelist, AutoStart appops, background run
- * permissions, and standby bucket override.
+ * Uses Shizuku's binder API (not deprecated shell process) to call system
+ * services directly: IDeviceIdleController for Doze whitelist, IAppOpsService
+ * for AutoStart/background run permissions.
  *
  * Without Shizuku, [getManualAdbCommands] returns the exact commands the user
  * can paste into a terminal.
@@ -24,6 +23,18 @@ object XiaomiProtection {
 
     private const val TAG = "XiaomiProtection"
     private const val SHIZUKU_PERMISSION_CODE = 2001
+
+    // Standard appops modes
+    private const val MODE_ALLOWED = 0
+
+    // Standard appops codes
+    private const val OP_RUN_IN_BACKGROUND = 63
+    private const val OP_RUN_ANY_IN_BACKGROUND = 79
+
+    // Xiaomi-specific appops codes (reverse-engineered, may vary by build)
+    private const val OP_XIAOMI_AUTOSTART_1 = 10021
+    private const val OP_XIAOMI_AUTOSTART_2 = 10008
+    private const val OP_XIAOMI_BATTERY_SAVER = 10023
 
     // ── Shizuku availability ────────────────────────────────────────────────────
 
@@ -66,20 +77,59 @@ object XiaomiProtection {
         }
     }
 
-    // ── Shell command execution via Shizuku ──────────────────────────────────────
+    // ── Binder-based system service calls via Shizuku ────────────────────────────
+    // Uses ShizukuBinderWrapper + reflection to call hidden system APIs directly.
+    // This is the recommended Shizuku approach (faster + more reliable than shell).
 
-    private fun exec(command: String): Pair<Boolean, String> {
+    /**
+     * Calls IDeviceIdleController.addPowerSaveWhitelistApp(packageName) via binder.
+     * Equivalent to: `adb shell cmd deviceidle whitelist +<package>`
+     */
+    private fun addToDeviceIdleWhitelist(packageName: String): Boolean {
         return try {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-            val output = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
-            val error = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
-            val exitCode = process.waitFor()
-            val fullOutput = if (error.isNotEmpty()) "$output\n$error" else output
-            Log.d(TAG, "exec: $command → exit=$exitCode, out=$fullOutput")
-            Pair(exitCode == 0, fullOutput)
+            val binder = ShizukuBinderWrapper(
+                SystemServiceHelper.getSystemService("deviceidle")
+            )
+            val stubClass = Class.forName("android.os.IDeviceIdleController\$Stub")
+            val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
+            val controller = asInterface.invoke(null, binder)
+            val addMethod = controller!!.javaClass.getMethod(
+                "addPowerSaveWhitelistApp", String::class.java
+            )
+            addMethod.invoke(controller, packageName)
+            Log.d(TAG, "Added $packageName to device idle whitelist via binder")
+            true
         } catch (e: Throwable) {
-            Log.w(TAG, "exec failed: $command — ${e.message}")
-            Pair(false, e.message ?: "unknown error")
+            Log.w(TAG, "deviceidle whitelist failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Calls IAppOpsService.setMode(op, uid, packageName, MODE_ALLOWED) via binder.
+     * Equivalent to: `adb shell appops set <package> <op> allow`
+     */
+    private fun setAppOpsMode(op: Int, uid: Int, packageName: String): Boolean {
+        return try {
+            val binder = ShizukuBinderWrapper(
+                SystemServiceHelper.getSystemService("appops")
+            )
+            val stubClass = Class.forName("com.android.internal.app.IAppOpsService\$Stub")
+            val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
+            val service = asInterface.invoke(null, binder)
+            val setMode = service!!.javaClass.getMethod(
+                "setMode",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                String::class.java,
+                Int::class.javaPrimitiveType
+            )
+            setMode.invoke(service, op, uid, packageName, MODE_ALLOWED)
+            Log.d(TAG, "Set appops $op → allow for $packageName (uid=$uid)")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "appops set $op failed: ${e.message}")
+            false
         }
     }
 
@@ -96,37 +146,38 @@ object XiaomiProtection {
     }
 
     /**
-     * Executes all Xiaomi protection commands via Shizuku.
+     * Executes all Xiaomi protection commands via Shizuku binder calls.
      * Each command is independent — failures don't stop the others.
      *
      * @return [ProtectionResult] with per-command success status
      */
     fun applyAllProtections(ctx: Context): ProtectionResult {
         val pkg = ctx.packageName
+        val uid = getPackageUid(ctx, pkg)
         val results = mutableListOf<String>()
 
         // 1. Device idle whitelist (Doze exemption)
-        val (idle, _) = exec("cmd deviceidle whitelist +$pkg")
+        val idle = addToDeviceIdleWhitelist(pkg)
         results.add(if (idle) "✓ Doze whitelist" else "✗ Doze whitelist")
 
         // 2. AutoStart — try known Xiaomi appops codes
-        val (auto1, _) = exec("appops set $pkg 10021 allow")
-        val (auto2, _) = exec("appops set $pkg 10008 allow")
+        val auto1 = setAppOpsMode(OP_XIAOMI_AUTOSTART_1, uid, pkg)
+        val auto2 = setAppOpsMode(OP_XIAOMI_AUTOSTART_2, uid, pkg)
         val autoOk = auto1 || auto2
         results.add(if (autoOk) "✓ AutoStart" else "✗ AutoStart")
 
-        // 3. Background run permissions
-        val (bg1, _) = exec("cmd appops set $pkg RUN_IN_BACKGROUND allow")
-        val (bg2, _) = exec("cmd appops set $pkg RUN_ANY_IN_BACKGROUND allow")
+        // 3. Background run permissions (standard Android appops)
+        val bg1 = setAppOpsMode(OP_RUN_IN_BACKGROUND, uid, pkg)
+        val bg2 = setAppOpsMode(OP_RUN_ANY_IN_BACKGROUND, uid, pkg)
         val bgOk = bg1 && bg2
         results.add(if (bgOk) "✓ Background run" else "✗ Background run")
 
-        // 4. Standby bucket → ACTIVE
-        val (bucket, _) = exec("am set-standby-bucket $pkg active")
-        results.add(if (bucket) "✓ Standby bucket" else "✗ Standby bucket")
+        // 4. Xiaomi battery saver per-app
+        setAppOpsMode(OP_XIAOMI_BATTERY_SAVER, uid, pkg)
 
-        // 5. Xiaomi battery saver per-app (op 10023)
-        exec("appops set $pkg 10023 allow")
+        // 5. Standby bucket → ACTIVE (no binder API, use setUsageStandbyBucket)
+        val bucket = setStandbyBucketActive(pkg)
+        results.add(if (bucket) "✓ Standby bucket" else "✗ Standby bucket")
 
         val summary = results.joinToString(", ")
         Log.i(TAG, "Protection results: $summary")
@@ -140,11 +191,49 @@ object XiaomiProtection {
         )
     }
 
+    /** Get the UID for a package (needed by IAppOpsService.setMode). */
+    private fun getPackageUid(ctx: Context, packageName: String): Int {
+        return try {
+            ctx.packageManager.getApplicationInfo(packageName, 0).uid
+        } catch (_: Throwable) {
+            -1
+        }
+    }
+
+    /**
+     * Sets app standby bucket to ACTIVE via IUsageStatsManager binder.
+     * Equivalent to: `adb shell am set-standby-bucket <package> active`
+     */
+    private fun setStandbyBucketActive(packageName: String): Boolean {
+        return try {
+            val binder = ShizukuBinderWrapper(
+                SystemServiceHelper.getSystemService("usagestats")
+            )
+            val stubClass = Class.forName("android.app.usage.IUsageStatsManager\$Stub")
+            val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
+            val manager = asInterface.invoke(null, binder)
+            // setAppStandbyBucket(packageName, bucket, callingPackage)
+            // STANDBY_BUCKET_ACTIVE = 10
+            val setMethod = manager!!.javaClass.getMethod(
+                "setAppStandbyBucket",
+                String::class.java,
+                Int::class.javaPrimitiveType,
+                String::class.java
+            )
+            setMethod.invoke(manager, packageName, 10, "com.android.shell")
+            Log.d(TAG, "Set standby bucket to ACTIVE for $packageName")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "setStandbyBucket failed: ${e.message}")
+            false
+        }
+    }
+
     // ── Manual ADB fallback ─────────────────────────────────────────────────────
 
     /**
      * Returns the ADB commands the user can run manually if Shizuku is not available.
-     * These are the same commands [applyAllProtections] executes via Shizuku.
+     * These are the same operations [applyAllProtections] executes via Shizuku binder.
      */
     fun getManualAdbCommands(ctx: Context): String {
         val pkg = ctx.packageName

@@ -122,18 +122,15 @@ These are improvements discussed or identified but NOT yet implemented:
 
 ──── 3.3 STREAMING/CHUNKED SYNTHESIS ────────────────────────────────────────
 
-  Priority: MEDIUM
-  Impact: Lower latency for long messages
-  Files: SherpaEngine.kt, AudioPipeline.kt
-
-  Currently the entire message is synthesized in one shot, then played.
-  For long notifications, this means waiting for the full synthesis before
-  any audio plays. Chunked synthesis would:
-    1. Split text at sentence boundaries
-    2. Synthesize first sentence
-    3. Start playback while synthesizing the next sentence
-    4. Queue PCM buffers back-to-back
-  Note: sherpa-onnx may support streaming via generateWithCallback()
+  Priority: MEDIUM — IMPLEMENTED
+  Files: AudioPipeline.kt
+  Resolution:
+    - Text is split at sentence boundaries (`. `, `! `, `? `, `; `)
+    - Each sentence chunk is synthesized and played immediately
+    - Short fragments (<30 chars) are merged with predecessor to avoid choppiness
+    - Short texts (<100 chars) skip chunking entirely (no overhead)
+    - Chunks yield to newer queue items if the current item isn't priority
+    - Pipeline remains serial (FIFO) per the design principles
 
 ──── 3.4 VOICE PREVIEW / SAMPLE PLAYBACK ───────────────────────────────────
 
@@ -182,16 +179,16 @@ These are improvements discussed or identified but NOT yet implemented:
 
 ──── 3.8 CONVERSATION GROUPING ─────────────────────────────────────────────
 
-  Priority: MEDIUM
-  Impact: Smarter reading of rapid message chains
+  Priority: MEDIUM — IMPLEMENTED
   Files: NotificationReaderService.kt
-
-  When multiple messages arrive rapidly from the same sender (e.g. a chat
-  conversation), instead of reading each notification individually:
-    - Group messages arriving within N seconds
-    - Read as a batch: "3 messages from John: [msg1]. [msg2]. [msg3]."
-    - Reduces repetitive app name / sender name announcements
-    - Could use a short delay (1-2 seconds) to collect a burst before reading
+  Resolution:
+    - Messages are buffered by sender key (packageName + title)
+    - 1.5s delay after each message; if more arrive, the timer resets
+    - On flush: single messages dispatch normally, batched messages read as:
+      "3 messages from John: [msg1]. [msg2]. [msg3]."
+    - Urgent notifications (UrgencyType.EXPIRING) bypass grouping entirely
+    - Pending groups are flushed on service destroy to avoid lost messages
+    - All read modes (full/app_only/title_only/text_only) are respected
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

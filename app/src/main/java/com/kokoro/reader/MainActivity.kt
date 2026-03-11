@@ -24,6 +24,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Check for pending crash report from previous session
+        if (savedInstanceState == null) {
+            val crashIntent = (application as? ReaderApplication)?.consumePendingCrashReport()
+            if (crashIntent != null) {
+                startActivity(crashIntent)
+                // Don't finish — CrashReportActivity will navigate back here
+            }
+        }
+
         setContentView(R.layout.activity_main)
 
         // Restore existing fragments after configuration change

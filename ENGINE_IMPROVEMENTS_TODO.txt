@@ -1,7 +1,7 @@
 ================================================================================
 ECHOLIBRIUM — ENGINE IMPROVEMENTS & SESSION NOTES
 ================================================================================
-Last updated: 2026-03-10
+Last updated: 2026-03-11
 Purpose: Reference file for continuing work across sessions
 
 
@@ -43,21 +43,21 @@ Voice system: Kokoro (30 voices) + 8 core Piper voices bundled in APK.
 SECTION 2 — KNOWN ISSUES & WORKAROUNDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ISSUE 1: Native SIGSEGV crash from SherpaEngine.warmUp()
-  Status: WORKED AROUND (not fixed)
-  File: NotificationReaderService.kt, SherpaEngine.kt
-  Problem: The OfflineTts JNI constructor (sherpa-onnx native code) can crash
-    with SIGSEGV when loading the Kokoro model. This is a native crash that
-    Java try-catch CANNOT catch. It kills the entire app process.
-  Workaround: SherpaEngine.warmUp() was REMOVED from service onCreate().
-    The engine initializes lazily on first notification or test button press.
-    This means the first notification has a ~2-3 second delay while the model loads.
-  Proper fix ideas:
-    - Investigate WHY the native crash happens (corrupted model? race condition?)
-    - Run model init in a separate process so crash doesn't kill the main app
-    - Add a "safe init" mode that validates the .onnx file header before passing
-      it to the native constructor
-    - File a bug with sherpa-onnx upstream if reproducible
+ISSUE 1: Native SIGSEGV/SIGABRT crash from sherpa-onnx libc++ conflict
+  Status: RESOLVED via process isolation
+  Files: AndroidManifest.xml, ReaderApplication.kt, NotificationReaderService.kt,
+         TtsBridge.kt, TtsCommandReceiver.kt
+  Root cause: sherpa-onnx ships its own native libc++. HWUI (Android's UI
+    rendering) uses the system libc++. When both run in the same process,
+    the two libc++ versions clash and corrupt a mutex HWUI uses for its
+    worker threads, causing SIGABRT.
+  Resolution: TTS engine runs in a separate `:tts` process (android:process=":tts").
+    Main process: UI only (no TTS engine loaded).
+    :tts process: TTS engine only (no HWUI).
+    Cross-process IPC via TtsBridge: commands as broadcasts, status as JSON file.
+    SherpaEngine.warmUp() is called eagerly in the :tts process onCreate().
+    NOTE: It is now SAFE to call warmUp() in NotificationReaderService.onCreate()
+    because the service runs in the :tts process which has no HWUI.
 
 ISSUE 2: Piper voice extraction slow on first launch
   Status: RESOLVED
@@ -68,14 +68,24 @@ ISSUE 2: Piper voice extraction slow on first launch
     VoiceDownloadManager handles on-demand downloads with progress tracking.
 
 ISSUE 3: Android 13+ restricted settings for sideloaded apps
-  Status: WORKAROUND IN PLACE
-  File: HomeFragment.kt
+  Status: RESOLVED
+  Files: HomeFragment.kt, fragment_home.xml
   Problem: Sideloaded APKs on Android 13+ have notification listener toggle
     greyed out until user enables "Allow restricted settings" from app info.
-  Current behavior: Button opens app info page with Toast instructing user
-    to tap ⋮ menu → "Allow restricted settings".
-  Improvement: Could detect if restricted settings are already allowed and
-    skip straight to notification listener settings in that case.
+  Resolution: HomeFragment now shows contextual step-by-step instructions
+    tied to permission state. On Android 13+: "Step 1: tap ⋮ → Allow
+    restricted settings. Step 2: go back → enable Kyōkan." Instructions
+    auto-hide once permission granted and service alive. Permission status
+    polls every 2s for 30s after returning from settings to catch delayed
+    propagation on some OEMs.
+
+ISSUE 4: Crash loop on Xiaomi/MediaTek devices
+  Status: RESOLVED
+  File: ReaderApplication.kt
+  Problem: Each crash restart triggered detectPreviousCrash() → captureLogcat()
+    which spawned subprocesses during HWUI init → resource contention → crash → repeat.
+  Resolution: Added rapid-crash limiter (>3 crashes in 60s skips logcat capture
+    to break the loop) and 5-second delay before logcat capture to let HWUI finish.
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -86,17 +96,17 @@ These are improvements discussed or identified but NOT yet implemented:
 
 ──── 3.1 SAFE ENGINE WARM-UP ────────────────────────────────────────────────
 
-  Priority: HIGH
-  Impact: Eliminates first-notification delay without crash risk
-  Files: SherpaEngine.kt, NotificationReaderService.kt
-
-  Currently the engine initializes lazily (first notification = 2-3s delay).
-  A safe warm-up would:
-    1. Validate all model files exist and have correct size/header
-    2. Only then call OfflineTts constructor
-    3. If constructor crashes, catch at process level or retry once
-    4. Could run in onListenerConnected() instead of onCreate()
-       (service is fully bound at that point)
+  Priority: HIGH — IMPLEMENTED
+  Files: SherpaEngine.kt, NotificationReaderService.kt, TtsBridge.kt,
+         ReaderApplication.kt, HomeFragment.kt, ProfilesFragment.kt
+  Resolution:
+    - TTS runs in separate :tts process → no HWUI conflict
+    - Eager warm-up in NotificationReaderService.onCreate() (safe in :tts process)
+    - Pre-flight asset validation before native JNI call
+    - 45s timeout on native OfflineTts() constructor with CountDownLatch
+    - Status synced to cross-process JSON file at every init phase
+    - UI shows ProgressBar with asymptotic progress (5% → 20% → 35% → ~90%)
+    - Both HomeFragment and ProfilesFragment poll status every 1s during init
 
 ──── 3.2 VOICE QUALITY SELECTOR IN UI ───────────────────────────────────────
 
@@ -112,18 +122,15 @@ These are improvements discussed or identified but NOT yet implemented:
 
 ──── 3.3 STREAMING/CHUNKED SYNTHESIS ────────────────────────────────────────
 
-  Priority: MEDIUM
-  Impact: Lower latency for long messages
-  Files: SherpaEngine.kt, AudioPipeline.kt
-
-  Currently the entire message is synthesized in one shot, then played.
-  For long notifications, this means waiting for the full synthesis before
-  any audio plays. Chunked synthesis would:
-    1. Split text at sentence boundaries
-    2. Synthesize first sentence
-    3. Start playback while synthesizing the next sentence
-    4. Queue PCM buffers back-to-back
-  Note: sherpa-onnx may support streaming via generateWithCallback()
+  Priority: MEDIUM — IMPLEMENTED
+  Files: AudioPipeline.kt
+  Resolution:
+    - Text is split at sentence boundaries (`. `, `! `, `? `, `; `)
+    - Each sentence chunk is synthesized and played immediately
+    - Short fragments (<30 chars) are merged with predecessor to avoid choppiness
+    - Short texts (<100 chars) skip chunking entirely (no overhead)
+    - Chunks yield to newer queue items if the current item isn't priority
+    - Pipeline remains serial (FIFO) per the design principles
 
 ──── 3.4 VOICE PREVIEW / SAMPLE PLAYBACK ───────────────────────────────────
 
@@ -172,23 +179,42 @@ These are improvements discussed or identified but NOT yet implemented:
 
 ──── 3.8 CONVERSATION GROUPING ─────────────────────────────────────────────
 
-  Priority: MEDIUM
-  Impact: Smarter reading of rapid message chains
+  Priority: MEDIUM — IMPLEMENTED
   Files: NotificationReaderService.kt
-
-  When multiple messages arrive rapidly from the same sender (e.g. a chat
-  conversation), instead of reading each notification individually:
-    - Group messages arriving within N seconds
-    - Read as a batch: "3 messages from John: [msg1]. [msg2]. [msg3]."
-    - Reduces repetitive app name / sender name announcements
-    - Could use a short delay (1-2 seconds) to collect a burst before reading
+  Resolution:
+    - Messages are buffered by sender key (packageName + title)
+    - 1.5s delay after each message; if more arrive, the timer resets
+    - On flush: single messages dispatch normally, batched messages read as:
+      "3 messages from John: [msg1]. [msg2]. [msg3]."
+    - Urgent notifications (UrgencyType.EXPIRING) bypass grouping entirely
+    - Pending groups are flushed on service destroy to avoid lost messages
+    - All read modes (full/app_only/title_only/text_only) are respected
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SECTION 4 — ARCHITECTURE QUICK REFERENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Pipeline flow (current, fully implemented):
+Process architecture (two-process model):
+  MAIN PROCESS (default):
+    - MainActivity, HomeFragment, ProfilesFragment, AppsFragment, RulesFragment
+    - ReaderApplication: crash detection, log directory, uncaught exception handler
+    - NO TTS engine loaded — HWUI runs safely here
+
+  :tts PROCESS (android:process=":tts"):
+    - NotificationReaderService: notification capture, filtering, dedup, mood, synthesis
+    - TtsCommandReceiver: receives broadcast commands from main process
+    - SherpaEngine: Kokoro + Piper TTS engines
+    - AudioPipeline: FIFO queue, background playback thread
+    - VoiceCommandListener: wake word + voice commands
+
+  Cross-process IPC (TtsBridge):
+    - Commands (UI → TTS): explicit broadcasts (test speak, stop, preload, voice cmd)
+    - Status (TTS → UI): JSON file (tts_status.json), atomic write (tmp + rename),
+      polled every 1s by UI. Fields: ready, status, error, alive, initProgress,
+      voiceCmdListening, voiceCmdWakeWord.
+
+Pipeline flow (all in :tts process):
   1. Android OS → onNotificationPosted(sbn)
   2. NotificationReaderService: filtering, dedup, sender history, flood count
   3. SignalExtractor.extract(): keywords, emoji, intent, urgency, sentiment,
@@ -204,7 +230,7 @@ Pipeline flow (current, fully implemented):
   9. AudioPipeline.playPcm(): AudioTrack output with pitch adjustment
 
 Key files:
-  - SherpaEngine.kt        → TTS engine wrapper (Kokoro + Piper)
+  - SherpaEngine.kt        → TTS engine wrapper (Kokoro + Piper), init progress tracking
   - AudioPipeline.kt       → FIFO queue, background playback thread
   - AudioDsp.kt            → PCM-level effects (post-synthesis)
   - VoiceModulator.kt      → Parameter computation (pitch/speed/breath/etc.)
@@ -213,7 +239,10 @@ Key files:
   - MoodState.kt           → Persistent mood (valence/arousal/stability)
   - PhonicAnalyzer.kt      → Voiced region / phrase ending detection
   - VoiceProfile.kt        → User-editable voice configuration
-  - NotificationReaderService.kt → Entry point, service lifecycle
+  - NotificationReaderService.kt → Entry point, service lifecycle (:tts process)
+  - TtsBridge.kt           → Cross-process IPC (commands + status)
+  - TtsCommandReceiver.kt  → Broadcast receiver for commands (:tts process)
+  - ReaderApplication.kt   → Crash detection, rapid-crash limiter, log resolution
 
 Design principles (from improvement plan Part 9 — "What Not To Change"):
   - Single pipeline thread (serial FIFO, no concurrent synthesis)
@@ -221,6 +250,7 @@ Design principles (from improvement plan Part 9 — "What Not To Change"):
   - Quadratic smoothing curve for perceptual mapping
   - Personality presets as first-class transparent objects
   - Gimmick text variants coherent with TTS voice timbre
+  - Process isolation: TTS in :tts, UI in main — never mix HWUI + sherpa-onnx
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -229,34 +259,39 @@ SECTION 5 — SESSION CONTEXT FOR CONTINUITY
 
 Branch: claude/project-review-zdqX6
 
-Recent changes (this session):
+Recent changes (latest session, 2026-03-11):
+  5. TTS init status sync + progress bar
+     - SherpaEngine: syncStatus() at every init phase (was only on error/success)
+     - SherpaEngine: initProgress (0–100) with asymptotic progress during native load
+     - TtsBridge: carries initProgress in status JSON
+     - HomeFragment + ProfilesFragment: horizontal ProgressBar during init
+
+  6. ES category UI fix
+     - Voice grid uses 2-column layout for categories with ≤4 voices
+     - Spanish (2 voices) no longer looks sparse next to English (20 voices)
+
+  7. Permission UX improvements
+     - Added permission_instructions TextView with contextual steps
+     - Android 13+: two-step restricted settings flow
+     - Auto-polls permission status every 2s for 30s after returning from settings
+     - Instructions auto-hide once permission granted + service alive
+
+  8. Crash loop breaker for Xiaomi/MediaTek
+     - Rapid crash counter: >3 crashes in 60s → skip logcat capture
+     - 5-second delay before logcat capture to let HWUI finish init
+
+Previous session changes:
   1. Bundle all 44 Piper voices in APK (CI + PiperVoiceManager + UI)
-     - Updated .github/workflows/build.yml to download all voices from HuggingFace
-     - Removed download-on-demand code from PiperVoiceManager.kt
-     - Simplified voice grid in ProfilesFragment.kt (no more "downloadable" section)
-
-  2. Fix startup crash (SIGSEGV)
-     - Removed SherpaEngine.warmUp() from NotificationReaderService.onCreate()
-     - Native OfflineTts JNI constructor crashes with SIGSEGV (uncatchable)
-     - Engine now initializes lazily on first notification / test button
-
-  3. Restore restricted settings navigation
-     - "Allow Notifications" button on Android 13+ opens app info page
-     - User can tap ⋮ menu → "Allow restricted settings"
-     - Falls back to notification listener settings on older Android
-
-  4. On-demand voice download system (fixes APK exceeding 4GB ZIP32 limit)
-     - Reduced bundled Piper voices from 44 to 8 core voices (~600MB APK)
-     - PiperVoiceCatalog: added bundled flag, GitHub Releases download URL
-     - VoiceDownloadManager: rebuilt as real download manager (progress, state, temp files)
-     - SherpaEngine: loads from assets (bundled) or filesDir (downloaded)
-     - ProfilesFragment: voice grid shows bundled/downloaded/tap-to-download states
-     - Deleted optimize-models.py (ORT conversion no longer needed)
-     - Simplified build.yml (removed onnxruntime dependency)
+  2. Fix startup crash via process isolation (:tts process for TTS, main for UI)
+  3. Restore restricted settings navigation for Android 13+
+  4. On-demand voice download system (8 bundled + 36 downloadable, ~600MB APK)
 
 Recurring issues to watch:
-  - The warmUp() SIGSEGV crash has been accidentally re-added multiple times.
-    DO NOT add SherpaEngine.warmUp() to NotificationReaderService.onCreate().
-    See commit 87b14f8 for the original fix explanation.
+  - SherpaEngine.warmUp() is SAFE to call in NotificationReaderService.onCreate()
+    because the service runs in the :tts process (no HWUI). The old SIGSEGV was
+    caused by libc++ clash with HWUI in the same process — resolved by process
+    isolation. Do NOT remove the warmUp() call from the service.
   - Permission detection uses NotificationManagerCompat.getEnabledListenerPackages()
     (reliable across OEMs). Do not revert to Settings.Secure string parsing.
+  - ReaderApplication.detectPreviousCrash() has a 5s delay + rapid-crash limiter.
+    Do not remove these — they prevent crash loops on Xiaomi/MediaTek devices.

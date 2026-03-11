@@ -99,16 +99,10 @@ class ProfilesFragment : Fragment() {
         }
     }
 
+    private var enginePollRunnable: Runnable? = null
+
     private fun setupEngineStatus() {
         updateEngineStatusUI()
-        SherpaEngine.onReadyCallback = {
-            mainHandler.post {
-                if (isAdded && view != null) {
-                    try { updateEngineStatusUI() }
-                    catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Engine status update failed", e) }
-                }
-            }
-        }
         // Refresh voice grid when a Piper voice finishes downloading
         PiperVoiceManager.downloadCallback = { _, _ ->
             mainHandler.post {
@@ -118,28 +112,35 @@ class ProfilesFragment : Fragment() {
                 }
             }
         }
-        // Show status — engine initializes lazily on first synthesis
-        if (!SherpaEngine.isReady) {
-            tvEngineStatus?.text = "Engine will initialize on first use"
-            tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
-        }
+        // Engine polling is handled by restartEnginePolling() in onResume/onHiddenChanged
     }
 
     private fun updateEngineStatusUI() {
         if (!viewsBound || !isAdded || view == null) return
-        val error = SherpaEngine.errorMessage
+        val ctx = context ?: return
+        val s = TtsBridge.readStatus(ctx)
+        val progressBar = view?.findViewById<ProgressBar>(R.id.engine_progress_bar)
         when {
-            SherpaEngine.isReady -> {
+            s.ready -> {
                 tvEngineStatus?.text = "✓ Voice engine ready"
                 tvEngineStatus?.setTextColor(0xFF00ff88.toInt())
+                progressBar?.visibility = View.GONE
             }
-            error != null -> {
-                tvEngineStatus?.text = "✗ Engine error: $error"
+            s.error != null -> {
+                tvEngineStatus?.text = "✗ Engine error: ${s.error}"
                 tvEngineStatus?.setTextColor(0xFFff4444.toInt())
+                progressBar?.visibility = View.GONE
+            }
+            s.alive -> {
+                tvEngineStatus?.text = if (s.initProgress > 0) "⏳ ${s.status} (${s.initProgress}%)" else "⏳ ${s.status}…"
+                tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
+                progressBar?.visibility = View.VISIBLE
+                progressBar?.progress = s.initProgress.coerceAtLeast(2) // show a sliver even at 0%
             }
             else -> {
-                tvEngineStatus?.text = "⏳ Initializing voice engine…"
-                tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
+                tvEngineStatus?.text = "◯ Waiting for service…"
+                tvEngineStatus?.setTextColor(0xFF888888.toInt())
+                progressBar?.visibility = View.GONE
             }
         }
     }
@@ -352,7 +353,8 @@ class ProfilesFragment : Fragment() {
 
     private fun renderVoiceCardRows(cards: List<VoiceCardData>) {
         val ctx = context ?: return
-        val chunkSize = 3
+        // Use 2-column layout for small groups (≤4 voices) so they don't look sparse
+        val chunkSize = if (cards.size <= 4) 2 else 3
         cards.chunked(chunkSize).forEach { rowCards ->
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -376,16 +378,10 @@ class ProfilesFragment : Fragment() {
                             // Voice is available — select it
                             currentProfile = currentProfile.copy(voiceName = c.voiceId)
                             renderVoiceGrid()
-                            // Pre-warm Piper engine for the selected voice to reduce test lag
+                            // Pre-warm Piper engine in :tts process to reduce test lag
                             if (PiperVoiceCatalog.byId(c.voiceId) != null) {
                                 val appCtx = context?.applicationContext ?: return@setOnClickListener
-                                Thread {
-                                    SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
-                                }.apply {
-                                    name = "PiperPreload-${c.voiceId}"
-                                    isDaemon = true
-                                    start()
-                                }
+                                TtsBridge.preloadVoice(appCtx, c.voiceId)
                             }
                         } else {
                             // Voice needs downloading — start download
@@ -785,24 +781,27 @@ class ProfilesFragment : Fragment() {
     private fun setupButtons() {
         btnTest?.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
-            if (!SherpaEngine.isReady) {
+            val s = TtsBridge.readStatus(ctx)
+            if (!s.ready) {
                 Toast.makeText(ctx, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             try {
                 val p = readProfileFromUI()
-                val rules = loadWordingRules()
                 val text = txtPreview?.text?.toString()?.ifBlank { "Hello! This is how I sound." } ?: "Hello! This is how I sound."
-                // Use AudioPipeline directly — works without notification service
-                val appCtx = context?.applicationContext ?: return@setOnClickListener
-                AudioPipeline.testSpeak(appCtx, text, p, rules)
+                // Save profile first so the :tts process can read it
+                val idx = profiles.indexOfFirst { it.id == p.id }
+                if (idx >= 0) profiles[idx] = p else profiles.add(p)
+                VoiceProfile.saveAll(profiles, prefs)
+                // Send test speak command to :tts process
+                TtsBridge.testSpeak(ctx, text, p.id)
             } catch (e: Exception) {
                 Log.w("ProfilesFragment", "Error starting test speech", e)
                 Toast.makeText(ctx, "Error testing voice", Toast.LENGTH_SHORT).show()
             }
         }
         btnStop?.setOnClickListener {
-            AudioPipeline.stop()
+            TtsBridge.stop(context ?: return@setOnClickListener)
             Toast.makeText(context ?: return@setOnClickListener, "Stopped", Toast.LENGTH_SHORT).show()
         }
         btnResetSettings?.setOnClickListener {
@@ -960,9 +959,52 @@ class ProfilesFragment : Fragment() {
         })
     }
 
+    override fun onResume() {
+        super.onResume()
+        restartEnginePolling()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopEnginePolling()
+    }
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (!hidden) restartEnginePolling() else stopEnginePolling()
+    }
+
+    private fun stopEnginePolling() {
+        enginePollRunnable?.let { mainHandler.removeCallbacks(it) }
+        enginePollRunnable = null
+    }
+
+    /** (Re-)starts engine status polling. Safe to call multiple times. */
+    private fun restartEnginePolling() {
+        stopEnginePolling()
+        if (!viewsBound || !isAdded || view == null) return
+        updateEngineStatusUI()
+        val ctx = context ?: return
+        val s = TtsBridge.readStatus(ctx)
+        if (!s.ready && s.error == null) {
+            enginePollRunnable = object : Runnable {
+                override fun run() {
+                    if (!isAdded || view == null) return
+                    updateEngineStatusUI()
+                    val c = context ?: return
+                    val st = TtsBridge.readStatus(c)
+                    if (!st.ready && st.error == null) {
+                        mainHandler.postDelayed(this, 1000)
+                    }
+                }
+            }
+            mainHandler.postDelayed(enginePollRunnable!!, 1000)
+        }
+    }
+
     override fun onDestroyView() {
         mainHandler.removeCallbacksAndMessages(null)
-        SherpaEngine.onReadyCallback = null
+        enginePollRunnable = null
         PiperVoiceManager.downloadCallback = null
         profileSpinner = null; txtPreview = null; btnTest = null; btnStop = null
         btnSave = null; btnDelete = null; btnNew = null; btnResetSettings = null; btnRenameVoice = null

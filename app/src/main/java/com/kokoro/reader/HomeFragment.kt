@@ -18,6 +18,7 @@ class HomeFragment : Fragment() {
     private lateinit var prefs: android.content.SharedPreferences
     private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var engineRefreshRunnable: Runnable? = null
+    private var permissionRefreshRunnable: Runnable? = null
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
@@ -78,9 +79,12 @@ class HomeFragment : Fragment() {
         updateLogPath(logPathText)
         btnPermission.setOnClickListener {
             val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+: sideloaded apps need "Allow restricted settings" first.
+            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && !prefs.getBoolean("restricted_settings_prompted", false)) {
+                // Android 13+, first attempt: sideloaded apps need "Allow restricted settings".
                 // Open app details where the user can enable it via the ⋮ menu.
+                // On the next tap we'll go straight to notification listener settings.
+                prefs.edit().putBoolean("restricted_settings_prompted", true).apply()
                 try {
                     val appDetails = Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -88,12 +92,14 @@ class HomeFragment : Fragment() {
                     )
                     startActivity(appDetails)
                     Toast.makeText(ctx,
-                        "Tap ⋮ menu → \"Allow restricted settings\", then grant notification access",
+                        "Tap ⋮ menu → \"Allow restricted settings\", then come back",
                         Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
             } else {
+                // Either not Tiramisu, already prompted for restricted settings, or granted.
+                // Go straight to notification listener settings so user can enable the service.
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         }
@@ -109,35 +115,20 @@ class HomeFragment : Fragment() {
             prefs.edit().putBoolean("voice_commands_enabled", enabled).apply()
             val ctx = context ?: return@setOnCheckedChangeListener
             if (enabled) {
-                // Check RECORD_AUDIO permission
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {
                     requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
                 } else {
-                    VoiceCommandListener.start(ctx.applicationContext)
+                    TtsBridge.startVoiceCommands(ctx)
                 }
             } else {
-                VoiceCommandListener.stop()
+                TtsBridge.stopVoiceCommands(ctx)
             }
             updateVoiceCommandStatus(voiceCmdStatus)
         }
 
-        VoiceCommandListener.onStatusChanged = { _ ->
-            activity?.runOnUiThread {
-                if (isAdded) view?.findViewById<TextView>(R.id.voice_command_status)?.let {
-                    updateVoiceCommandStatus(it)
-                }
-            }
-        }
-
-        // Start voice commands if enabled and permission granted
-        val voiceCmdCtx = context
-        if (voiceCmdCtx != null &&
-            prefs.getBoolean("voice_commands_enabled", false) &&
-            ContextCompat.checkSelfPermission(voiceCmdCtx, Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED) {
-            VoiceCommandListener.start(voiceCmdCtx.applicationContext)
-        }
+        // Voice commands are started by the :tts process (NotificationReaderService)
+        // based on the preference. No direct VoiceCommandListener access from UI.
 
         val modes = arrayOf("Full (App + Title + Text)", "App + Title", "App name only", "Text only")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only")
@@ -177,18 +168,20 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
 
-        btnStop.setOnClickListener { NotificationReaderService.instance?.stopSpeaking() }
+        btnStop.setOnClickListener { context?.let { TtsBridge.stop(it) } }
     }
 
     override fun onResume() {
         super.onResume()
         refreshStatus()
         startEngineStatusRefresh()
+        startPermissionRefresh()
     }
 
     override fun onPause() {
         super.onPause()
         stopEngineStatusRefresh()
+        stopPermissionRefresh()
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
@@ -196,24 +189,25 @@ class HomeFragment : Fragment() {
         if (!hidden) {
             refreshStatus()
             startEngineStatusRefresh()
+            startPermissionRefresh()
         } else {
             stopEngineStatusRefresh()
+            stopPermissionRefresh()
         }
     }
 
     /** Polls engine status every second while loading, stops when ready or errored */
     private fun startEngineStatusRefresh() {
         stopEngineStatusRefresh()
-        if (SherpaEngine.isReady || SherpaEngine.errorMessage != null) return
         engineRefreshRunnable = object : Runnable {
             override fun run() {
                 if (!isAdded) return
+                val c = context ?: return
                 view?.findViewById<TextView>(R.id.engine_status_text)?.let { updateEngineStatus(it) }
-                // Keep refreshing until engine is ready or failed
-                if (!SherpaEngine.isReady && SherpaEngine.errorMessage == null) {
+                val s = TtsBridge.readStatus(c)
+                if (!s.ready && s.error == null) {
                     refreshHandler.postDelayed(this, 1000)
                 } else {
-                    // Final refresh of all status fields
                     refreshStatus()
                 }
             }
@@ -224,6 +218,37 @@ class HomeFragment : Fragment() {
     private fun stopEngineStatusRefresh() {
         engineRefreshRunnable?.let { refreshHandler.removeCallbacks(it) }
         engineRefreshRunnable = null
+    }
+
+    /**
+     * Polls permission + service status every 2s for up to 120s after returning from settings.
+     * The system can take 10-30s to bind the NotificationListenerService after the user
+     * toggles permission, so we need a generous window.
+     */
+    private fun startPermissionRefresh() {
+        stopPermissionRefresh()
+        var attempts = 0
+        permissionRefreshRunnable = object : Runnable {
+            override fun run() {
+                if (!isAdded) return
+                refreshStatus()
+                val nowGranted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+                val serviceAlive = context?.let { TtsBridge.readStatus(it).alive } == true
+                // Stop polling once permission granted AND service is alive, or after 120s
+                if ((nowGranted && serviceAlive) || ++attempts > 60) {
+                    // Also kick off engine status polling since service just came alive
+                    if (nowGranted) startEngineStatusRefresh()
+                    return
+                }
+                refreshHandler.postDelayed(this, 2000)
+            }
+        }
+        refreshHandler.postDelayed(permissionRefreshRunnable!!, 2000)
+    }
+
+    private fun stopPermissionRefresh() {
+        permissionRefreshRunnable?.let { refreshHandler.removeCallbacks(it) }
+        permissionRefreshRunnable = null
     }
 
     private fun refreshStatus() {
@@ -246,7 +271,7 @@ class HomeFragment : Fragment() {
     override fun onDestroyView() {
         try {
             stopEngineStatusRefresh()
-            VoiceCommandListener.onStatusChanged = null
+            stopPermissionRefresh()
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "Error in onDestroyView", e)
         }
@@ -260,7 +285,7 @@ class HomeFragment : Fragment() {
             if (requestCode == AUDIO_PERMISSION_CODE) {
                 val ctx = context ?: return
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    VoiceCommandListener.start(ctx.applicationContext)
+                    TtsBridge.startVoiceCommands(ctx)
                 } else {
                     prefs.edit().putBoolean("voice_commands_enabled", false).apply()
                     view?.findViewById<SwitchCompat>(R.id.switch_voice_commands)?.isChecked = false
@@ -276,13 +301,52 @@ class HomeFragment : Fragment() {
     private fun updateStatus(tv: TextView, serviceStatusTv: TextView, btn: Button) {
         val ctx = context ?: return
         val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+        // Reset restricted-settings flag once permission is granted, so the flow
+        // restarts correctly if the user ever revokes and needs to re-grant.
+        if (granted) prefs.edit().putBoolean("restricted_settings_prompted", false).apply()
         tv.text = if (granted) "✓ Active — reading notifications"
                   else "✗ Notification access required"
         tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
-        btn.text = if (granted) "Notification Settings" else "Grant Permission"
 
-        // Show service instance and foreground status
-        val serviceAlive = NotificationReaderService.instance != null
+        // Change button appearance based on permission state
+        if (granted) {
+            btn.text = "Notification Settings"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.surface))
+            btn.setTextColor(ctx.getColor(R.color.text_dim))
+        } else {
+            btn.text = "Grant Permission"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.green))
+            btn.setTextColor(0xFF000000.toInt())
+        }
+
+        // Update contextual permission instructions
+        val instructionsTv = view?.findViewById<TextView>(R.id.permission_instructions)
+        if (granted) {
+            val serviceAlive = TtsBridge.readStatus(ctx).alive
+            if (serviceAlive) {
+                instructionsTv?.visibility = android.view.View.GONE
+            } else {
+                instructionsTv?.visibility = android.view.View.VISIBLE
+                instructionsTv?.text = "Permission granted. Service is starting — this may take a moment."
+                instructionsTv?.setTextColor(ctx.getColor(R.color.status_warning))
+            }
+        } else {
+            instructionsTv?.visibility = android.view.View.VISIBLE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val alreadyPrompted = prefs.getBoolean("restricted_settings_prompted", false)
+                instructionsTv?.text = if (!alreadyPrompted) {
+                    "Step 1: Tap button below → tap ⋮ menu → \"Allow restricted settings\"\nStep 2: Come back → tap button again → enable Kyōkan in the list"
+                } else {
+                    "Tap the button below → find Kyōkan in the list → enable it"
+                }
+            } else {
+                instructionsTv?.text = "Tap the button below → find Kyōkan in the list → enable it"
+            }
+            instructionsTv?.setTextColor(ctx.getColor(R.color.status_warning))
+        }
+
+        // Check service alive status via cross-process status file
+        val serviceAlive = TtsBridge.readStatus(ctx).alive
         serviceStatusTv.text = when {
             granted && serviceAlive -> "⬤ Service running in background"
             granted -> "◯ Service starting…"
@@ -297,20 +361,36 @@ class HomeFragment : Fragment() {
 
     private fun updateEngineStatus(tv: TextView) {
         val ctx = context ?: return
-        val status = SherpaEngine.statusMessage
-        val error = SherpaEngine.errorMessage
-        val ready = SherpaEngine.isReady
+        val s = TtsBridge.readStatus(ctx)
 
         tv.text = when {
-            ready -> "⬤ TTS engine: ready"
-            error != null -> "✗ TTS engine: $error"
-            else -> "◯ TTS engine: $status"
+            s.ready -> "⬤ TTS engine: ready"
+            s.error != null -> "✗ TTS engine: ${s.error}"
+            s.initProgress > 0 -> "◯ TTS engine: ${s.status} (${s.initProgress}%)"
+            else -> "◯ TTS engine: ${s.status}"
         }
         tv.setTextColor(ctx.getColor(when {
-            ready -> R.color.status_active
-            error != null -> R.color.status_error
+            s.ready -> R.color.status_active
+            s.error != null -> R.color.status_error
             else -> R.color.status_warning
         }))
+
+        // Show/hide retry button when engine is in error state
+        val retryBtn = view?.findViewById<Button>(R.id.btn_retry_engine)
+        if (retryBtn != null) {
+            if (s.error != null && !s.ready) {
+                retryBtn.visibility = View.VISIBLE
+                retryBtn.setOnClickListener {
+                    retryBtn.visibility = View.GONE
+                    tv.text = "◯ TTS engine: retrying…"
+                    tv.setTextColor(ctx.getColor(R.color.status_warning))
+                    TtsBridge.retryEngineInit(ctx)
+                    startEngineStatusRefresh()
+                }
+            } else {
+                retryBtn.visibility = View.GONE
+            }
+        }
     }
 
     private fun updateLogPath(tv: TextView) {
@@ -337,13 +417,14 @@ class HomeFragment : Fragment() {
         val enabled = prefs.getBoolean("voice_commands_enabled", false)
         val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
-        val listening = VoiceCommandListener.isListening
+        val s = TtsBridge.readStatus(ctx)
+        val listening = s.voiceCmdListening
 
         tv.text = when {
             !enabled -> "Voice commands: off"
             !hasPerm -> "Voice commands: microphone permission needed"
             listening -> {
-                val wake = VoiceCommandListener.wakeWord
+                val wake = s.voiceCmdWakeWord
                 if (wake.isNotBlank())
                     "🎤 Say \"$wake\" + command: repeat · how long ago? · stop · what time?"
                 else

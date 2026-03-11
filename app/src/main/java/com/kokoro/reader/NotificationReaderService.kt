@@ -49,6 +49,20 @@ class NotificationReaderService : NotificationListenerService() {
     @Volatile private var currentMood: MoodState? = null
     private val moodLock = Object()
 
+    // ── Conversation grouping (§3.8) ──────────────────────────────────────
+    // Buffers rapid messages from the same sender to read as a batch.
+    private data class PendingMessage(
+        val appName: String,
+        val title: String,
+        val text: String,
+        val sbn: android.service.notification.StatusBarNotification
+    )
+    private val groupBuffer = LinkedHashMap<String, MutableList<PendingMessage>>()
+    private val groupLock = Object()
+    private val groupHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** How long to wait for more messages before flushing a group (ms). */
+    private val GROUP_DELAY_MS = 1500L
+
     companion object {
         private const val TAG = "NotiReaderService"
         private const val CHANNEL_ID = "kokoro_foreground"
@@ -78,15 +92,26 @@ class NotificationReaderService : NotificationListenerService() {
             currentMood = MoodState.load(prefs)
             startForegroundNotification()
 
-            // Eager engine init — now safe with timeout + asset pre-flight checks.
-            // Updates the foreground notification to show loading progress,
-            // then switches to "Listening" when ready.
+            // Write "alive" immediately so the UI knows the service is running,
+            // even if warmUp() detects a crash loop and never starts the engine.
+            TtsBridge.writeStatus(this, ready = false, status = "starting", error = null, alive = true)
+
+            // Eager engine init — safe in the :tts process (no HWUI to corrupt).
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {
                 updateForegroundText("Listening for notifications")
                 Log.d(TAG, "Engine ready — service fully operational")
             }
             SherpaEngine.warmUp(this)
+            // warmUp() calls syncStatus() which overwrites the status file with the
+            // actual engine state (loading, error, etc.). The "starting" above is just
+            // a brief placeholder until warmUp's syncStatus runs.
+
+            // Start voice commands if enabled (must happen in :tts process)
+            val voiceCmdEnabled = prefs.getBoolean("voice_commands_enabled", false)
+            if (voiceCmdEnabled) {
+                VoiceCommandListener.start(this.applicationContext)
+            }
 
             Log.d(TAG, "Service created, engine warming up in background")
         } catch (e: Throwable) {
@@ -96,11 +121,18 @@ class NotificationReaderService : NotificationListenerService() {
 
     override fun onDestroy() {
         try {
+            // Flush any pending conversation groups before shutdown
+            groupHandler.removeCallbacksAndMessages(null)
+            synchronized(groupLock) {
+                for (key in groupBuffer.keys.toList()) flushGroup(key)
+            }
             // Persist mood before shutdown
             currentMood?.let { MoodState.save(prefs, it) }
             instance = null
             VoiceCommandListener.stop()
             AudioPipeline.shutdown()
+            // Clear alive status for the UI process
+            TtsBridge.writeStatus(this, ready = false, status = "stopped", error = null, alive = false)
         } catch (e: Throwable) {
             Log.e(TAG, "Error during service destruction", e)
         }
@@ -176,6 +208,94 @@ class NotificationReaderService : NotificationListenerService() {
             }
         }
 
+        // ── Conversation grouping (§3.8) ─────────────────────────────────
+        // Buffer messages from the same sender and flush after a short delay.
+        // This batches rapid chat messages into a single reading:
+        //   "3 messages from John: [msg1]. [msg2]. [msg3]."
+        val groupKey = "${sbn.packageName}|$title"
+        val pending = PendingMessage(appName, title, text, sbn)
+
+        // Urgent notifications bypass grouping — read immediately
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val quickSignal = SignalExtractor.extract(
+            packageName = sbn.packageName, appName = appName,
+            title = title, text = text, hourOfDay = hour, floodCount = 0
+        )
+        if (quickSignal.urgencyType == UrgencyType.EXPIRING) {
+            // Flush any pending messages for this sender first, then process immediately
+            flushGroup(groupKey)
+            dispatchNotification(sbn, appName, title, text, rule)
+            return
+        }
+
+        synchronized(groupLock) {
+            val list = groupBuffer.getOrPut(groupKey) { mutableListOf() }
+            list.add(pending)
+            // Remove any existing delayed flush and reschedule
+            groupHandler.removeCallbacksAndMessages(groupKey)
+        }
+        // Post a delayed flush — if no more messages arrive within GROUP_DELAY_MS,
+        // the group is flushed and read as a batch.
+        groupHandler.postDelayed({
+            flushGroup(groupKey)
+        }, GROUP_DELAY_MS)
+    }
+
+    /** Flush a pending group: read all buffered messages as a batch. */
+    private fun flushGroup(groupKey: String) {
+        val messages: List<PendingMessage>
+        synchronized(groupLock) {
+            messages = groupBuffer.remove(groupKey) ?: return
+        }
+        if (messages.isEmpty()) return
+
+        val rules = AppRule.loadAll(prefs)
+        val first = messages.first()
+        val rule = rules.find { it.packageName == first.sbn.packageName }
+
+        if (messages.size == 1) {
+            // Single message — dispatch normally
+            dispatchNotification(first.sbn, first.appName, first.title, first.text, rule)
+        } else {
+            // Batched: combine texts into a single reading
+            val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
+            val combined = when (readMode) {
+                "text_only" -> messages.joinToString(". ") { it.text }
+                "app_only"  -> first.appName
+                else -> {
+                    val prefix = if (prefs.getBoolean("read_app_name", true)) "${first.appName}. " else ""
+                    val count = messages.size
+                    val sender = first.title.ifBlank { first.appName }
+                    val texts = messages.joinToString(". ") { it.text }
+                    "$prefix$count messages from $sender: $texts"
+                }
+            }
+            if (combined.isBlank()) return
+
+            Log.d(TAG, "Conversation group: ${messages.size} messages from ${first.title}")
+            recordSpoken(combined)
+            // Use first message's context for signal extraction
+            dispatchText(combined, first.sbn, first.appName, first.title, first.text, rule)
+        }
+    }
+
+    /** Dispatch a single notification through the full pipeline. */
+    private fun dispatchNotification(
+        sbn: StatusBarNotification, appName: String, title: String, text: String,
+        rule: AppRule?
+    ) {
+        val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
+        val rawText = buildMessage(appName, title, text, readMode)
+        if (rawText.isBlank()) return
+        recordSpoken(rawText)
+        dispatchText(rawText, sbn, appName, title, text, rule)
+    }
+
+    /** Common dispatch: extract signal → mood → modulate → enqueue. */
+    private fun dispatchText(
+        rawText: String, sbn: StatusBarNotification,
+        appName: String, title: String, text: String, rule: AppRule?
+    ) {
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
         val floodCount = synchronized(countLock) {
             if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
@@ -237,13 +357,6 @@ class NotificationReaderService : NotificationListenerService() {
         }
 
         val modulated = VoiceModulator.modulate(profile, signal, mood, hour)
-
-        val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
-        val rawText = buildMessage(appName, title, text, readMode)
-        if (rawText.isBlank()) return
-
-        // Record for "can you repeat?" / "how long ago?" voice commands
-        recordSpoken(rawText)
 
         AudioPipeline.enqueue(AudioPipeline.Item(
             rawText   = rawText,

@@ -130,6 +130,9 @@ object AudioPipeline {
     private fun ensureKokoroReady(ctx: Context): Boolean {
         if (SherpaEngine.isReady) return true
 
+        // If the engine already has an error (crash loop, timeout, etc.), don't retry
+        if (SherpaEngine.errorMessage != null) return false
+
         // Engine is warming up in the background — wait for it instead of dropping
         Log.d(TAG, "Engine not ready yet, waiting for warm-up…")
         val deadline = System.currentTimeMillis() + 50_000L // 50s max wait
@@ -140,9 +143,44 @@ object AudioPipeline {
 
         if (SherpaEngine.isReady) return true
 
+        // If there's now an error (set during our wait), don't attempt init
+        if (SherpaEngine.errorMessage != null) {
+            Log.w(TAG, "Engine has error, not attempting init: ${SherpaEngine.errorMessage}")
+            return false
+        }
+
         // Warm-up didn't succeed — try one direct init as last resort
+        // initializeKokoro() has its own crash-counter check and will refuse
+        // if too many previous attempts failed.
         Log.w(TAG, "Warm-up didn't complete, attempting direct init")
         return SherpaEngine.initializeKokoro(ctx)
+    }
+
+    // ── Sentence splitter for chunked synthesis ────────────────────────────
+
+    /** Minimum text length to bother chunking. Below this, single-shot is fine. */
+    private const val CHUNK_MIN_LENGTH = 100
+
+    /**
+     * Splits text into sentence-like chunks at natural boundaries.
+     * Keeps sentences together (split on `. `, `! `, `? `, `; `) and
+     * never produces empty chunks.
+     */
+    private fun splitSentences(text: String): List<String> {
+        if (text.length < CHUNK_MIN_LENGTH) return listOf(text)
+        // Split on sentence-ending punctuation followed by whitespace
+        val parts = text.split(Regex("(?<=[.!?;])\\s+")).filter { it.isNotBlank() }
+        if (parts.size <= 1) return listOf(text)
+        // Merge very short fragments with their predecessor to avoid choppy speech
+        val merged = mutableListOf<String>()
+        for (part in parts) {
+            if (merged.isNotEmpty() && merged.last().length < 30) {
+                merged[merged.lastIndex] = "${merged.last()} $part"
+            } else {
+                merged.add(part)
+            }
+        }
+        return merged
     }
 
     private fun processItem(ctx: Context, item: Item) {
@@ -162,7 +200,25 @@ object AudioPipeline {
         }
         if (processed.isBlank()) return
 
-        // ── Step 2: Synthesize (route to Kokoro or Piper engine) ──────────
+        // ── Chunked synthesis: split into sentences for lower latency ────
+        val chunks = splitSentences(processed)
+        if (chunks.size > 1) {
+            Log.d(TAG, "Chunked synthesis: ${chunks.size} chunks from ${processed.length} chars")
+        }
+
+        for (chunk in chunks) {
+            if (!running) return  // Pipeline was stopped
+            if (queue.isNotEmpty() && !item.priority) return  // Newer item waiting, yield
+            synthesizeAndPlay(ctx, item, chunk)
+        }
+    }
+
+    /**
+     * Synthesize a single text chunk and play it immediately.
+     * Extracted from processItem to support both single-shot and chunked paths.
+     */
+    private fun synthesizeAndPlay(ctx: Context, item: Item, text: String) {
+        // ── Synthesize (route to Kokoro or Piper engine) ──────────────
         val voiceId = item.profile.voiceName
         val kokoroVoice = KokoroVoices.byId(voiceId)
         val piperVoice  = PiperVoiceCatalog.byId(voiceId)
@@ -175,7 +231,7 @@ object AudioPipeline {
                     return
                 }
                 SherpaEngine.synthesize(
-                    text  = processed,
+                    text  = text,
                     sid   = kokoroVoice.sid,
                     speed = item.modulated.speed
                 )
@@ -186,7 +242,7 @@ object AudioPipeline {
                 try {
                     SherpaEngine.synthesizePiper(
                         ctx     = ctx,
-                        text    = processed,
+                        text    = text,
                         voiceId = voiceId,
                         speed   = item.modulated.speed
                     )
@@ -195,7 +251,7 @@ object AudioPipeline {
                     Log.e(TAG, "Piper synthesis crashed for $voiceId, falling back to Kokoro", e)
                     if (!ensureKokoroReady(ctx)) return
                     SherpaEngine.synthesize(
-                        text  = processed,
+                        text  = text,
                         sid   = KokoroVoices.default().sid,
                         speed = item.modulated.speed
                     )
@@ -210,7 +266,7 @@ object AudioPipeline {
                 }
                 Log.w(TAG, "Voice '$voiceId' not available, using default Kokoro")
                 SherpaEngine.synthesize(
-                    text  = processed,
+                    text  = text,
                     sid   = KokoroVoices.default().sid,
                     speed = item.modulated.speed
                 )
@@ -221,7 +277,7 @@ object AudioPipeline {
         val (rawPcm, sampleRate) = result
         if (rawPcm.isEmpty()) return
 
-        // ── Step 2.5: Phonic analysis (landmark detection) ──────────────
+        // ── Phonic analysis (landmark detection) ────────────────────────
         val landmarks = try {
             PhonicAnalyzer.analyze(rawPcm, sampleRate)
         } catch (e: Throwable) {
@@ -229,7 +285,7 @@ object AudioPipeline {
             null
         }
 
-        // ── Step 3: Apply DSP (landmark-aware) ─────────────────────────
+        // ── Apply DSP (landmark-aware) ──────────────────────────────────
         val pcm = try {
             AudioDsp.apply(rawPcm, sampleRate, item.modulated, landmarks)
         } catch (e: Throwable) {
@@ -237,7 +293,7 @@ object AudioPipeline {
             rawPcm  // Fallback to raw PCM on DSP error
         }
 
-        // ── Step 4: Play ──────────────────────────────────────────────────
+        // ── Play ────────────────────────────────────────────────────────
         playPcm(pcm, sampleRate, item.modulated.pitch)
     }
 

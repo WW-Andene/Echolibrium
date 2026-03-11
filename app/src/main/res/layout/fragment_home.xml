@@ -21,12 +21,25 @@
         <TextView android:id="@+id/engine_status_text" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
             android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/text_dim"
-            android:layout_marginBottom="2dp"/>
+            android:layout_marginBottom="0dp"/>
+
+        <Button android:id="@+id/btn_retry_engine" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="Retry engine init"
+            android:backgroundTint="@color/status_warning" android:textColor="#000000"
+            android:fontFamily="monospace" android:textSize="12sp"
+            android:layout_marginTop="4dp" android:layout_marginBottom="0dp"
+            android:visibility="gone"/>
 
         <TextView android:id="@+id/log_path_text" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
             android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/text_hint"
             android:layout_marginBottom="8dp"/>
+
+        <!-- Permission instructions — updates based on current permission state -->
+        <TextView android:id="@+id/permission_instructions" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
+            android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/text_dim"
+            android:layout_marginBottom="4dp" android:visibility="gone"/>
 
         <Button android:id="@+id/btn_permission" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:backgroundTint="@color/green"

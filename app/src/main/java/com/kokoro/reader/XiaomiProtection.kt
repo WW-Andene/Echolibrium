@@ -83,7 +83,14 @@ object XiaomiProtection {
 
     private fun runShellCommand(vararg cmd: String): Pair<Boolean, String> {
         return try {
-            val process = Shizuku.newProcess(cmd, null, null)
+            // Shizuku.newProcess() is not public in API 13.1.5 — access via reflection.
+            // The method exists but is hidden; this is the recommended community workaround
+            // for running shell commands when binder calls fail on HyperOS.
+            val method = Shizuku::class.java.getDeclaredMethod(
+                "newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java
+            )
+            method.isAccessible = true
+            val process = method.invoke(null, cmd, null as Array<String>?, null as String?) as Process
             val stdout = process.inputStream.bufferedReader().readText().trim()
             val stderr = process.errorStream.bufferedReader().readText().trim()
             val exitCode = process.waitFor()

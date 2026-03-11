@@ -69,7 +69,7 @@ object SherpaEngine {
             try {
                 // Step 1: extract Kokoro model from assets
                 VoiceDownloadManager.ensureModelSync(ctx)
-                // Step 2: extract bundled Piper voices from assets
+                // Step 2: extract bundled Piper voices from assets (skips if already done)
                 PiperVoiceManager.extractBundledVoicesSync(ctx)
                 // Step 3: load the Kokoro engine
                 if (initializeKokoro(ctx)) {
@@ -90,11 +90,10 @@ object SherpaEngine {
     fun initializeKokoro(ctx: Context): Boolean {
         if (isReady && kokoroTts != null) return true
 
-        // Lazy extraction: extract assets on first use if not already done
+        // Lazy extraction: extract Kokoro model on first use if not already done
         if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.d(TAG, "Model not extracted yet — extracting now")
+            Log.d(TAG, "Kokoro model not extracted yet — extracting now")
             VoiceDownloadManager.ensureModelSync(ctx)
-            PiperVoiceManager.extractBundledVoicesSync(ctx)
         }
         if (!VoiceDownloadManager.isModelReady(ctx)) {
             Log.w(TAG, "Kokoro model extraction failed")

@@ -51,10 +51,12 @@ object PiperVoiceManager {
         File(getPiperDir(ctx), "$voiceId.onnx.json").absolutePath
 
     fun isVoiceReady(ctx: Context, voiceId: String): Boolean {
-        val modelFile = File(getPiperDir(ctx), "$voiceId.onnx")
-        val tokensFile = File(getPiperDir(ctx), "tokens.txt")
+        val piperDir = getPiperDir(ctx)
+        val modelFile = File(piperDir, "$voiceId.onnx")
+        val tokensFile = File(piperDir, "tokens.txt")
         val espeakDir = File(VoiceDownloadManager.getModelDir(ctx), "espeak-ng-data")
-        return modelFile.exists() && tokensFile.exists() && espeakDir.exists()
+        return modelFile.exists() && modelFile.length() > 0
+            && tokensFile.exists() && espeakDir.exists()
     }
 
     fun getVoiceState(ctx: Context, voiceId: String): VoiceState {
@@ -73,13 +75,64 @@ object PiperVoiceManager {
 
     // ── Extraction from bundled assets ─────────────────────────────────────────
 
+    /** Tracks whether shared files (tokens.txt) have already been extracted this session */
+    @Volatile private var sharedFilesExtracted = false
+
+    /**
+     * Extract a single Piper voice from assets on demand.
+     * Also extracts the shared tokens.txt if not yet present.
+     * Returns true if the voice is ready after extraction.
+     */
+    fun ensureVoiceExtracted(ctx: Context, voiceId: String): Boolean {
+        if (isVoiceReady(ctx, voiceId)) return true
+        return try {
+            val piperDir = getPiperDir(ctx)
+            val assetManager = ctx.assets
+
+            // Extract shared tokens.txt (once per session)
+            if (!sharedFilesExtracted) {
+                val tokensFile = File(piperDir, "tokens.txt")
+                if (!tokensFile.exists() || tokensFile.length() == 0L) {
+                    extractAssetFile(assetManager, "$ASSET_DIR/tokens.txt", tokensFile)
+                }
+                sharedFilesExtracted = true
+            }
+
+            // Extract this specific voice model
+            val modelFile = File(piperDir, "$voiceId.onnx")
+            if (!modelFile.exists() || modelFile.length() == 0L) {
+                Log.d(TAG, "Extracting Piper voice on demand: $voiceId")
+                extractAssetFile(assetManager, "$ASSET_DIR/$voiceId.onnx", modelFile)
+            }
+
+            // Also extract .onnx.json config if present
+            val configFile = File(piperDir, "$voiceId.onnx.json")
+            if (!configFile.exists() || configFile.length() == 0L) {
+                try {
+                    extractAssetFile(assetManager, "$ASSET_DIR/$voiceId.onnx.json", configFile)
+                } catch (_: Exception) { /* config is optional */ }
+            }
+
+            val ready = isVoiceReady(ctx, voiceId)
+            if (ready) Log.d(TAG, "Piper voice ready: $voiceId")
+            else Log.w(TAG, "Piper voice extraction incomplete: $voiceId")
+            ready
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract Piper voice: $voiceId", e)
+            false
+        }
+    }
+
     /**
      * Extract all bundled Piper voice files from assets to internal storage.
      * Safe to call multiple times — skips files that already exist.
+     * Uses a marker file to avoid re-scanning assets on subsequent calls.
      */
     fun extractBundledVoicesSync(ctx: Context) {
+        val piperDir = getPiperDir(ctx)
+        // Fast path: marker confirms previous complete extraction
+        if (File(piperDir, ".all_extracted").exists()) return
         try {
-            val piperDir = getPiperDir(ctx)
             val assetManager = ctx.assets
             val entries = assetManager.list(ASSET_DIR) ?: return
 
@@ -87,16 +140,24 @@ object PiperVoiceManager {
                 val destFile = File(piperDir, entry)
                 if (!destFile.exists() || destFile.length() == 0L) {
                     Log.d(TAG, "Extracting bundled Piper file: $entry")
-                    assetManager.open("$ASSET_DIR/$entry").use { input ->
-                        destFile.outputStream().use { output ->
-                            input.copyTo(output, bufferSize = 32 * 1024)
-                        }
-                    }
+                    extractAssetFile(assetManager, "$ASSET_DIR/$entry", destFile)
                 }
             }
+            // Mark extraction complete so we never re-scan
+            File(piperDir, ".all_extracted").createNewFile()
+            sharedFilesExtracted = true
             Log.d(TAG, "Bundled Piper voices extracted to $piperDir")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to extract bundled Piper voices", e)
+        }
+    }
+
+    private fun extractAssetFile(assetManager: android.content.res.AssetManager, assetPath: String, dest: File) {
+        dest.parentFile?.mkdirs()
+        assetManager.open(assetPath).use { input ->
+            dest.outputStream().use { output ->
+                input.copyTo(output, bufferSize = 32 * 1024)
+            }
         }
     }
 }

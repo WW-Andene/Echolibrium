@@ -40,6 +40,8 @@ object VoiceDownloadManager {
 
     fun isModelReady(ctx: Context): Boolean {
         val dir = getModelDir(ctx)
+        // Fast path: marker file confirms previous successful extraction
+        if (File(dir, ".extracted").exists()) return true
         return dir.exists()
             && File(dir, "model.onnx").exists()
             && File(dir, "voices.bin").exists()
@@ -69,7 +71,11 @@ object VoiceDownloadManager {
 
                 copyAssetsRecursive(ctx, ASSET_DIR, destDir)
 
-                if (isModelReady(ctx)) {
+                if (isModelReady(ctx) || (File(destDir, "model.onnx").exists()
+                        && File(destDir, "voices.bin").exists()
+                        && File(destDir, "tokens.txt").exists()
+                        && File(destDir, "espeak-ng-data").exists())) {
+                    File(destDir, ".extracted").createNewFile()
                     Log.d(TAG, "Model ready at $destDir")
                     updateState(State.READY)
                 } else {
@@ -95,7 +101,16 @@ object VoiceDownloadManager {
             val destDir = getModelDir(ctx)
             destDir.mkdirs()
             copyAssetsRecursive(ctx, ASSET_DIR, destDir)
-            val ready = isModelReady(ctx)
+            // Verify all required files exist
+            val ready = destDir.exists()
+                && File(destDir, "model.onnx").exists()
+                && File(destDir, "voices.bin").exists()
+                && File(destDir, "tokens.txt").exists()
+                && File(destDir, "espeak-ng-data").exists()
+            if (ready) {
+                // Write marker so future checks skip the full file scan
+                File(destDir, ".extracted").createNewFile()
+            }
             updateState(if (ready) State.READY else State.ERROR)
             ready
         } catch (e: Exception) {

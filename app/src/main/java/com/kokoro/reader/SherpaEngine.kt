@@ -68,30 +68,22 @@ object SherpaEngine {
     /**
      * Returns the optimal ONNX Runtime provider for this device.
      *
-     * MediaTek: "nnapi" — routes inference to the APU (dedicated AI hardware).
-     *   This avoids the CPU thread pool entirely, which sidesteps the HWUI
-     *   mutex corruption on MIUI. Faster too — APU is purpose-built for this.
-     *
-     * Qualcomm: "cpu" — NNAPI on Qualcomm routes to Hexagon DSP which has
-     *   mixed compatibility with TTS model ops. CPU is more reliable.
-     *
-     * Other: "cpu" — safe default.
+     * All devices use "cpu" — the NNAPI EP does not support LSTM ops (core to
+     * Kokoro TTS), causing model partitioning where Conv/MatMul run on APU but
+     * LSTM falls back to NNAPI's slow reference CPU. This is worse than pure
+     * CPU inference. The original HWUI mutex collision on MediaTek/MIUI is
+     * already solved by process isolation (:tts runs in a separate process
+     * with no HWUI).
      */
-    private fun optimalProvider(): String = when (socVendor) {
-        SocVendor.MEDIATEK -> "nnapi"
-        else -> "cpu"
-    }
+    private fun optimalProvider(): String = "cpu"
 
     /**
      * Returns the optimal thread count for this device.
      *
-     * MediaTek with NNAPI: 1 — APU handles parallelism internally.
-     * Qualcomm/other: 2 — safe multi-threading, no HWUI conflict.
+     * MediaTek Dimensity: 2 — has 2x Cortex-A78 big cores we can use.
+     * Qualcomm/other: 2 — safe multi-threading.
      */
-    private fun optimalThreadCount(): Int = when (socVendor) {
-        SocVendor.MEDIATEK -> 1
-        else -> 2
-    }
+    private fun optimalThreadCount(): Int = 2
 
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null
@@ -392,8 +384,7 @@ object SherpaEngine {
             val config = OfflineTtsConfig(model = modelConfig)
 
             initProgress = 35
-            val providerLabel = if (provider == "nnapi") "loading via APU (NNAPI)…"
-                else if (isOrt) "loading optimized model…"
+            val providerLabel = if (isOrt) "loading optimized model…"
                 else "loading native model (this may take 10-30s)…"
             statusMessage = providerLabel
             syncStatus()

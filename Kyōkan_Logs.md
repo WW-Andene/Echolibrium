@@ -5,12 +5,27 @@
 
 ---
 
+## Session: March 2026 (claude/review-kyokan-docs-0kSrs)
+
+Focus: Defense-in-depth for ORT version mismatch — runtime fallback from `.ort` to `.onnx`.
+
+### Enhancement: Runtime .ort → .onnx format fallback
+**Commit:** (current)
+**Problem:** Issue 10 pinned the CI ORT version to match the AAR, but this is fragile. If the versions ever drift again, or if a device has ORT incompatibilities, the engine fails with no recovery path because `optimize-models.py` deleted the original `.onnx` files.
+**Fix (3 parts):**
+1. **Keep `.onnx` as fallback:** `optimize-models.py` no longer deletes original `.onnx` files after ORT conversion. Both formats ship in the APK.
+2. **Runtime format fallback:** SherpaEngine's escalation ladder now wraps in an outer model-format loop. If all configs fail with `.ort`, the engine retries the entire ladder with `.onnx`. Extraction now extracts both formats to filesystem. On success with `.onnx` fallback, telemetry records `"ONNX (fallback from ORT)"`.
+3. **ORT version tracking:** `optimize-models.py` writes `ort_version.txt` into assets with the build-time ORT version. SherpaEngine logs this at init for diagnostics.
+**Lesson:** Never delete the original format after optimization. Ship both and let the runtime fall back gracefully. Pin versions in CI AND have a runtime safety net.
+
+---
+
 ## Session: March 2026 (claude/resume-after-crash-mZ6T1)
 
 Focus: Crash recovery reliability — making the engine resilient to native SIGSEGV on Xiaomi/MediaTek.
 
 ### Issue 10: ORT format version mismatch — ROOT CAUSE of engine failures
-**Commit:** (current)
+**Commit:** `d35477f`
 **Symptom:** Engine fails to initialize on device — SIGSEGV or silent failure during model loading. All crash recovery, error handling, and fallback mechanisms work correctly, but the engine itself never succeeds because the model files are corrupt from the device's perspective.
 **Root cause:** The CI build pipeline converts `.onnx` models to `.ort` (pre-optimized flatbuffer) using `pip install onnxruntime` which installs the latest version (1.23.x). But the sherpa-onnx 1.12.28 AAR bundles **onnxruntime 1.17.1** for Android. The `.ort` flatbuffer format from ORT 1.23.x is incompatible with ORT 1.17.1. When the device tries to load these `.ort` files, it either SIGSEGVs or fails to parse the model. Critically, `optimize-models.py` **deletes the original `.onnx` files** after conversion — so there's no fallback.
 **Fix:** Pin CI onnxruntime to `1.17.1` (`pip install onnxruntime==1.17.1`) to match the AAR's bundled ORT version. The `.ort` files produced will now be format-compatible with the on-device ORT.

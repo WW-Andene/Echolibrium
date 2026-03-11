@@ -149,9 +149,11 @@ warmUp(ctx)
        │
        ├─ Stage 2: Config memory + auto-escalation
        │    ├─ Check SharedPreferences for last known-good config
-       │    ├─ Escalation ladder: optimal → safe (1 thread, cpu) → diagnostic
-       │    ├─ Run OfflineTts() on dedicated thread with URGENT_AUDIO priority
-       │    ├─ Adaptive timeout (30s ORT / 90s ONNX × device tier multiplier)
+       │    ├─ Outer loop: model format (.ort first, .onnx fallback if both exist)
+       │    │    ├─ Escalation ladder: optimal → safe (1 thread, cpu) → diagnostic
+       │    │    ├─ Run OfflineTts() on dedicated thread with URGENT_AUDIO priority
+       │    │    ├─ Adaptive timeout (30s ORT / 90s ONNX × device tier multiplier)
+       │    │    └─ If all configs fail → try next model format
        │    └─ On success: save config to memory, reset crash counter
        │
        └─ finally: clear init_in_progress flag
@@ -259,3 +261,5 @@ Dependencies:
 6. **Model extraction is expensive.** First run extracts 311MB from APK to filesystem. Uses atomic tmp+rename to prevent corruption from power loss. Version marker (`.extracted_version`) forces re-extraction on app update.
 
 7. **Config memory is invalidated on crash AND on app update.** Don't assume it's always valid.
+
+8. **Never delete `.onnx` originals after ORT conversion.** The `.ort` format is version-specific — if the build-time ORT version doesn't match the on-device ORT, `.ort` files cause SIGSEGV. The engine falls back to `.onnx` at runtime if `.ort` fails. Both formats ship in the APK and are extracted to filesystem.

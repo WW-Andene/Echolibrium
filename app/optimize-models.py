@@ -5,8 +5,13 @@ Pre-optimizes bundled ONNX models to ORT format for faster loading on Android.
 ORT format is a pre-optimized flatbuffer that eliminates graph optimization
 at runtime, reducing model load time from ~10-30s to ~1-2s.
 
-After successful conversion, the original .onnx file is deleted to keep
-the APK under the 4GB ZIP32 limit.
+The original .onnx files are KEPT as fallback. If the .ort files are
+incompatible with the on-device ORT runtime (version mismatch), the engine
+falls back to .onnx at runtime. This is critical because the CI ORT version
+may not exactly match the AAR's bundled ORT version.
+
+Also writes ort_version.txt into the assets directory so the engine can
+verify compatibility at runtime.
 
 Usage:
     python3 optimize-models.py
@@ -27,15 +32,13 @@ KEEP_LANGUAGES = {"en", "fr", "es"}
 
 
 def convert_to_ort(onnx_path: str) -> bool:
-    """Convert a .onnx model to .ort format, then delete the original."""
+    """Convert a .onnx model to .ort format, keeping the original as fallback."""
     ort_path = onnx_path.replace(".onnx", ".ort")
     if os.path.exists(ort_path):
-        # ORT already exists — clean up .onnx if still present
+        print(f"  ✓ {os.path.basename(ort_path)} already exists")
+        # Keep the .onnx as fallback if it exists
         if os.path.exists(onnx_path):
-            os.remove(onnx_path)
-            print(f"  ✓ {os.path.basename(ort_path)} already exists, removed {os.path.basename(onnx_path)}")
-        else:
-            print(f"  ✓ {os.path.basename(ort_path)} already exists")
+            print(f"    (.onnx kept as runtime fallback)")
         return True
 
     try:
@@ -53,8 +56,7 @@ def convert_to_ort(onnx_path: str) -> bool:
             orig_size = os.path.getsize(onnx_path) / (1024 * 1024)
             opt_size = os.path.getsize(ort_path) / (1024 * 1024)
             print(f"  ✓ {os.path.basename(ort_path)}: {orig_size:.1f}MB → {opt_size:.1f}MB")
-            os.remove(onnx_path)
-            print(f"    Removed {os.path.basename(onnx_path)} (ORT replaces it)")
+            print(f"    (.onnx kept as runtime fallback)")
             return True
         else:
             print(f"  ✗ Conversion produced no output for {os.path.basename(onnx_path)}")
@@ -145,6 +147,20 @@ def main():
             else:
                 failed += 1
         print(f"  Total: {converted} converted, {failed} failed")
+
+    # 4. Write ORT version file for runtime compatibility checking
+    try:
+        import onnxruntime as ort
+        version_file = os.path.join(SCRIPT_DIR, "src", "main", "assets", "ort_version.txt")
+        with open(version_file, "w") as f:
+            f.write(ort.__version__)
+        print()
+        print(f"── ORT version marker ──")
+        print(f"  ✓ Wrote ort_version.txt: {ort.__version__}")
+    except ImportError:
+        print()
+        print(f"── ORT version marker ──")
+        print(f"  ⚠ onnxruntime not available — skipping version marker")
 
     print()
     print("═══ Optimization complete ═══")

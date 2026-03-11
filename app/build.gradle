@@ -18,9 +18,10 @@ task downloadTtsModels(type: Exec) {
     // Only run if key files are missing
     onlyIf {
         def aar = file("${projectDir}/libs/sherpa_onnx.aar")
-        def model = file("${projectDir}/src/main/assets/kokoro-model/model.onnx")
+        def modelOnnx = file("${projectDir}/src/main/assets/kokoro-model/model.onnx")
+        def modelOrt = file("${projectDir}/src/main/assets/kokoro-model/model.ort")
         def tokens = file("${projectDir}/src/main/assets/piper-models/tokens.txt")
-        def missing = !aar.exists() || !model.exists() || !tokens.exists()
+        def missing = !aar.exists() || (!modelOnnx.exists() && !modelOrt.exists()) || !tokens.exists()
         if (missing) {
             logger.lifecycle("TTS models missing — running download-models.sh")
         }

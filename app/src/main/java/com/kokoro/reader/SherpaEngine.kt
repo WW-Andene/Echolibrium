@@ -990,6 +990,16 @@ object SherpaEngine {
                 Log.i(TAG, "│ sherpa-onnx: version unavailable")
             }
 
+            // Check ORT version compatibility — the build-time ORT that created .ort files
+            // must match the on-device ORT bundled in the AAR. If mismatched, .ort files
+            // may cause SIGSEGV. Log a warning so it shows up in diagnostics.
+            try {
+                val buildOrtVersion = ctx.assets.open("ort_version.txt").bufferedReader().readText().trim()
+                Log.i(TAG, "│ Build-time ORT version: $buildOrtVersion")
+            } catch (_: Throwable) {
+                Log.i(TAG, "│ Build-time ORT version: unknown (ort_version.txt not found)")
+            }
+
             initProgress = 10
             statusMessage = "verifying model assets…"
             syncStatus()
@@ -1182,13 +1192,26 @@ object SherpaEngine {
             Log.i(TAG, "│ Heap reservation: ${telemetry.heapReserveMs}ms")
 
             // ── 1d. Model file resolution ───────────────────────────────
+            // Build list of model files to try: .ort first (fast), .onnx fallback (compatible).
+            // If .ort fails at all escalation levels, we retry everything with .onnx.
             initProgress = 28
-            val modelFile = File(extractedDir, "model.ort").let {
-                if (it.exists()) it else File(extractedDir, "model.onnx")
+            val ortFile = File(extractedDir, "model.ort")
+            val onnxFile = File(extractedDir, "model.onnx")
+            val modelFilesToTry = mutableListOf<File>()
+            if (ortFile.exists() && ortFile.length() > MIN_MODEL_FILE_SIZE) modelFilesToTry.add(ortFile)
+            if (onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE) modelFilesToTry.add(onnxFile)
+            if (modelFilesToTry.isEmpty()) {
+                // Neither format available — use whichever exists (will fail at integrity check)
+                modelFilesToTry.add(if (ortFile.exists()) ortFile else onnxFile)
             }
+            val modelFile = modelFilesToTry.first()
             val isOrt = modelFile.name.endsWith(".ort")
+            val hasOnnxFallback = modelFilesToTry.size > 1
             telemetry.modelFormat = if (isOrt) "ORT (pre-optimized)" else "ONNX (runtime optimization)"
             Log.i(TAG, "│ Model: ${modelFile.name} (${modelFile.length() / 1024 / 1024}MB, ${telemetry.modelFormat})")
+            if (hasOnnxFallback) {
+                Log.i(TAG, "│ Fallback: model.onnx available if .ort fails")
+            }
 
             // ── 1e. Model file pre-warming ──────────────────────────────
             // Read the entire model file sequentially into OS page cache.
@@ -1231,17 +1254,7 @@ object SherpaEngine {
             }
             Log.i(TAG, "│ WakeLock acquired: ${initWakeLock != null}")
 
-            val kokoroConfig = OfflineTtsKokoroModelConfig(
-                model   = modelFile.absolutePath,
-                voices  = File(extractedDir, "voices.bin").absolutePath,
-                tokens  = File(extractedDir, "tokens.txt").absolutePath,
-                dataDir = File(extractedDir, "espeak-ng-data").absolutePath
-            )
-
             val appVersion = getAppVersionCode(ctx)
-            val timeoutMs = adaptiveTimeoutMs(isOrt, profile)
-            telemetry.timeoutMs = timeoutMs
-            Log.i(TAG, "│ Adaptive timeout: ${timeoutMs}ms (ort=$isOrt, tier=${profile.tier})")
 
             // Build escalation ladder
             val optThreads = optimalThreadCount()
@@ -1256,7 +1269,6 @@ object SherpaEngine {
             val rememberedConfig = loadGoodConfig(initPrefs, appVersion)
             val escalationLadder = if (rememberedConfig != null) {
                 Log.i(TAG, "│ Config memory: ${rememberedConfig.label}")
-                // Put remembered config first, then the rest of the ladder (deduplicated)
                 val rest = freshLadder.filter {
                     Triple(it.threads, it.provider, it.debug) !=
                         Triple(rememberedConfig.threads, rememberedConfig.provider, rememberedConfig.debug)
@@ -1267,141 +1279,194 @@ object SherpaEngine {
                 freshLadder
             }
 
-            plog("initKokoro: Stage 2 — ladder=${escalationLadder.size} configs, timeout=${timeoutMs}ms, ort=$isOrt")
-            Log.i(TAG, "│ Escalation ladder: ${escalationLadder.size} configs")
-            escalationLadder.forEachIndexed { i, c -> Log.i(TAG, "│   [$i] ${c.label}") }
-
-            initProgress = 35
-            statusMessage = if (isOrt) "loading optimized model…"
-                else "loading native model (this may take 10-30s)…"
-            syncStatus()
-
-            Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
-            Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
-
             // init_in_progress flag is already set by warmUp() before this thread started.
             initStartTime.set(System.currentTimeMillis())
-
             var successConfig: InitConfig? = null
 
-            for ((level, initCfg) in escalationLadder.withIndex()) {
-                Log.i(TAG, "│ ── Escalation level $level: ${initCfg.label} ──")
+            // ── Outer loop: model format fallback (.ort → .onnx) ─────────
+            // If all escalation configs fail with .ort, the format itself may be
+            // incompatible (ORT version mismatch). Retry with .onnx if available.
+            for ((formatIdx, currentModelFile) in modelFilesToTry.withIndex()) {
+                val currentIsOrt = currentModelFile.name.endsWith(".ort")
+                val formatLabel = if (currentIsOrt) "ORT" else "ONNX"
+                val timeoutMs = adaptiveTimeoutMs(currentIsOrt, profile)
 
-                val modelConfig = OfflineTtsModelConfig(
-                    kokoro     = kokoroConfig,
-                    numThreads = initCfg.threads,
-                    debug      = initCfg.debug,
-                    provider   = initCfg.provider
+                if (formatIdx > 0) {
+                    // This is a format fallback — log clearly
+                    Log.w(TAG, "│")
+                    Log.w(TAG, "│ ═══ Format fallback: retrying with $formatLabel ═══")
+                    plog("initKokoro: Format fallback → $formatLabel (${currentModelFile.name})")
+                    telemetry.modelFormat = "ONNX (fallback from ORT)"
+                    statusMessage = "retrying with $formatLabel format…"
+                    initProgress = 35
+                    syncStatus()
+
+                    // Pre-warm the fallback model file
+                    Log.i(TAG, "│ Pre-warming ${currentModelFile.name}…")
+                    prewarmModelFile(currentModelFile)
+                } else {
+                    telemetry.timeoutMs = timeoutMs
+                }
+
+                Log.i(TAG, "│ Format: $formatLabel (${currentModelFile.name}, ${currentModelFile.length() / 1024 / 1024}MB)")
+                Log.i(TAG, "│ Adaptive timeout: ${timeoutMs}ms (ort=$currentIsOrt, tier=${profile.tier})")
+
+                val kokoroConfig = OfflineTtsKokoroModelConfig(
+                    model   = currentModelFile.absolutePath,
+                    voices  = File(extractedDir, "voices.bin").absolutePath,
+                    tokens  = File(extractedDir, "tokens.txt").absolutePath,
+                    dataDir = File(extractedDir, "espeak-ng-data").absolutePath
                 )
-                val config = OfflineTtsConfig(model = modelConfig)
 
-                // Run the native constructor on a dedicated thread with elevated priority.
-                // Setting THREAD_PRIORITY_URGENT_AUDIO tells the kernel this thread is
-                // time-sensitive — prevents the scheduler from deprioritizing us during
-                // the heavy model load (this is what Google TTS does).
-                val resultHolder = arrayOfNulls<OfflineTts>(1)
-                val errorHolder = arrayOfNulls<Throwable>(1)
-                val latch = CountDownLatch(1)
-                val levelStart = System.currentTimeMillis()
+                plog("initKokoro: Stage 2 ($formatLabel) — ladder=${escalationLadder.size} configs, timeout=${timeoutMs}ms")
+                Log.i(TAG, "│ Escalation ladder: ${escalationLadder.size} configs")
+                escalationLadder.forEachIndexed { i, c -> Log.i(TAG, "│   [$i] ${c.label}") }
 
-                val initThread = Thread {
-                    try {
-                        android.os.Process.setThreadPriority(
-                            android.os.Process.THREAD_PRIORITY_URGENT_AUDIO
-                        )
-                        resultHolder[0] = OfflineTts(config = config)
-                    } catch (e: Throwable) {
-                        errorHolder[0] = e
-                    } finally {
-                        latch.countDown()
-                    }
-                }.apply { name = "SherpaEngine-init-L$level"; isDaemon = true; start() }
+                initProgress = 35
+                statusMessage = if (currentIsOrt) "loading optimized model…"
+                    else "loading native model (this may take 10-30s)…"
+                syncStatus()
 
-                // Sync progress periodically while native init runs
-                val progressThread = Thread {
-                    try {
-                        val pStart = System.currentTimeMillis()
-                        while (!latch.await(500, TimeUnit.MILLISECONDS)) {
-                            val elapsed = System.currentTimeMillis() - pStart
-                            initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
-                            syncStatus()
+                Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
+                Log.i(TAG, "│ Model: ${currentModelFile.absolutePath}")
+
+                var allTimedOut = true
+                var lastError: Throwable? = null
+
+                for ((level, initCfg) in escalationLadder.withIndex()) {
+                    Log.i(TAG, "│ ── Escalation level $level: ${initCfg.label} ($formatLabel) ──")
+
+                    val modelConfig = OfflineTtsModelConfig(
+                        kokoro     = kokoroConfig,
+                        numThreads = initCfg.threads,
+                        debug      = initCfg.debug,
+                        provider   = initCfg.provider
+                    )
+                    val config = OfflineTtsConfig(model = modelConfig)
+
+                    val resultHolder = arrayOfNulls<OfflineTts>(1)
+                    val errorHolder = arrayOfNulls<Throwable>(1)
+                    val latch = CountDownLatch(1)
+                    val levelStart = System.currentTimeMillis()
+
+                    val initThread = Thread {
+                        try {
+                            android.os.Process.setThreadPriority(
+                                android.os.Process.THREAD_PRIORITY_URGENT_AUDIO
+                            )
+                            resultHolder[0] = OfflineTts(config = config)
+                        } catch (e: Throwable) {
+                            errorHolder[0] = e
+                        } finally {
+                            latch.countDown()
                         }
-                    } catch (_: InterruptedException) {}
-                }.apply { name = "SherpaEngine-progress-L$level"; isDaemon = true; start() }
+                    }.apply { name = "SherpaEngine-init-L$level"; isDaemon = true; start() }
 
-                val completed = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-                progressThread.interrupt()
-                val levelElapsed = System.currentTimeMillis() - levelStart
+                    val progressThread = Thread {
+                        try {
+                            val pStart = System.currentTimeMillis()
+                            while (!latch.await(500, TimeUnit.MILLISECONDS)) {
+                                val elapsed = System.currentTimeMillis() - pStart
+                                initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
+                                syncStatus()
+                            }
+                        } catch (_: InterruptedException) {}
+                    }.apply { name = "SherpaEngine-progress-L$level"; isDaemon = true; start() }
 
-                if (!completed) {
-                    plog("initKokoro: Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label}")
-                    Log.w(TAG, "│ Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label}")
-                    try { initThread.interrupt() } catch (_: Throwable) {}
+                    val completed = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+                    progressThread.interrupt()
+                    val levelElapsed = System.currentTimeMillis() - levelStart
 
-                    if (level < escalationLadder.lastIndex) {
-                        Log.i(TAG, "│ Escalating to level ${level + 1}…")
-                        statusMessage = "retrying with safer config…"
-                        syncStatus()
-                        Thread.sleep(100)
+                    if (!completed) {
+                        plog("initKokoro: Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label} ($formatLabel)")
+                        Log.w(TAG, "│ Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label}")
+                        try { initThread.interrupt() } catch (_: Throwable) {}
+
+                        if (level < escalationLadder.lastIndex) {
+                            Log.i(TAG, "│ Escalating to level ${level + 1}…")
+                            statusMessage = "retrying with safer config…"
+                            syncStatus()
+                            Thread.sleep(100)
+                            continue
+                        }
+                        // All levels exhausted for this format
                         continue
                     }
 
-                    // All levels exhausted
+                    allTimedOut = false
+
+                    val initError = errorHolder[0]
+                    if (initError != null) {
+                        plog("initKokoro: Level $level FAILED in ${levelElapsed}ms: ${initError.javaClass.simpleName}: ${initError.message}")
+                        Log.w(TAG, "│ Level $level FAILED in ${levelElapsed}ms: " +
+                            "${initError.javaClass.simpleName}: ${initError.message}")
+                        lastError = initError
+
+                        if (level < escalationLadder.lastIndex) {
+                            Log.i(TAG, "│ Escalating to level ${level + 1}…")
+                            statusMessage = "retrying with safer config…"
+                            syncStatus()
+                            continue
+                        }
+                        // All levels exhausted for this format
+                        continue
+                    }
+
+                    // SUCCESS at this level
+                    plog("initKokoro: Level $level SUCCESS in ${levelElapsed}ms — ${initCfg.label} ($formatLabel)")
+                    Log.i(TAG, "│ OfflineTts() constructor: ${levelElapsed}ms at level $level")
+                    if (level > 0 || formatIdx > 0) {
+                        Log.i(TAG, "│ Succeeded after ${if (formatIdx > 0) "format fallback + " else ""}$level escalations (${initCfg.label})")
+                    }
+
+                    kokoroTts = resultHolder[0]
+                    successConfig = initCfg
+                    telemetry.nativeLoadMs = levelElapsed
+                    telemetry.escalationLevel = level
+                    telemetry.configUsed = "${initCfg.label} ($formatLabel)"
+                    if (formatIdx > 0) telemetry.modelFormat = "ONNX (fallback from ORT)"
+                    break
+                }
+
+                // If we got a successful result, break out of format loop
+                if (kokoroTts != null) break
+
+                // Log format failure
+                if (formatIdx < modelFilesToTry.lastIndex) {
+                    val nextFormat = if (modelFilesToTry[formatIdx + 1].name.endsWith(".ort")) "ORT" else "ONNX"
+                    Log.w(TAG, "│ All escalation levels failed with $formatLabel — falling back to $nextFormat")
+                    // Clear config memory since it was for the failing format
+                    initPrefs.edit().remove(KEY_LAST_GOOD_THREADS).remove(KEY_LAST_GOOD_PROVIDER)
+                        .remove(KEY_LAST_GOOD_DEBUG).remove(KEY_LAST_GOOD_VERSION).apply()
+                } else if (allTimedOut) {
+                    // Final format, all timed out
                     val elapsed = System.currentTimeMillis() - initStartTime.get()
                     initStartTime.set(0)
                     telemetry.nativeLoadMs = elapsed
                     telemetry.totalMs = System.currentTimeMillis() - stageStart
-                    telemetry.escalationLevel = level
-                    telemetry.configUsed = initCfg.label
+                    telemetry.escalationLevel = escalationLadder.lastIndex
+                    telemetry.configUsed = escalationLadder.last().label
                     lastTelemetry = telemetry
                     initPrefs.edit()
                         .putBoolean(KEY_INIT_IN_PROGRESS, false)
                         .apply()
                     try { initWakeLock?.release() } catch (_: Throwable) {}
-                    Log.e(TAG, "│ All ${escalationLadder.size} escalation levels TIMED OUT")
+                    Log.e(TAG, "│ All escalation levels TIMED OUT across all model formats")
                     Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
                     statusMessage = "error: init timed out after ${elapsed / 1000}s"
                     errorMessage = "Engine timed out after ${elapsed / 1000}s. " +
-                        "Tried ${escalationLadder.size} configs. Device: ${profile.tier}"
+                        "Tried ${escalationLadder.size} configs × ${modelFilesToTry.size} formats. Device: ${profile.tier}"
                     isReady = false
-                    writeInitLog(ctx, "All escalation configs timed out", telemetry = telemetry)
+                    writeInitLog(ctx, "All escalation configs timed out (all formats)", telemetry = telemetry)
                     syncStatus()
                     return false
-                }
-
-                val initError = errorHolder[0]
-                if (initError != null) {
-                    plog("initKokoro: Level $level FAILED in ${levelElapsed}ms: ${initError.javaClass.simpleName}: ${initError.message}")
-                    Log.w(TAG, "│ Level $level FAILED in ${levelElapsed}ms: " +
-                        "${initError.javaClass.simpleName}: ${initError.message}")
-
-                    if (level < escalationLadder.lastIndex) {
-                        Log.i(TAG, "│ Escalating to level ${level + 1}…")
-                        statusMessage = "retrying with safer config…"
-                        syncStatus()
-                        continue
-                    }
-
-                    // All levels exhausted — throw the last error
-                    telemetry.escalationLevel = level
-                    telemetry.configUsed = initCfg.label
+                } else if (lastError != null) {
+                    // Final format, all errored
+                    telemetry.escalationLevel = escalationLadder.lastIndex
+                    telemetry.configUsed = escalationLadder.last().label
                     lastTelemetry = telemetry
-                    throw initError
+                    throw lastError!!
                 }
-
-                // SUCCESS at this level
-                plog("initKokoro: Level $level SUCCESS in ${levelElapsed}ms — ${initCfg.label}")
-                Log.i(TAG, "│ OfflineTts() constructor: ${levelElapsed}ms at level $level")
-                if (level > 0) {
-                    Log.i(TAG, "│ ✓ Succeeded after $level escalations (${initCfg.label})")
-                }
-
-                kokoroTts = resultHolder[0]
-                successConfig = initCfg
-                telemetry.nativeLoadMs = levelElapsed
-                telemetry.escalationLevel = level
-                telemetry.configUsed = initCfg.label
-                break
             }
 
             val totalElapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
@@ -1409,10 +1474,10 @@ object SherpaEngine {
             lastTelemetry = telemetry
 
             if (kokoroTts == null) {
-                Log.e(TAG, "│ OfflineTts() returned null after all escalation levels")
+                Log.e(TAG, "│ OfflineTts() returned null after all escalation levels and formats")
                 Log.e(TAG, "└── Kokoro init FAILED ────────────────────────")
                 statusMessage = "error: engine returned null"
-                errorMessage = "Engine returned null after ${escalationLadder.size} configs"
+                errorMessage = "Engine returned null after ${escalationLadder.size} configs × ${modelFilesToTry.size} formats"
                 isReady = false
                 writeInitLog(ctx, "OfflineTts() returned null", telemetry = telemetry)
                 return false
@@ -1809,8 +1874,12 @@ object SherpaEngine {
             val destDir = File(ctx.filesDir, "kokoro-model")
             destDir.mkdirs()
 
-            // Determine which model file to extract (.ort preferred over .onnx)
-            val modelAsset = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
+            // Extract BOTH model formats if available (.ort for speed, .onnx as fallback)
+            val ortAsset = "$KOKORO_DIR/model.ort"
+            val onnxAsset = "$KOKORO_DIR/model.onnx"
+            val hasOrt = try { ctx.assets.open(ortAsset).use { true } } catch (_: Throwable) { false }
+            val hasOnnx = try { ctx.assets.open(onnxAsset).use { true } } catch (_: Throwable) { false }
+            val modelAsset = if (hasOrt) ortAsset else onnxAsset
             val modelFileName = modelAsset.substringAfterLast("/")
             val modelFile = File(destDir, modelFileName)
 
@@ -1834,11 +1903,21 @@ object SherpaEngine {
             // Clean up any leftover .tmp files from previous failed extraction
             destDir.listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.delete() }
 
-            // Extract model file
+            // Extract primary model file (.ort preferred)
             if (!modelFile.exists() || modelFile.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
                 Log.i(TAG, "│   Extracting $modelFileName…")
                 extractAssetAtomic(ctx, modelAsset, modelFile)
                 Log.i(TAG, "│   $modelFileName: ${modelFile.length() / 1024 / 1024}MB")
+            }
+
+            // Extract .onnx fallback if available and not already extracted
+            if (hasOrt && hasOnnx) {
+                val onnxFallback = File(destDir, "model.onnx")
+                if (!onnxFallback.exists() || onnxFallback.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                    Log.i(TAG, "│   Extracting model.onnx (runtime fallback)…")
+                    extractAssetAtomic(ctx, onnxAsset, onnxFallback)
+                    Log.i(TAG, "│   model.onnx: ${onnxFallback.length() / 1024 / 1024}MB (fallback)")
+                }
             }
 
             // Extract voices.bin

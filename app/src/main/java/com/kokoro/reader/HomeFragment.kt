@@ -191,10 +191,11 @@ class HomeFragment : Fragment() {
     /**
      * On Xiaomi devices, bypasses aggressive background killing:
      *
-     * Priority 1 — Shizuku: If running, auto-grants ALL protections silently
+     * Priority 1 — Shizuku: If running, silently grants ALL protections
      *   (device idle whitelist, AutoStart, background run, standby bucket).
+     *   Zero user interaction required.
      * Priority 2 — Standard Android APIs: Battery exemption dialog + AutoStart intent.
-     * Priority 3 — ADB fallback: Copies commands to clipboard for manual execution.
+     *   This is the path normal users will take until we find a permanent fix.
      */
     private fun promptXiaomiProtections() {
         if (!TtsBridge.isXiaomiDevice()) return
@@ -209,7 +210,7 @@ class HomeFragment : Fragment() {
                         activity?.runOnUiThread {
                             if (result.allGranted) {
                                 prefs.edit().putBoolean("xiaomi_shizuku_applied", true).apply()
-                                Toast.makeText(ctx, "All Xiaomi protections applied via Shizuku", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, "Xiaomi protections applied", Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(ctx, "Shizuku: ${result.summary}", Toast.LENGTH_LONG).show()
                             }
@@ -226,7 +227,7 @@ class HomeFragment : Fragment() {
 
         // ── Standard Android API path (no Shizuku) ──
 
-        // 1. Battery optimization exemption — request every time until granted
+        // 1. Battery optimization exemption — request until granted
         if (TtsBridge.isBatteryOptimized(ctx)) {
             TtsBridge.requestBatteryExemption(ctx)
             return  // Don't stack two system dialogs — do autostart next resume
@@ -239,18 +240,6 @@ class HomeFragment : Fragment() {
             if (opened) {
                 Toast.makeText(ctx, "Enable AutoStart for Kyōkan to keep it running", Toast.LENGTH_LONG).show()
             }
-            return
-        }
-
-        // 3. ADB commands fallback — offer to copy to clipboard (once)
-        if (!prefs.getBoolean("xiaomi_adb_shown", false)) {
-            prefs.edit().putBoolean("xiaomi_adb_shown", true).apply()
-            val commands = XiaomiProtection.getManualAdbCommands(ctx)
-            val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("ADB commands", commands))
-            Toast.makeText(ctx,
-                "ADB commands copied to clipboard — paste in terminal with phone connected via USB",
-                Toast.LENGTH_LONG).show()
         }
     }
 

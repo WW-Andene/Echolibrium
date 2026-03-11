@@ -3,11 +3,12 @@
 # Downloads all TTS dependencies needed to build Kyōkan:
 #   1. sherpa-onnx AAR (native TTS library)
 #   2. Kokoro multi-lang model (30 voices, ~120MB)
-#   3. All 44 Piper/VITS voice models (~15-25MB each)
+#   3. Core Piper voices bundled in the APK (8 voices, ~480MB)
+#
+# Non-bundled Piper voices are downloaded on-demand by the app from
+# GitHub Releases — see VoiceDownloadManager.kt and PiperVoiceCatalog.kt.
 #
 # This script is idempotent — it skips files that already exist.
-# Run manually or let Gradle call it automatically via the
-# downloadTtsModels task in build.gradle.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -67,10 +68,10 @@ fi
 echo "  Files:"
 ls -lh "$KOKORO_DIR"/*.onnx "$KOKORO_DIR"/*.bin "$KOKORO_DIR"/*.txt 2>/dev/null | while read -r line; do echo "    $line"; done
 
-# ── 3. Piper voices ─────────────────────────────────────────────────────────
+# ── 3. Core Piper voices (bundled in APK) ────────────────────────────────────
 
 echo ""
-echo "═══ Step 3/3: Piper/VITS voices (44 models) ═══"
+echo "═══ Step 3/3: Core Piper voices (bundled in APK) ═══"
 mkdir -p "$PIPER_DIR"
 
 # Shared tokens.txt (from lessac package)
@@ -89,59 +90,25 @@ else
     echo "  ✓ tokens.txt already present"
 fi
 
-VOICES=(
-    "en_US-amy-low"
-    "en_US-amy-medium"
-    "en_US-arctic-medium"
-    "en_US-bryce-medium"
-    "en_US-danny-low"
-    "en_US-hfc_female-medium"
-    "en_US-hfc_male-medium"
-    "en_US-joe-medium"
-    "en_US-john-medium"
-    "en_US-kathleen-low"
-    "en_US-kristin-medium"
-    "en_US-kusal-medium"
-    "en_US-l2arctic-medium"
-    "en_US-lessac-low"
+# ── Bundled voices ───────────────────────────────────────────────────────────
+# Keep in sync with PiperVoiceCatalog.kt BUNDLED_IDS
+BUNDLED_VOICES=(
     "en_US-lessac-medium"
-    "en_US-lessac-high"
-    "en_US-libritts-high"
-    "en_US-libritts_r-medium"
-    "en_US-ljspeech-medium"
-    "en_US-ljspeech-high"
-    "en_US-norman-medium"
-    "en_US-reza_ibrahim-medium"
-    "en_US-ryan-low"
     "en_US-ryan-medium"
-    "en_US-ryan-high"
-    "en_US-sam-medium"
-    "en_GB-alan-low"
-    "en_GB-alan-medium"
+    "en_US-amy-medium"
+    "en_US-joe-medium"
     "en_GB-alba-medium"
-    "en_GB-aru-medium"
-    "en_GB-cori-medium"
-    "en_GB-cori-high"
-    "en_GB-jenny_dioco-medium"
-    "en_GB-northern_english_male-medium"
-    "en_GB-semaine-medium"
-    "en_GB-southern_english_female-low"
-    "en_GB-vctk-medium"
-    "fr_FR-gilles-low"
-    "fr_FR-mls-medium"
-    "fr_FR-mls_1840-low"
-    "fr_FR-siwis-low"
+    "en_GB-alan-medium"
     "fr_FR-siwis-medium"
     "fr_FR-tom-medium"
-    "fr_FR-upmc-medium"
 )
 
-TOTAL=${#VOICES[@]}
+TOTAL=${#BUNDLED_VOICES[@]}
 DOWNLOADED=0
 SKIPPED=0
 FAILED=0
 
-for VOICE_ID in "${VOICES[@]}"; do
+for VOICE_ID in "${BUNDLED_VOICES[@]}"; do
     if [ -f "$PIPER_DIR/${VOICE_ID}.onnx" ]; then
         SKIPPED=$((SKIPPED + 1))
         continue
@@ -164,24 +131,19 @@ for VOICE_ID in "${VOICES[@]}"; do
 done
 
 echo ""
-echo "  Piper voices: $SKIPPED already present, $DOWNLOADED downloaded, $FAILED failed (of $TOTAL total)"
+echo "  Bundled voices: $SKIPPED already present, $DOWNLOADED downloaded, $FAILED failed (of $TOTAL total)"
 
-# ── 4. Optimize models (ORT format + strip languages) ────────────────────────
+# ── 4. Optimize models (ORT format) ─────────────────────────────────────────
 
 echo ""
-echo "═══ Step 4/4: Optimize models (ORT format) ═══"
+echo "═══ Step 4/4: Optimize bundled models (ORT format) ═══"
 
-# Check if ORT conversion has already been done (idempotent)
-if [ -f "$KOKORO_DIR/model.ort" ]; then
-    echo "  ✓ Models already optimized — skipping"
+if command -v python3 &>/dev/null && python3 -c "import onnxruntime" 2>/dev/null; then
+    python3 "$SCRIPT_DIR/optimize-models.py"
 else
-    if command -v python3 &>/dev/null && python3 -c "import onnxruntime" 2>/dev/null; then
-        python3 "$SCRIPT_DIR/optimize-models.py"
-    else
-        echo "  ⚠ python3 + onnxruntime not available — skipping ORT optimization"
-        echo "    Install with: pip install onnxruntime"
-        echo "    The app will still work with .onnx files (slower first load)"
-    fi
+    echo "  ⚠ python3 + onnxruntime not available — skipping ORT optimization"
+    echo "    Install with: pip install onnxruntime"
+    echo "    The app will still work with .onnx files (slower first load)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
@@ -194,10 +156,11 @@ PIPER_COUNT=$((PIPER_ONNX + PIPER_ORT))
 ORT_COUNT=$(ls -1 "$KOKORO_DIR"/*.ort "$PIPER_DIR"/*.ort 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
 echo "  Kokoro: $(du -sh "$KOKORO_DIR" 2>/dev/null | cut -f1 || echo 'MISSING')"
-echo "  Piper:  ${PIPER_COUNT} voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"
+echo "  Piper:  ${PIPER_COUNT} bundled voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"
 if [ "$ORT_COUNT" -gt 0 ]; then
-    echo "  ORT:    ${ORT_COUNT} pre-optimized models (faster load)"
+    echo "  ORT:    ${ORT_COUNT} pre-optimized models (5-10x faster load)"
 fi
 echo ""
-echo "  Ready to build: ./gradlew assembleDebug"
+echo "  Non-bundled voices are downloaded by the app on demand."
+echo "  Ready to build: ./gradlew assembleRelease"
 echo "═══════════════════════════════════════════════"

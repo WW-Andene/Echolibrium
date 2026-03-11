@@ -4,12 +4,12 @@ plugins {
 }
 
 // ── Auto-download TTS models before build ───────────────────────────────────
-// Ensures the AAR, Kokoro model, and all Piper voices are present.
-// Skips files that already exist (idempotent). First build takes ~10-15 min
-// to download everything; subsequent builds are instant.
+// Ensures the AAR, Kokoro model, and core Piper voices are present.
+// Only 8 Piper voices are bundled — the rest are downloaded by the app on demand.
+// Skips files that already exist (idempotent).
 
 task downloadTtsModels(type: Exec) {
-    description = 'Downloads sherpa-onnx AAR, Kokoro model, and Piper voices if missing'
+    description = 'Downloads sherpa-onnx AAR, Kokoro model, and core Piper voices if missing'
     group = 'setup'
 
     workingDir projectDir
@@ -55,8 +55,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
-    // Allow large asset files (model.onnx is ~120MB) — must NOT compress for direct loading
     // Must NOT compress model files — sherpa-onnx loads them directly via AssetManager
+    // "ort" = pre-optimized bundled models, "onnx" = fallback if ORT conversion fails
     aaptOptions { noCompress "onnx", "ort", "bin" }
 }
 dependencies {

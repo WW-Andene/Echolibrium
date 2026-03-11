@@ -80,10 +80,15 @@ object SherpaEngine {
     /**
      * Returns the optimal thread count for this device.
      *
-     * MediaTek Dimensity: 2 — has 2x Cortex-A78 big cores we can use.
+     * MediaTek: 1 — ONNX Runtime thread pool init can SIGSEGV on Dimensity
+     *   SoCs when creating multiple threads during model loading. Single-threaded
+     *   inference is ~30% slower but avoids the native crash entirely.
      * Qualcomm/other: 2 — safe multi-threading.
      */
-    private fun optimalThreadCount(): Int = 2
+    private fun optimalThreadCount(): Int = when (socVendor) {
+        SocVendor.MEDIATEK -> 1
+        else -> 2
+    }
 
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null

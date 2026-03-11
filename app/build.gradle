@@ -59,6 +59,16 @@ android {
     // at first run. Compressed assets use more memory during extraction and are slower
     // to read via AssetManager.open(). "txt" covers tokens.txt and espeak dict files.
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
+    // Force native library extraction to filesystem before loading.
+    // Default (useLegacyPackaging=false on minSdk 23+) loads .so directly from APK
+    // via mmap, which causes SIGSEGV on some MediaTek/Xiaomi devices when loading
+    // large native libraries like ONNX Runtime (~50MB). Extracting to filesystem
+    // avoids this by using standard dlopen() on a regular file.
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'

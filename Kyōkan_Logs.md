@@ -9,6 +9,19 @@
 
 Focus: Crash recovery reliability — making the engine resilient to native SIGSEGV on Xiaomi/MediaTek.
 
+### Issue 10: ORT format version mismatch — ROOT CAUSE of engine failures
+**Commit:** (current)
+**Symptom:** Engine fails to initialize on device — SIGSEGV or silent failure during model loading. All crash recovery, error handling, and fallback mechanisms work correctly, but the engine itself never succeeds because the model files are corrupt from the device's perspective.
+**Root cause:** The CI build pipeline converts `.onnx` models to `.ort` (pre-optimized flatbuffer) using `pip install onnxruntime` which installs the latest version (1.23.x). But the sherpa-onnx 1.12.28 AAR bundles **onnxruntime 1.17.1** for Android. The `.ort` flatbuffer format from ORT 1.23.x is incompatible with ORT 1.17.1. When the device tries to load these `.ort` files, it either SIGSEGVs or fails to parse the model. Critically, `optimize-models.py` **deletes the original `.onnx` files** after conversion — so there's no fallback.
+**Fix:** Pin CI onnxruntime to `1.17.1` (`pip install onnxruntime==1.17.1`) to match the AAR's bundled ORT version. The `.ort` files produced will now be format-compatible with the on-device ORT.
+**Lesson:** When pre-optimizing models for a specific runtime, the optimization tool MUST use the same version as the target runtime. Version mismatches in flatbuffer formats cause silent corruption.
+
+### Issue 9: Silent engine failure — warmUp returns to "idle" without error
+**Commit:** `433d6b3`
+**Symptom:** Engine starts, gets stuck, and returns to "idle" status without showing any error message.
+**Root cause:** When both Kokoro and Piper fallback fail in the warmUp thread, the code logged the failure but didn't set `errorMessage` or `statusMessage` or call `syncStatus()`. The engine silently fell through to the finally block, cleared `isWarmingUp`, and the status remained stale.
+**Fix:** Added proper error state propagation when both engines fail. Added comprehensive process logger (`plog()`) capturing every init decision point with timestamps. Added debug dump button that writes full diagnostic info to `/storage/emulated/0/WW_Andene/Kyōkan/Logs/`.
+
 ### Issue 8: Piper fallback SIGSEGV causes infinite crash loop with no backoff
 **Commit:** `b29b5d3`
 **Symptom:** On Xiaomi 2306EPN60G (MediaTek Dimensity), the engine stays stuck on "starting" indefinitely. Logcat shows the process restarting every ~23 seconds with "Previous session did not exit cleanly" but zero SherpaEngine output.

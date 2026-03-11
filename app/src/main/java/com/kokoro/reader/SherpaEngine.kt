@@ -486,13 +486,24 @@ object SherpaEngine {
 
                 // ── Model Files ──
                 appendLine("═══ MODEL FILES ═══")
-                val kokoroDir = File(ctx.filesDir, "sherpa/kokoro-multi-lang-v1_0")
+                val kokoroDir = File(ctx.filesDir, "kokoro-model")
+                appendLine("Kokoro dir: ${kokoroDir.absolutePath}")
                 if (kokoroDir.exists()) {
                     kokoroDir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+                        if (f.isFile) appendLine("  ${f.name} (${f.length() / 1024}KB)")
+                        else appendLine("  ${f.name}/ (dir, ${f.listFiles()?.size ?: 0} files)")
+                    }
+                } else {
+                    appendLine("  NOT EXTRACTED")
+                }
+                val piperDir = File(ctx.filesDir, "piper-models")
+                appendLine("Piper dir: ${piperDir.absolutePath}")
+                if (piperDir.exists()) {
+                    piperDir.listFiles()?.sortedBy { it.name }?.forEach { f ->
                         appendLine("  ${f.name} (${f.length() / 1024}KB)")
                     }
                 } else {
-                    appendLine("  Kokoro dir not extracted: ${kokoroDir.absolutePath}")
+                    appendLine("  NOT EXTRACTED")
                 }
                 appendLine()
 

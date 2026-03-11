@@ -14,9 +14,13 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
 
-      # Install onnxruntime for ORT model optimization (faster load on device)
+      # Install onnxruntime for ORT model optimization (faster load on device).
+      # CRITICAL: Must match the ORT version bundled in the sherpa-onnx AAR.
+      # sherpa-onnx 1.12.28 builds with onnxruntime 1.17.1 for Android.
+      # Using a newer ORT version here produces .ort files with an incompatible
+      # flatbuffer format, causing SIGSEGV or silent load failure on device.
       - name: Install onnxruntime
-        run: pip install onnxruntime
+        run: pip install onnxruntime==1.17.1
 
       # Downloads sherpa-onnx AAR, Kokoro model, and 8 core Piper voices.
       # Then converts bundled models to ORT format (5-10x faster loading).

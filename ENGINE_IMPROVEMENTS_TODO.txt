@@ -33,8 +33,10 @@ All 19 items from KkrR_System_Improvement_Plan.txt are IMPLEMENTED:
   ✅ Phonic landmark detection (PhonicAnalyzer.kt)
   ✅ Voice commands (repeat, how long ago, stop, what time, mood query)
 
-Voice bundling: ALL 44 Piper voices + Kokoro (30 voices) bundled in APK.
-No internet required at runtime.
+Voice system: Kokoro (30 voices) + 8 core Piper voices bundled in APK.
+  Bundled: lessac, ryan, amy, joe (en_US), alba, alan (en_GB), siwis, tom (fr_FR)
+  36 additional Piper voices downloadable on demand from GitHub Releases.
+  No internet required for bundled voices. APK size reduced from ~3.4GB to ~600MB.
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -58,15 +60,12 @@ ISSUE 1: Native SIGSEGV crash from SherpaEngine.warmUp()
     - File a bug with sherpa-onnx upstream if reproducible
 
 ISSUE 2: Piper voice extraction slow on first launch
-  Status: NOT ADDRESSED
-  Problem: With 44 Piper voices bundled (~300-500 MB total), first launch
-    extraction from assets to internal storage takes significant time.
-    No progress indicator is shown to the user.
-  Improvement ideas:
-    - Add a progress bar/dialog during first extraction
-    - Extract in priority order (extract the user's selected voice first)
-    - Background extraction with notification showing progress
-    - Consider keeping voices compressed in assets and decompressing on demand
+  Status: RESOLVED
+  Resolution: Voices are now split into bundled (8 in APK assets) and
+    downloadable (36 via GitHub Releases). Bundled voices load directly
+    from AssetManager — no extraction. Downloaded voices are saved to
+    filesDir as .onnx files. No extraction step exists anymore.
+    VoiceDownloadManager handles on-demand downloads with progress tracking.
 
 ISSUE 3: Android 13+ restricted settings for sideloaded apps
   Status: WORKAROUND IN PLACE
@@ -106,7 +105,8 @@ These are improvements discussed or identified but NOT yet implemented:
   Files: ProfilesFragment.kt, PiperVoiceCatalog.kt
 
   Currently the voice grid de-duplicates by name, showing only medium quality.
-  All quality variants (low/medium/high) are bundled but hidden.
+  All quality variants (low/medium/high) are in the catalog but only medium is
+  bundled. Other qualities are downloadable on demand.
   Improvement: Add a quality toggle or show quality variants as sub-options
   when tapping a voice card. Low = faster synthesis, High = better quality.
 
@@ -244,6 +244,15 @@ Recent changes (this session):
      - "Allow Notifications" button on Android 13+ opens app info page
      - User can tap ⋮ menu → "Allow restricted settings"
      - Falls back to notification listener settings on older Android
+
+  4. On-demand voice download system (fixes APK exceeding 4GB ZIP32 limit)
+     - Reduced bundled Piper voices from 44 to 8 core voices (~600MB APK)
+     - PiperVoiceCatalog: added bundled flag, GitHub Releases download URL
+     - VoiceDownloadManager: rebuilt as real download manager (progress, state, temp files)
+     - SherpaEngine: loads from assets (bundled) or filesDir (downloaded)
+     - ProfilesFragment: voice grid shows bundled/downloaded/tap-to-download states
+     - Deleted optimize-models.py (ORT conversion no longer needed)
+     - Simplified build.yml (removed onnxruntime dependency)
 
 Recurring issues to watch:
   - The warmUp() SIGSEGV crash has been accidentally re-added multiple times.

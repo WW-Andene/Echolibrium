@@ -97,6 +97,14 @@ class NotificationReaderService : NotificationListenerService() {
             // even if warmUp() detects a crash loop and never starts the engine.
             TtsBridge.writeStatus(this, ready = false, status = "starting", error = null, alive = true)
 
+            // Request battery optimization exemption BEFORE model loading.
+            // HyperOS aggressively kills background processes during the long
+            // model loading phase. Battery exemption + foreground service is the
+            // strongest protection against being killed mid-init.
+            if (OemProtection.isBatteryOptimized(this)) {
+                OemProtection.requestBatteryExemption(this)
+            }
+
             // Eager engine init — safe in the :tts process (no HWUI to corrupt).
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {

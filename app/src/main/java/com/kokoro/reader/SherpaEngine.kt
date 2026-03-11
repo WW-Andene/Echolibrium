@@ -931,13 +931,13 @@ object SherpaEngine {
     /** If true, skip .ort and go straight to .onnx (set after a crash during .ort loading). */
     private const val KEY_SKIP_ORT = "skip_ort"
     /** Base delay (ms) for exponential backoff after crashes. Delay = base * 2^(n-1). */
-    private const val CRASH_BACKOFF_BASE_MS = 5_000L   // 5s, 10s, 20s, 40s, 80s…
-    /** Max backoff delay (ms) — caps at ~2.5 minutes, then retries forever at this interval. */
-    private const val CRASH_BACKOFF_MAX_MS = 150_000L  // 2.5 minutes
-    /** After this many crashes, assume the native stack is fundamentally broken. */
-    private const val NATIVE_BROKEN_THRESHOLD = 5
+    private const val CRASH_BACKOFF_BASE_MS = 3_000L   // 3s, 6s, 12s, 24s, 48s…
+    /** Max backoff delay (ms) — caps at ~1 minute, then retries forever at this interval. */
+    private const val CRASH_BACKOFF_MAX_MS = 60_000L   // 1 minute
+    /** After this many CONFIRMED NATIVE crashes, assume the native stack is broken. */
+    private const val NATIVE_BROKEN_THRESHOLD = 8
     /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
-    private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
+    private const val CRASH_RESET_WINDOW_MS = 120_000L  // 2 minutes
 
     /**
      * Initializes the Kokoro engine on a background thread.

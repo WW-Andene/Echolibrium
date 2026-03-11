@@ -508,6 +508,8 @@ object SherpaEngine {
     private const val CRASH_BACKOFF_BASE_MS = 5_000L   // 5s, 10s, 20s, 40s, 80s…
     /** Max backoff delay (ms) — caps at ~2.5 minutes, then retries forever at this interval. */
     private const val CRASH_BACKOFF_MAX_MS = 150_000L  // 2.5 minutes
+    /** After this many crashes, assume the native stack is fundamentally broken. */
+    private const val NATIVE_BROKEN_THRESHOLD = 5
     /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
     private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
 
@@ -518,8 +520,10 @@ object SherpaEngine {
      *
      * If previous init attempts crashed the process (SIGSEGV), this method
      * tracks the failures and backs off exponentially with increasing delays.
-     * On the very first detected crash, Piper fallback activates immediately
-     * while Kokoro retries continue in the background with exponential backoff.
+     * On the very first detected crash, Piper fallback is attempted immediately
+     * (guarded by init_in_progress so Piper crashes are also tracked).
+     * After [NATIVE_BROKEN_THRESHOLD] total crashes, all native code is skipped
+     * and an error is shown — the native stack is broken on this device.
      */
     fun warmUp(ctx: Context) {
         statusContext = ctx.applicationContext
@@ -559,26 +563,79 @@ object SherpaEngine {
             Log.d(TAG, "Init crash counter reset (>5min since last crash)")
         }
 
-        // ── Crash recovery: Piper first, then backoff retry for Kokoro ────────
+        // ── Crash recovery ─────────────────────────────────────────────
         // Even a SINGLE native crash means Kokoro is unsafe to load right now.
-        // Activate Piper IMMEDIATELY so the user has working TTS, then back off
-        // exponentially before retrying Kokoro. Conditions change (user closes
-        // apps, device cools down, memory frees up) — we WILL eventually succeed.
+        // We try Piper first (it's smaller and more likely to work), then
+        // back off exponentially before retrying Kokoro.
+        //
+        // CRITICAL: Piper also uses sherpa-onnx native code (OfflineTts).
+        // If the native stack is fundamentally broken (bad JNI/ORT on this
+        // device), Piper will ALSO SIGSEGV. We must set init_in_progress
+        // before calling Piper so that crash increments the counter.
+        // After NATIVE_BROKEN_THRESHOLD crashes, we stop calling ANY native
+        // code and show an error instead of crash-looping forever.
         if (crashCount > 0) {
-            Log.w(TAG, "Kokoro crashed $crashCount time(s) — activating Piper first, then backing off for Kokoro retry")
+            Log.w(TAG, "Native code crashed $crashCount time(s)")
 
-            // Activate Piper immediately so the user has TTS while we wait
-            if (initPiperFallback(ctx)) {
-                Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crash(es)")
-                onReadyCallback?.invoke()
+            // ── Native stack completely broken — give up on native code ──
+            if (crashCount >= NATIVE_BROKEN_THRESHOLD) {
+                Log.e(TAG, "Native stack appears broken ($crashCount crashes) — disabling all TTS")
+                errorMessage = "TTS engine crashed $crashCount times — native code incompatible with this device"
+                statusMessage = "error: native engine incompatible"
+                isReady = false
+                syncStatus()
+                synchronized(warmUpLock) { isWarmingUp = false }
+
+                // Schedule one more retry after a long backoff (conditions might change)
+                val backoffMs = CRASH_BACKOFF_MAX_MS
+                Log.i(TAG, "Will retry in ${backoffMs / 1000}s in case conditions change")
+                Thread {
+                    try {
+                        Thread.sleep(backoffMs)
+                        synchronized(warmUpLock) { isWarmingUp = false }
+                        warmUp(ctx)
+                    } catch (_: InterruptedException) {
+                        synchronized(warmUpLock) { isWarmingUp = false }
+                    }
+                }.apply { name = "SherpaEngine-backoff"; isDaemon = true; start() }
+                return
             }
 
-            // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 150s, 150s, 150s…
+            // ── Try Piper fallback (guarded by init_in_progress) ────────
+            // Set the flag BEFORE any native code so that if Piper also
+            // SIGSEGVs, the crash counter increments on next restart.
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+            Log.i(TAG, "Attempting Piper fallback (crash #$crashCount)…")
+            statusMessage = "trying fallback engine…"
+            syncStatus()
+
+            var piperOk = false
+            try {
+                piperOk = initPiperFallback(ctx)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Piper fallback threw exception", e)
+            }
+            // If we reach here, the process survived — clear the flag
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+
+            if (piperOk) {
+                Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crash(es)")
+                onReadyCallback?.invoke()
+            } else {
+                Log.w(TAG, "Piper fallback also failed — no TTS available yet")
+                errorMessage = "TTS engines unavailable (crash #$crashCount)"
+                statusMessage = "error: engines unavailable"
+                syncStatus()
+            }
+
+            // ── Exponential backoff before Kokoro retry ─────────────────
             val backoffMs = (CRASH_BACKOFF_BASE_MS * (1L shl (crashCount - 1).coerceAtMost(10)))
                 .coerceAtMost(CRASH_BACKOFF_MAX_MS)
             Log.i(TAG, "Backing off ${backoffMs}ms before Kokoro retry (crash #$crashCount)")
-            statusMessage = "Piper active — retrying Kokoro in ${backoffMs / 1000}s (crash #$crashCount)…"
-            syncStatus()
+            if (piperOk) {
+                statusMessage = "Piper active — retrying Kokoro in ${backoffMs / 1000}s…"
+                syncStatus()
+            }
 
             Thread {
                 try {

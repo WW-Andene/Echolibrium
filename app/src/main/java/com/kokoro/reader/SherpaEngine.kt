@@ -511,37 +511,35 @@ object SherpaEngine {
             piperTts = null
             piperLoadedVoiceId = null
 
+            // Both bundled and downloaded voices use file-based constructor.
+            // AssetManager-based constructor crashes on some devices (Xiaomi/MediaTek).
+            val tokensFile = ensureTokensFile(ctx)
+            val espeakDir = ensureEspeakData(ctx)
+
+            val modelFilePath: String
             if (isBundled) {
-                // Load from APK assets
-                val resolvedPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
-                Log.d(TAG, "Loading Piper voice from assets: $voiceId")
-
-                val vitsConfig = OfflineTtsVitsModelConfig(
-                    model   = resolvedPath,
-                    tokens  = "$PIPER_DIR/tokens.txt",
-                    dataDir = "$KOKORO_DIR/espeak-ng-data"
-                )
-                val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
-                )
-                piperTts = OfflineTts(assetManager = ctx.assets, config = OfflineTtsConfig(model = modelConfig))
+                // Extract bundled Piper model from assets to filesystem
+                val extractedModel = extractBundledPiperModel(ctx, voiceId)
+                if (extractedModel == null) {
+                    Log.e(TAG, "Failed to extract bundled Piper voice: $voiceId")
+                    return false
+                }
+                modelFilePath = extractedModel.absolutePath
+                Log.d(TAG, "Loading Piper voice from extracted file: $voiceId")
             } else {
-                // Load from downloaded file path
-                // tokens.txt is still in assets — copy to filesDir if not already there
-                val tokensFile = ensureTokensFile(ctx)
-                val espeakDir = ensureEspeakData(ctx)
-                Log.d(TAG, "Loading Piper voice from file: $voiceId (${downloadedFile.length() / 1024 / 1024}MB)")
-
-                val vitsConfig = OfflineTtsVitsModelConfig(
-                    model   = downloadedFile.absolutePath,
-                    tokens  = tokensFile.absolutePath,
-                    dataDir = espeakDir.absolutePath
-                )
-                val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
-                )
-                piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
+                modelFilePath = downloadedFile.absolutePath
+                Log.d(TAG, "Loading Piper voice from download: $voiceId (${downloadedFile.length() / 1024 / 1024}MB)")
             }
+
+            val vitsConfig = OfflineTtsVitsModelConfig(
+                model   = modelFilePath,
+                tokens  = tokensFile.absolutePath,
+                dataDir = espeakDir.absolutePath
+            )
+            val modelConfig = OfflineTtsModelConfig(
+                vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
+            )
+            piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
 
             piperLoadedVoiceId = voiceId
             Log.d(TAG, "Piper voice loaded: $voiceId (${if (isBundled) "bundled" else "downloaded"})")
@@ -550,6 +548,36 @@ object SherpaEngine {
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Piper voice $voiceId", e)
             return false
+        }
+    }
+
+    /**
+     * Extract a bundled Piper model from APK assets to the filesystem.
+     * Returns the extracted .onnx/.ort file, or null on failure.
+     * Skips extraction if the file already exists (idempotent).
+     */
+    private fun extractBundledPiperModel(ctx: Context, voiceId: String): File? {
+        val destDir = File(ctx.filesDir, "piper-models")
+        destDir.mkdirs()
+
+        val assetPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
+        val fileName = assetPath.substringAfterLast("/")
+        val destFile = File(destDir, fileName)
+
+        if (destFile.exists() && destFile.length() > 0) {
+            return destFile
+        }
+
+        return try {
+            Log.i(TAG, "Extracting bundled Piper model: $fileName")
+            ctx.assets.open(assetPath).use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.i(TAG, "Extracted $fileName: ${destFile.length() / 1024 / 1024}MB")
+            destFile
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to extract bundled Piper model: $voiceId", e)
+            null
         }
     }
 

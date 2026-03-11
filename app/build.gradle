@@ -55,9 +55,10 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
-    // Must NOT compress model files — sherpa-onnx loads them directly via AssetManager
-    // "ort" = pre-optimized bundled models, "onnx" = fallback if ORT conversion fails
-    aaptOptions { noCompress "onnx", "ort", "bin" }
+    // Do not compress model files or espeak-ng data — they are extracted to filesystem
+    // at first run. Compressed assets use more memory during extraction and are slower
+    // to read via AssetManager.open(). "txt" covers tokens.txt and espeak dict files.
+    aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
 }
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'

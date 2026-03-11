@@ -150,10 +150,10 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════════"
-PIPER_ONNX=$(ls -1 "$PIPER_DIR"/*.onnx 2>/dev/null | wc -l)
-PIPER_ORT=$(ls -1 "$PIPER_DIR"/*.ort 2>/dev/null | wc -l)
+PIPER_ONNX=$(find "$PIPER_DIR" -maxdepth 1 -name '*.onnx' 2>/dev/null | wc -l)
+PIPER_ORT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 PIPER_COUNT=$((PIPER_ONNX + PIPER_ORT))
-ORT_COUNT=$(ls -1 "$KOKORO_DIR"/*.ort "$PIPER_DIR"/*.ort 2>/dev/null | wc -l)
+ORT_COUNT=$(find "$KOKORO_DIR" "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
 echo "  Kokoro: $(du -sh "$KOKORO_DIR" 2>/dev/null | cut -f1 || echo 'MISSING')"
 echo "  Piper:  ${PIPER_COUNT} bundled voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"

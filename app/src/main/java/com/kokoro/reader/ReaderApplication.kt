@@ -53,14 +53,16 @@ class ReaderApplication : Application() {
         detectPreviousCrash()
         markSessionActive()
 
-        // TTS engine warm-up is NOT started here.
-        // ONNX Runtime's native init corrupts HWUI's CommonPool mutexes on
-        // Xiaomi/MediaTek when both initialize concurrently, causing:
-        //   FORTIFY: pthread_mutex_lock called on a destroyed mutex
-        //   Fatal signal 6 (SIGABRT) in hwuiTask threads
-        // Warm-up is triggered from MainActivity after the first frame renders
-        // (see MainActivity.scheduleEngineWarmUp), and also from
-        // NotificationReaderService.onCreate() as a fallback.
+        // Start loading the TTS engine immediately.
+        // Hardware acceleration is disabled (AndroidManifest) to prevent ONNX
+        // Runtime's native init from corrupting HWUI's CommonPool mutexes on
+        // Xiaomi/MediaTek devices (SIGABRT in hwuiTask threads).
+        try {
+            SherpaEngine.warmUp(this)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Engine warm-up failed — native library may be missing", e)
+            storeCrashForReport(Thread.currentThread(), e)
+        }
     }
 
     override fun onTrimMemory(level: Int) {

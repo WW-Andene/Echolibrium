@@ -174,7 +174,7 @@ object SherpaEngine {
 
             val modelConfig = OfflineTtsModelConfig(
                 kokoro     = kokoroConfig,
-                numThreads = 2,
+                numThreads = 1,
                 debug      = false,
                 provider   = "cpu"
             )
@@ -330,7 +330,7 @@ object SherpaEngine {
                     dataDir = "$KOKORO_DIR/espeak-ng-data"
                 )
                 val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
+                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
                 )
                 piperTts = OfflineTts(assetManager = ctx.assets, config = OfflineTtsConfig(model = modelConfig))
             } else {
@@ -346,7 +346,7 @@ object SherpaEngine {
                     dataDir = espeakDir.absolutePath
                 )
                 val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
+                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
                 )
                 piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
             }

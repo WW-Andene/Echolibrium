@@ -57,12 +57,14 @@ object VoiceCommandListener {
                 sr.setRecognitionListener(CommandRecognitionListener(ctx.applicationContext))
                 recognizer = sr
                 onStatusChanged?.invoke(true)
+                syncVoiceCmdStatus(ctx)
                 startListeningInternal()
                 Log.d(TAG, "Voice command listener started (wake word: '$wakeWord')")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start voice command listener", e)
                 isListening = false
                 onStatusChanged?.invoke(false)
+                syncVoiceCmdStatus(ctx)
             }
         }
     }
@@ -80,6 +82,19 @@ object VoiceCommandListener {
                 Log.e(TAG, "Error stopping voice command listener", e)
             }
         }
+    }
+
+    /** Syncs voice command listener status to the cross-process status file. */
+    private fun syncVoiceCmdStatus(ctx: Context) {
+        TtsBridge.writeStatus(
+            ctx = ctx,
+            ready = SherpaEngine.isReady,
+            status = SherpaEngine.statusMessage,
+            error = SherpaEngine.errorMessage,
+            alive = true,
+            voiceCmdListening = isListening,
+            voiceCmdWakeWord = wakeWord
+        )
     }
 
     /** Reload the wake word from the active profile name */

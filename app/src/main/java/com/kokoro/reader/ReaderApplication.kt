@@ -53,15 +53,16 @@ class ReaderApplication : Application() {
         detectPreviousCrash()
         markSessionActive()
 
-        // Start loading the TTS engine immediately.
-        // Hardware acceleration is disabled (AndroidManifest) to prevent ONNX
-        // Runtime's native init from corrupting HWUI's CommonPool mutexes on
-        // Xiaomi/MediaTek devices (SIGABRT in hwuiTask threads).
-        try {
-            SherpaEngine.warmUp(this)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Engine warm-up failed — native library may be missing", e)
-            storeCrashForReport(Thread.currentThread(), e)
+        // Only warm up the TTS engine in the :tts process.
+        // The main process has HWUI (for the Activity UI), and ONNX Runtime's
+        // native init corrupts HWUI's CommonPool mutexes on Xiaomi/MediaTek
+        // devices. The :tts process has no Activity/Views/HWUI, so it's safe.
+        if (!isMainProcess()) {
+            try {
+                SherpaEngine.warmUp(this)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Engine warm-up failed — native library may be missing", e)
+            }
         }
     }
 
@@ -72,6 +73,10 @@ class ReaderApplication : Application() {
             markSessionClean()
         }
     }
+
+    /** Returns true if running in the main app process (not :tts). */
+    private fun isMainProcess(): Boolean =
+        getProcessName() == packageName
 
     // ── Session crash detection ──────────────────────────────────────────────
 

@@ -78,15 +78,22 @@ class NotificationReaderService : NotificationListenerService() {
             currentMood = MoodState.load(prefs)
             startForegroundNotification()
 
-            // Eager engine init — now safe with timeout + asset pre-flight checks.
-            // Updates the foreground notification to show loading progress,
-            // then switches to "Listening" when ready.
+            // Write "alive" status for the UI process to read
+            TtsBridge.writeStatus(this, ready = false, status = "starting", error = null, alive = true)
+
+            // Eager engine init — safe in the :tts process (no HWUI to corrupt).
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {
                 updateForegroundText("Listening for notifications")
                 Log.d(TAG, "Engine ready — service fully operational")
             }
             SherpaEngine.warmUp(this)
+
+            // Start voice commands if enabled (must happen in :tts process)
+            val voiceCmdEnabled = prefs.getBoolean("voice_commands_enabled", false)
+            if (voiceCmdEnabled) {
+                VoiceCommandListener.start(this.applicationContext)
+            }
 
             Log.d(TAG, "Service created, engine warming up in background")
         } catch (e: Throwable) {
@@ -101,6 +108,8 @@ class NotificationReaderService : NotificationListenerService() {
             instance = null
             VoiceCommandListener.stop()
             AudioPipeline.shutdown()
+            // Clear alive status for the UI process
+            TtsBridge.writeStatus(this, ready = false, status = "stopped", error = null, alive = false)
         } catch (e: Throwable) {
             Log.e(TAG, "Error during service destruction", e)
         }

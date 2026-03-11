@@ -109,35 +109,20 @@ class HomeFragment : Fragment() {
             prefs.edit().putBoolean("voice_commands_enabled", enabled).apply()
             val ctx = context ?: return@setOnCheckedChangeListener
             if (enabled) {
-                // Check RECORD_AUDIO permission
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {
                     requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
                 } else {
-                    VoiceCommandListener.start(ctx.applicationContext)
+                    TtsBridge.startVoiceCommands(ctx)
                 }
             } else {
-                VoiceCommandListener.stop()
+                TtsBridge.stopVoiceCommands(ctx)
             }
             updateVoiceCommandStatus(voiceCmdStatus)
         }
 
-        VoiceCommandListener.onStatusChanged = { _ ->
-            activity?.runOnUiThread {
-                if (isAdded) view?.findViewById<TextView>(R.id.voice_command_status)?.let {
-                    updateVoiceCommandStatus(it)
-                }
-            }
-        }
-
-        // Start voice commands if enabled and permission granted
-        val voiceCmdCtx = context
-        if (voiceCmdCtx != null &&
-            prefs.getBoolean("voice_commands_enabled", false) &&
-            ContextCompat.checkSelfPermission(voiceCmdCtx, Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED) {
-            VoiceCommandListener.start(voiceCmdCtx.applicationContext)
-        }
+        // Voice commands are started by the :tts process (NotificationReaderService)
+        // based on the preference. No direct VoiceCommandListener access from UI.
 
         val modes = arrayOf("Full (App + Title + Text)", "App + Title", "App name only", "Text only")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only")
@@ -177,7 +162,7 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
 
-        btnStop.setOnClickListener { NotificationReaderService.instance?.stopSpeaking() }
+        btnStop.setOnClickListener { context?.let { TtsBridge.stop(it) } }
     }
 
     override fun onResume() {
@@ -204,16 +189,18 @@ class HomeFragment : Fragment() {
     /** Polls engine status every second while loading, stops when ready or errored */
     private fun startEngineStatusRefresh() {
         stopEngineStatusRefresh()
-        if (SherpaEngine.isReady || SherpaEngine.errorMessage != null) return
+        val ctx = context ?: return
+        val status = TtsBridge.readStatus(ctx)
+        if (status.ready || status.error != null) return
         engineRefreshRunnable = object : Runnable {
             override fun run() {
                 if (!isAdded) return
+                val c = context ?: return
                 view?.findViewById<TextView>(R.id.engine_status_text)?.let { updateEngineStatus(it) }
-                // Keep refreshing until engine is ready or failed
-                if (!SherpaEngine.isReady && SherpaEngine.errorMessage == null) {
+                val s = TtsBridge.readStatus(c)
+                if (!s.ready && s.error == null) {
                     refreshHandler.postDelayed(this, 1000)
                 } else {
-                    // Final refresh of all status fields
                     refreshStatus()
                 }
             }
@@ -246,7 +233,6 @@ class HomeFragment : Fragment() {
     override fun onDestroyView() {
         try {
             stopEngineStatusRefresh()
-            VoiceCommandListener.onStatusChanged = null
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "Error in onDestroyView", e)
         }
@@ -260,7 +246,7 @@ class HomeFragment : Fragment() {
             if (requestCode == AUDIO_PERMISSION_CODE) {
                 val ctx = context ?: return
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    VoiceCommandListener.start(ctx.applicationContext)
+                    TtsBridge.startVoiceCommands(ctx)
                 } else {
                     prefs.edit().putBoolean("voice_commands_enabled", false).apply()
                     view?.findViewById<SwitchCompat>(R.id.switch_voice_commands)?.isChecked = false
@@ -281,8 +267,8 @@ class HomeFragment : Fragment() {
         tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
         btn.text = if (granted) "Notification Settings" else "Grant Permission"
 
-        // Show service instance and foreground status
-        val serviceAlive = NotificationReaderService.instance != null
+        // Check service alive status via cross-process status file
+        val serviceAlive = TtsBridge.readStatus(ctx).alive
         serviceStatusTv.text = when {
             granted && serviceAlive -> "⬤ Service running in background"
             granted -> "◯ Service starting…"
@@ -297,18 +283,16 @@ class HomeFragment : Fragment() {
 
     private fun updateEngineStatus(tv: TextView) {
         val ctx = context ?: return
-        val status = SherpaEngine.statusMessage
-        val error = SherpaEngine.errorMessage
-        val ready = SherpaEngine.isReady
+        val s = TtsBridge.readStatus(ctx)
 
         tv.text = when {
-            ready -> "⬤ TTS engine: ready"
-            error != null -> "✗ TTS engine: $error"
-            else -> "◯ TTS engine: $status"
+            s.ready -> "⬤ TTS engine: ready"
+            s.error != null -> "✗ TTS engine: ${s.error}"
+            else -> "◯ TTS engine: ${s.status}"
         }
         tv.setTextColor(ctx.getColor(when {
-            ready -> R.color.status_active
-            error != null -> R.color.status_error
+            s.ready -> R.color.status_active
+            s.error != null -> R.color.status_error
             else -> R.color.status_warning
         }))
     }
@@ -337,13 +321,14 @@ class HomeFragment : Fragment() {
         val enabled = prefs.getBoolean("voice_commands_enabled", false)
         val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
-        val listening = VoiceCommandListener.isListening
+        val s = TtsBridge.readStatus(ctx)
+        val listening = s.voiceCmdListening
 
         tv.text = when {
             !enabled -> "Voice commands: off"
             !hasPerm -> "Voice commands: microphone permission needed"
             listening -> {
-                val wake = VoiceCommandListener.wakeWord
+                val wake = s.voiceCmdWakeWord
                 if (wake.isNotBlank())
                     "🎤 Say \"$wake\" + command: repeat · how long ago? · stop · what time?"
                 else

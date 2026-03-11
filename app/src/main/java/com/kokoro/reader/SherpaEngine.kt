@@ -42,6 +42,9 @@ object SherpaEngine {
     private var piperTts: OfflineTts? = null
     private var piperLoadedVoiceId: String? = null
 
+    /** Context for writing cross-process status file. Set by warmUp(). */
+    @Volatile private var statusContext: Context? = null
+
     var lastSampleRate: Int = 22050
         private set
 
@@ -55,6 +58,20 @@ object SherpaEngine {
     /** Human-readable status of what the engine is currently doing */
     @Volatile var statusMessage: String = "idle"
         private set
+
+    /** Writes current engine status to the cross-process status file. */
+    private fun syncStatus() {
+        val ctx = statusContext ?: return
+        TtsBridge.writeStatus(
+            ctx = ctx,
+            ready = isReady,
+            status = statusMessage,
+            error = errorMessage,
+            alive = true,
+            voiceCmdListening = VoiceCommandListener.isListening,
+            voiceCmdWakeWord = VoiceCommandListener.wakeWord
+        )
+    }
 
     /** Timestamp (ms) when initialization started, 0 if not initializing */
     private val initStartTime = AtomicLong(0)
@@ -92,6 +109,7 @@ object SherpaEngine {
      * Guarded against duplicate concurrent calls.
      */
     fun warmUp(ctx: Context) {
+        statusContext = ctx.applicationContext
         if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
         synchronized(warmUpLock) {
             if (isWarmingUp) return
@@ -160,6 +178,7 @@ object SherpaEngine {
                 statusMessage = "error: model files missing from APK"
                 errorMessage = msg
                 isReady = false
+                syncStatus()
                 return false
             }
 
@@ -174,7 +193,7 @@ object SherpaEngine {
 
             val modelConfig = OfflineTtsModelConfig(
                 kokoro     = kokoroConfig,
-                numThreads = 1,
+                numThreads = 2,
                 debug      = false,
                 provider   = "cpu"
             )
@@ -214,6 +233,7 @@ object SherpaEngine {
                 errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
                     "The model may be too large for this device's memory."
                 isReady = false
+                syncStatus()
                 // Interrupt the hung thread (best effort — native code may ignore this)
                 try { initThread.interrupt() } catch (_: Throwable) {}
                 return false
@@ -235,6 +255,7 @@ object SherpaEngine {
             isReady = true
             errorMessage = null
             statusMessage = "ready"
+            syncStatus()
             Log.i(TAG, "│ Kokoro engine ready in ${elapsed}ms")
             Log.i(TAG, "└── Kokoro init SUCCESS ───────────────────────")
             true
@@ -247,6 +268,7 @@ object SherpaEngine {
             isReady = false
             errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             statusMessage = "error: ${errorMessage}"
+            syncStatus()
             false
         }
     }
@@ -330,7 +352,7 @@ object SherpaEngine {
                     dataDir = "$KOKORO_DIR/espeak-ng-data"
                 )
                 val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
+                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
                 )
                 piperTts = OfflineTts(assetManager = ctx.assets, config = OfflineTtsConfig(model = modelConfig))
             } else {
@@ -346,7 +368,7 @@ object SherpaEngine {
                     dataDir = espeakDir.absolutePath
                 )
                 val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
+                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
                 )
                 piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
             }
@@ -436,6 +458,7 @@ object SherpaEngine {
         piperLoadedVoiceId = null
         isReady = false
         statusMessage = "released"
+        syncStatus()
         Log.d(TAG, "SherpaEngine released (Kokoro + Piper)")
     }
 }

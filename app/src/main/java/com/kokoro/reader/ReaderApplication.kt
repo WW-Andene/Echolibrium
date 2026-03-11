@@ -37,6 +37,11 @@ class ReaderApplication : Application() {
         super.onCreate()
         resolvedLogDir = resolveLogDirectory()
         installUncaughtExceptionHandler()
+
+        // Start loading the TTS engine immediately on app launch.
+        // By the time the user grants notification permission and the service
+        // starts, the engine will already be warm and ready — zero delay.
+        SherpaEngine.warmUp(this)
     }
 
     /**

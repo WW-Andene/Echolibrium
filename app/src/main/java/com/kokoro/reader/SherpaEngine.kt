@@ -81,7 +81,7 @@ object SherpaEngine {
     // ── Device-adaptive engine configuration ────────────────────────────────────
 
     /** Detected SoC vendor — cached at first access. */
-    private enum class SocVendor { MEDIATEK, QUALCOMM, OTHER }
+    enum class SocVendor { MEDIATEK, QUALCOMM, OTHER }
 
     private val socVendor: SocVendor by lazy {
         val vendor = detectSocVendor()

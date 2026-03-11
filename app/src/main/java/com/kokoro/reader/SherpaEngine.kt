@@ -175,6 +175,13 @@ object SherpaEngine {
             return
         }
 
+        // ── Set init_in_progress BEFORE any sherpa-onnx code runs ────────
+        // The native library loads when sherpa-onnx config classes are first
+        // constructed (JNI System.loadLibrary). If that crashes (SIGSEGV),
+        // this flag must already be persisted so the next startup detects it.
+        // Using commit() (synchronous) to ensure it's flushed to disk.
+        initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+
         Thread {
             try {
                 if (initializeKokoro(ctx)) {
@@ -184,7 +191,14 @@ object SherpaEngine {
                 Log.e(TAG, "Warm-up failed", e)
                 errorMessage = e.message ?: "Unknown error during warm-up"
                 statusMessage = "error: ${errorMessage}"
+                syncStatus()
             } finally {
+                // Clear init_in_progress — if we reached this point, the process survived.
+                // Only a SIGSEGV (which kills the process) will leave the flag set.
+                try {
+                    ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+                        .edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+                } catch (_: Throwable) {}
                 synchronized(warmUpLock) { isWarmingUp = false }
             }
         }.apply { name = "SherpaEngine-warmup"; isDaemon = true; start() }
@@ -283,7 +297,7 @@ object SherpaEngine {
 
             val modelConfig = OfflineTtsModelConfig(
                 kokoro     = kokoroConfig,
-                numThreads = 2,
+                numThreads = 1,  // Single thread — avoids thread pool crashes on Xiaomi/MediaTek
                 debug      = false,
                 provider   = "cpu"
             )
@@ -297,10 +311,9 @@ object SherpaEngine {
             Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
             initStartTime.set(System.currentTimeMillis())
 
-            // Mark init as in-progress BEFORE calling native code.
-            // If the process dies (SIGSEGV), this flag stays set → detected on next startup.
-            val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
-            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+            // init_in_progress flag is already set by warmUp() before this thread started.
+            // This ensures the flag is persisted even if the native library load (triggered
+            // by config class constructors above) crashes the process.
 
             // Run the native constructor on a separate thread with a timeout.
             // OfflineTts() can SIGSEGV or hang indefinitely on some devices.
@@ -481,7 +494,7 @@ object SherpaEngine {
                     dataDir = "$KOKORO_DIR/espeak-ng-data"
                 )
                 val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
+                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
                 )
                 piperTts = OfflineTts(assetManager = ctx.assets, config = OfflineTtsConfig(model = modelConfig))
             } else {
@@ -497,7 +510,7 @@ object SherpaEngine {
                     dataDir = espeakDir.absolutePath
                 )
                 val modelConfig = OfflineTtsModelConfig(
-                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
+                    vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
                 )
                 piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
             }

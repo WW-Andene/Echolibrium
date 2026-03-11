@@ -92,27 +92,20 @@ class NotificationReaderService : NotificationListenerService() {
             currentMood = MoodState.load(prefs)
             startForegroundNotification()
 
+            // Write "alive" immediately so the UI knows the service is running,
+            // even if warmUp() detects a crash loop and never starts the engine.
+            TtsBridge.writeStatus(this, ready = false, status = "starting", error = null, alive = true)
+
             // Eager engine init — safe in the :tts process (no HWUI to corrupt).
-            // Write "alive" status AFTER warmUp so the crash-loop breaker's error
-            // status (if any) doesn't get overwritten by a stale "starting" message.
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {
                 updateForegroundText("Listening for notifications")
                 Log.d(TAG, "Engine ready — service fully operational")
             }
             SherpaEngine.warmUp(this)
-
-            // Write alive status — warmUp() may have already written an error status
-            // via syncStatus(), so only write "starting" if there's no error yet.
-            if (SherpaEngine.errorMessage == null) {
-                TtsBridge.writeStatus(this, ready = false, status = "starting", error = null, alive = true)
-            } else {
-                // Engine has a persistent error (crash loop, etc.) — make sure alive=true
-                // is set so the UI knows the service is running even though the engine failed.
-                TtsBridge.writeStatus(this, ready = false,
-                    status = SherpaEngine.statusMessage, error = SherpaEngine.errorMessage,
-                    alive = true)
-            }
+            // warmUp() calls syncStatus() which overwrites the status file with the
+            // actual engine state (loading, error, etc.). The "starting" above is just
+            // a brief placeholder until warmUp's syncStatus runs.
 
             // Start voice commands if enabled (must happen in :tts process)
             val voiceCmdEnabled = prefs.getBoolean("voice_commands_enabled", false)

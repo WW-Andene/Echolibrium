@@ -7,16 +7,84 @@
 
 ## Session: March 2026 (claude/review-kyokan-docs-0kSrs)
 
-Focus: Defense-in-depth for ORT version mismatch — runtime fallback from `.ort` to `.onnx`.
+Focus: HyperOS compatibility, OEM background kill prevention, self-healing watchdog, Android system TTS fallback, auto-reporting, and SIGSEGV-surviving format fallback.
+
+### Cleanup: Remove Shizuku dependency
+**Commit:** `2672fbb`
+**Problem:** Shizuku required users to install a separate app for shell-level access. The hidden API binder reflection also broke on HyperOS (changed signatures).
+**Fix:** Removed Shizuku entirely. Everything it did has standard Android equivalents already in `OemProtection.kt` — battery exemption dialog, OEM AutoStart intents, foreground service. Better UX: one-time system dialog vs requiring a separate app.
+**Deleted:** `XiaomiProtection.kt`, all Shizuku dependencies/proguard/manifest entries.
+
+### Issue 14: Revert speculative packaging workarounds
+**Commit:** `9166a10`
+**Symptom:** `useLegacyPackaging=true` and `extractNativeLibs=true` were added to fix SIGSEGV but were never the actual fix.
+**Root cause:** Analysis of Sherpa_base*.zip (standalone sherpa-onnx APK that works on the same Xiaomi 13T / Dimensity 8200 / HyperOS 2.0) showed it uses `extractNativeLibs=false` (mmap from APK) with no issues. The real crash causes were ORT version mismatch and HyperOS killing the process.
+**Fix:** Reverted to `extractNativeLibs=false` + `useLegacyPackaging=false`. Raised `NATIVE_BROKEN_THRESHOLD` from 5 to 8 (only confirmed native crashes counted now). Reduced crash reset window from 5min to 2min. Reduced backoff max from 2.5min to 1min. Battery exemption now requested in `:tts` process before model loading.
+
+### Issue 13: .ort → .onnx fallback doesn't survive SIGSEGV
+**Commit:** `78cec15`
+**Symptom:** Engine crashes 5+ times then gives up, even though `.onnx` fallback files exist. The format fallback only worked for timeouts and Java exceptions.
+**Root cause:** When `.ort` loading caused SIGSEGV, the process died with no memory of what format was being loaded. On restart, it tried `.ort` again → crashed again → repeated until `NATIVE_BROKEN_THRESHOLD` → gave up. This was likely the root cause of the 5-crash loop: CI-generated `.ort` files incompatible with the AAR's bundled ORT 1.17.1.
+**Fix:** Track model format in SharedPreferences (`KEY_INIT_FORMAT`) before loading. On restart after `.ort` crash, set `KEY_SKIP_ORT=true` so next attempt goes straight to `.onnx`. `forceRetry()` resets the skip flag.
+**Lesson:** Any fallback mechanism must persist its state to disk to survive process death. In-memory state is useless against SIGSEGV.
+
+### Issue 12: Crash counter falsely counts HyperOS process kills
+**Commit:** `7397b0e`
+**Symptom:** "TTS engine crashed 5 times" error on Xiaomi HyperOS, even though the native code wasn't actually crashing.
+**Root cause:** HyperOS aggressively kills the `:tts` process during model loading (battery management). The `init_in_progress` flag is still `true` when this happens, so the restart path treats it as a SIGSEGV and increments the crash counter. After 5 OS kills, the app gives up.
+**Fix:** Use Android 11+ `ApplicationExitInfo` to check the actual exit reason. Only `REASON_CRASH_NATIVE`, `REASON_CRASH`, and `REASON_ANR` increment the crash counter. OS kills (`LOW_MEMORY`, `EXCESSIVE_RESOURCE_USAGE`, `OTHER`) don't.
+**Lesson:** Not all process deaths are native crashes. On aggressive OEMs, the OS kills processes for resource management — this must not be counted against the app.
+
+### Issue 11: HyperOS breaks MIUI detection
+**Commit:** `6075898`
+**Symptom:** Xiaomi-specific workarounds (WakeLock, battery exemption, thread limits) silently skipped on HyperOS 2.0 devices.
+**Root cause:** `isMIUI` checked `ro.miui.ui.version.name`, which doesn't exist on HyperOS. All Xiaomi workarounds gated behind this check were silently disabled.
+**Fix:** Renamed `isMIUI` → `isXiaomiRom`. Added HyperOS detection via `ro.mi.os.version.incremental`. Kept MIUI check as fallback. Updated `DeviceProfile`, `toString()`, and all debug logs.
+
+### Enhancement: Android system TTS as ultimate fallback
+**Commit:** `8f03d65`
+**Changes:**
+- When native sherpa-onnx crashes 5+ times (truly broken), instead of giving up, try Android's built-in TTS (Google TTS or whatever is installed) as a third-tier fallback
+- `synthesizeToFile()` → read WAV → return PCM through normal pipeline. DSP effects still work
+- Synthesis cascade: Kokoro → Piper → Android system TTS → error
+- Error UI now shows device diagnostics (device, SoC, Android version, last exit reason) for easy bug reporting without ADB
+- Fixed `writeInitLog`: was silently returning when `resolvedLogDir` was null in `:tts` process — now falls back to `ctx.filesDir`
+
+### Enhancement: Automatic GitHub issue reporting + remote config
+**Commit:** `7c0a80e`
+**New file:** `GitHubReporter.kt`
+**Changes:**
+- After 30s with a TTS error, auto-creates a GitHub Issue with full diagnostics: device info, SoC, Android version, init log, process log, crash exit reason
+- Token via `local.properties`: `github.issues.token=ghp_xxx`
+- Rate-limited: same error only reported once per hour per install
+- Remote config: fetches `remote-config.json` from repo every 6h. Supports `force_retry` (reset crash counter remotely), `message` (show text to user), `min_version` (suggest update)
+
+### Enhancement: All-OEM background kill prevention
+**Commits:** `7c0a80e`, `95ac270`
+**New file:** `OemProtection.kt`
+**Changes:**
+- Comprehensive OEM AutoStart intent database covering all major Android manufacturers: Xiaomi/Redmi/POCO, Samsung, Huawei/Honor, OnePlus, Oppo/Realme, Vivo/iQOO, Meizu, Asus, Lenovo, Nokia, Sony, Letv, Tecno, Infinix, HTC
+- Three-layer protection: standard battery exemption → OEM AutoStart intent → user guidance
+- `HomeFragment.promptOemProtections()` runs on ALL devices, not just Xiaomi
+
+### Enhancement: TTS process watchdog
+**Commit:** `0aaea0a`
+**Changes:**
+- Self-healing watchdog in `ReaderApplication` (main process) checks every 15s if `:tts` process is alive using existing staleness detection
+- When HyperOS/MIUI kills the process, watchdog calls `requestRebind()` to restart it automatically — no user action needed
 
 ### Enhancement: Runtime .ort → .onnx format fallback
-**Commit:** (current)
+**Commit:** `f5eb408`
 **Problem:** Issue 10 pinned the CI ORT version to match the AAR, but this is fragile. If the versions ever drift again, or if a device has ORT incompatibilities, the engine fails with no recovery path because `optimize-models.py` deleted the original `.onnx` files.
 **Fix (3 parts):**
 1. **Keep `.onnx` as fallback:** `optimize-models.py` no longer deletes original `.onnx` files after ORT conversion. Both formats ship in the APK.
 2. **Runtime format fallback:** SherpaEngine's escalation ladder now wraps in an outer model-format loop. If all configs fail with `.ort`, the engine retries the entire ladder with `.onnx`. Extraction now extracts both formats to filesystem. On success with `.onnx` fallback, telemetry records `"ONNX (fallback from ORT)"`.
 3. **ORT version tracking:** `optimize-models.py` writes `ort_version.txt` into assets with the build-time ORT version. SherpaEngine logs this at init for diagnostics.
 **Lesson:** Never delete the original format after optimization. Ship both and let the runtime fall back gracefully. Pin versions in CI AND have a runtime safety net.
+
+### Shizuku integration arc (added then removed)
+**Commits:** `286c122` → `aad2d23` → `7397b0e` → `57719e7` → `2672fbb`
+**Summary:** Attempted to use Shizuku for shell-level auto-configuration (Doze whitelist, appops, standby bucket). Hit multiple issues: deprecated API (`newProcess`), HyperOS changed hidden binder signatures, reflection needed for private API 13.1.5 methods. Ultimately removed entirely — standard Android APIs (battery exemption dialog + OEM intents) cover all the same use cases without requiring users to install a separate app.
 
 ---
 
@@ -237,12 +305,20 @@ This was the original critical bug. It took **8 sequential fix attempts** to ful
 
 ## Recurring Themes
 
-1. **Xiaomi/MIUI is the #1 source of bugs.** Modified ART runtime, aggressive process killing, CPU throttling, ignored manifest flags. Every fix needs Xiaomi testing.
+1. **Xiaomi/MIUI/HyperOS is the #1 source of bugs.** Modified ART runtime, aggressive process killing, CPU throttling, ignored manifest flags, changed hidden API signatures. HyperOS 2.0 dropped the MIUI system property entirely — detection code must check both. Every fix needs Xiaomi testing.
 
-2. **Native SIGSEGV is not catchable in Java.** The only detection mechanism is the `init_in_progress` SharedPreferences flag. If it's not set before native code runs, the crash is invisible.
+2. **Native SIGSEGV is not catchable in Java.** The only detection mechanism is the `init_in_progress` SharedPreferences flag. If it's not set before native code runs, the crash is invisible. Use `ApplicationExitInfo` (API 30+) to distinguish real native crashes from OS-initiated kills.
 
-3. **Both Kokoro AND Piper use the same native library.** If `libonnxruntime.so` or `libsherpa-onnx-jni.so` fails to load, ALL TTS is broken. The crash recovery system must account for this.
+3. **Both Kokoro AND Piper use the same native library.** If `libonnxruntime.so` or `libsherpa-onnx-jni.so` fails to load, ALL TTS is broken. The crash recovery system must account for this. Android system TTS (third fallback) bypasses native code entirely.
 
-4. **Cross-process IPC is fragile.** The status file can contain stale data if the :tts process crashes. The UI should always consider the timestamp.
+4. **Cross-process IPC is fragile.** The status file can contain stale data if the :tts process crashes. The UI should always consider the timestamp. A watchdog in the main process auto-restarts the TTS process via `requestRebind()`.
 
 5. **Config constructors trigger native library loading.** Even creating `OfflineTtsVitsModelConfig()` in Kotlin can trigger `System.loadLibrary` → SIGSEGV. The `init_in_progress` flag must be set before ANY sherpa-onnx class is instantiated.
+
+6. **Fallback state must survive process death.** In-memory fallback logic (like .ort → .onnx format switching) is useless against SIGSEGV because the process dies. Persist fallback decisions to SharedPreferences before attempting the operation.
+
+7. **Not all process deaths are crashes.** On Xiaomi/HyperOS, the OS kills background processes for battery management. The crash counter must use `ApplicationExitInfo` to filter these — otherwise the app falsely reaches the broken threshold and gives up.
+
+8. **Don't require external apps.** Shizuku was technically powerful but requiring users to install a separate app is bad UX. Standard Android APIs (battery exemption dialog, OEM AutoStart intents) cover all critical use cases.
+
+9. **All OEMs kill background processes.** It's not just Xiaomi — Samsung, Huawei, OnePlus, Oppo, Vivo, and others all have proprietary background kill systems. `OemProtection.kt` maintains AutoStart intents for all major OEMs.

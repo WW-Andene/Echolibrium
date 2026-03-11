@@ -1,7 +1,6 @@
 # Kyōkan Architecture Guide
 
 > Quick-reference for any Claude session working on this codebase.
-> For the full 1000-line deep-dive, see `ARCHITECTURE.md`.
 
 ---
 
@@ -30,10 +29,14 @@ This is the most important thing to understand. The app runs in **two separate O
 │  HomeFragment                   │    │  TtsCommandReceiver                    │
 │  ProfilesFragment               │    │  SherpaEngine                          │
 │  AppsFragment / RulesFragment   │    │  AudioPipeline                         │
-│  ReaderApplication (UI only)    │    │  VoiceCommandListener                  │
-│                                 │    │  AudioDsp                              │
+│  ReaderApplication              │    │  VoiceCommandListener                  │
+│    └─ TTS process watchdog      │    │  AudioDsp                              │
+│  OemProtection                  │    │                                        │
+│  GitHubReporter                 │    │                                        │
+│                                 │    │                                        │
 │  Reads tts_status.json ◄────────┼────┼── Writes tts_status.json               │
 │  Sends broadcasts ──────────────┼────┼──► TtsCommandReceiver receives          │
+│  Watchdog checks staleness ─────┼────┼── requestRebind() restarts if killed    │
 └─────────────────────────────────┘    └──────────────────────────────────────┘
 ```
 
@@ -53,7 +56,7 @@ All source is in `app/src/main/java/com/kokoro/reader/`.
 
 | File | Role |
 |---|---|
-| `SherpaEngine.kt` | **Heart of the app.** Manages Kokoro (311MB) and Piper (~60MB) model loading, crash recovery, device profiling, config memory, synthesis. ~1600 lines. |
+| `SherpaEngine.kt` | **Heart of the app.** Manages Kokoro (311MB), Piper (~60MB), and Android system TTS fallback. Crash recovery, device profiling, config memory, SIGSEGV-surviving format fallback, `ApplicationExitInfo`-based crash classification. ~2000 lines. |
 | `AudioPipeline.kt` | Single-threaded FIFO queue. Receives notification items, calls SherpaEngine for synthesis, applies DSP, plays via AudioTrack. Chunked synthesis for long texts. |
 | `AudioDsp.kt` | PCM audio effects (gain, speed adjustment) applied after synthesis. |
 | `NotificationReaderService.kt` | `NotificationListenerService` — captures notifications, filters (DnD, per-app rules, dedup), extracts signals, modulates voice, enqueues to AudioPipeline. Conversation grouping (1.5s buffer). |
@@ -103,8 +106,10 @@ All source is in `app/src/main/java/com/kokoro/reader/`.
 
 | File | Role |
 |---|---|
-| `ReaderApplication.kt` | `Application` subclass — installs global exception handler, crash recovery (main process only). |
-| `TtsBridge.kt` | Cross-process bridge — command broadcasts, status file I/O, battery optimization helpers, staleness detection. |
+| `ReaderApplication.kt` | `Application` subclass — installs global exception handler, crash recovery (main process only). Runs TTS process watchdog (15s polling, auto-restarts killed `:tts` via `requestRebind()`). |
+| `TtsBridge.kt` | Cross-process bridge — command broadcasts, status file I/O, battery optimization helpers, staleness detection, AutoStart intent launcher. |
+| `OemProtection.kt` | All-OEM background kill prevention. AutoStart intents for Xiaomi, Samsung, Huawei, OnePlus, Oppo, Vivo, Meizu, Asus, Lenovo, Nokia, Sony, and more. Three layers: battery exemption → OEM intent → user guidance. |
+| `GitHubReporter.kt` | Automatic error reporting — after 30s with TTS error, creates GitHub Issue with full diagnostics. Rate-limited (1/hour). Also fetches remote config (force_retry, messages, min_version) every 6h. |
 | `AppRule.kt` | Data class for per-app notification rules (block, priority, custom voice). |
 | `BootReceiver.kt` | Starts the service on device boot. |
 
@@ -120,6 +125,7 @@ This is the most complex and most-fixed part of the codebase. Understanding it i
 |---|---|---|---|
 | **Kokoro** | 311MB (ONNX/ORT) | High — multi-speaker, natural | Crashes on some devices |
 | **Piper** | ~60MB (VITS) | Good — single speaker | Very reliable fallback |
+| **Android System TTS** | 0 (pre-installed) | Varies (Google TTS is decent) | Ultimate fallback — no native code |
 
 ### Initialization Stages (happy path)
 
@@ -140,7 +146,7 @@ warmUp(ctx)
        ├─ Integrity check (model > 100MB, voices.bin > 1KB)
        │
        ├─ Stage 1: Device profiling + memory prep
-       │    ├─ Profile: RAM, cores, SoC vendor, Xiaomi/MIUI detection
+       │    ├─ Profile: RAM, cores, SoC vendor, Xiaomi/MIUI/HyperOS detection
        │    ├─ Device tier: HIGH / MEDIUM / LOW
        │    ├─ GC (2-pass + finalization + 50ms sleep)
        │    ├─ RAM check (needs 350MB free)
@@ -149,7 +155,9 @@ warmUp(ctx)
        │
        ├─ Stage 2: Config memory + auto-escalation
        │    ├─ Check SharedPreferences for last known-good config
+       │    ├─ Check KEY_SKIP_ORT (set if previous .ort load caused SIGSEGV)
        │    ├─ Outer loop: model format (.ort first, .onnx fallback if both exist)
+       │    │    ├─ Save KEY_INIT_FORMAT before loading (survives SIGSEGV)
        │    │    ├─ Escalation ladder: optimal → safe (1 thread, cpu) → diagnostic
        │    │    ├─ Run OfflineTts() on dedicated thread with URGENT_AUDIO priority
        │    │    ├─ Adaptive timeout (30s ORT / 90s ONNX × device tier multiplier)
@@ -165,19 +173,25 @@ The native library (sherpa-onnx) can SIGSEGV — kill the process instantly. And
 
 **Detection:** `init_in_progress` flag in SharedPreferences. Set `true` (with `commit()`) before ANY native code. Cleared in `finally`. Only a SIGSEGV leaves it set.
 
+**Crash classification (API 30+):** Uses `ApplicationExitInfo` to distinguish real native crashes from OS-initiated kills. Only `REASON_CRASH_NATIVE`, `REASON_CRASH`, and `REASON_ANR` increment the crash counter. HyperOS/MIUI process kills (`LOW_MEMORY`, `EXCESSIVE_RESOURCE_USAGE`, `OTHER`) are ignored — these are the OS being aggressive, not the app being broken.
+
 **Recovery behavior by crash count:**
 
 | Crash Count | Behavior |
 |---|---|
 | **0** | Normal Kokoro init |
-| **1–4** | Set `init_in_progress=true` → try Piper fallback (tracked!) → if Piper works, user has TTS → exponential backoff retry Kokoro in background (5s, 10s, 20s, 40s, 80s) |
-| **5+** (`NATIVE_BROKEN_THRESHOLD`) | Skip ALL native code → show error "native engine incompatible" → retry after 2.5 min → user can force retry from UI |
+| **1–7** | Set `init_in_progress=true` → try Piper fallback (tracked!) → if Piper works, user has TTS → exponential backoff retry Kokoro in background (5s, 10s, 20s, 40s, 80s, max 60s) |
+| **8+** (`NATIVE_BROKEN_THRESHOLD`) | Skip ALL native code → try Android system TTS as ultimate fallback → if that fails too, show error with device diagnostics → retry after 1 min → user can force retry from UI |
+
+**SIGSEGV-surviving format fallback:** The model format being loaded (`.ort` or `.onnx`) is persisted to `KEY_INIT_FORMAT` before the load attempt. If a SIGSEGV occurs during `.ort` loading, on restart `KEY_SKIP_ORT=true` is set, and the engine goes straight to `.onnx`. Without this, the engine would crash on `.ort` repeatedly until hitting the broken threshold.
+
+**Synthesis cascade:** `synthesizeWithFallback()` tries engines in order: Kokoro → Piper → Android system TTS → null. System TTS uses `synthesizeToFile()` → reads WAV → returns PCM through the normal pipeline. DSP effects still work.
 
 **Critical detail:** Piper uses the same native library as Kokoro. If `init_in_progress` isn't set before `initPiperFallback()`, a Piper SIGSEGV won't increment the crash counter → infinite loop at crashCount=1. This was a real bug (fixed March 2026).
 
 **Config memory:** When Kokoro succeeds, the exact config (threads, provider, debug flag) is saved to SharedPreferences. Next launch skips the escalation ladder and uses the known-good config directly. Cleared on crash or app update.
 
-**`forceRetry(ctx)`:** Resets crash counter to 0, clears all error state, re-attempts from scratch.
+**`forceRetry(ctx)`:** Resets crash counter to 0, clears `KEY_SKIP_ORT`, clears all error state, cleans up system TTS, re-attempts from scratch.
 
 ---
 
@@ -187,13 +201,14 @@ The native library (sherpa-onnx) can SIGSEGV — kill the process instantly. And
 build.gradle
 ├─ downloadTtsModels task (runs download-models.sh before build)
 ├─ aaptOptions: noCompress onnx, ort, bin, txt, dict, tab
-├─ packagingOptions: useLegacyPackaging = true (extract .so from APK)
+├─ packagingOptions: useLegacyPackaging = false (default — loads .so from APK via mmap)
 └─ ndk: arm64-v8a only
 
 Dependencies:
 ├─ sherpa_onnx.aar (local, auto-downloaded)
 ├─ kotlin-stdlib 1.9.22
 ├─ androidx core-ktx, appcompat, constraintlayout, preference-ktx, fragment-ktx
+├─ org.json (for GitHubReporter JSON handling)
 ```
 
 **Native libraries** (inside sherpa_onnx.aar):
@@ -202,7 +217,7 @@ Dependencies:
 - `libsherpa-onnx-cxx-api.so` — sherpa-onnx C++ API
 - `libsherpa-onnx-jni.so` — JNI bridge
 
-**Why `useLegacyPackaging = true`?** On API 23+, Android loads .so directly from APK via mmap. On MediaTek/Xiaomi, mmapping the ~50MB ONNX Runtime .so from the APK triggers SIGSEGV during dlopen. Extracting to filesystem first avoids this.
+**Note on `useLegacyPackaging`:** Was previously set to `true` (extract .so to filesystem) as a speculative SIGSEGV fix. Reverted to `false` after analysis of a working standalone sherpa-onnx APK showed mmap loading works fine. The real crash causes were ORT version mismatch and HyperOS process killing.
 
 ---
 
@@ -240,9 +255,9 @@ Dependencies:
 
 | Prefs Name | Process | Purpose |
 |---|---|---|
-| `sherpa_init_tracker` | :tts | Crash counter, init_in_progress flag, last crash time |
+| `sherpa_init_tracker` | :tts | Crash counter, init_in_progress flag, last crash time, KEY_INIT_FORMAT, KEY_SKIP_ORT |
 | `sherpa_config_memory` | :tts | Last known-good engine config (threads, provider, debug, version) |
-| Default prefs | main | Voice profiles, per-app rules, UI settings |
+| Default prefs | main | Voice profiles, per-app rules, UI settings, OEM protection prompt flag, GitHub reporter rate limits |
 
 ---
 
@@ -250,16 +265,22 @@ Dependencies:
 
 1. **Never call `initializeKokoro()` directly** — always go through `warmUp()` which handles crash-loop detection. AudioPipeline's `ensureKokoroReady()` has a guard for this.
 
-2. **Both Kokoro AND Piper use the same native library.** If native code is broken, BOTH will crash. The crash recovery must guard Piper calls with `init_in_progress` too.
+2. **Both Kokoro AND Piper use the same native library.** If native code is broken, BOTH will crash. The crash recovery must guard Piper calls with `init_in_progress` too. Android system TTS is the only fallback that doesn't use native sherpa-onnx code.
 
-3. **`apply()` vs `commit()`** — use `commit()` for `init_in_progress` flag (must be flushed to disk before native code runs). Use `apply()` for everything else.
+3. **`apply()` vs `commit()`** — use `commit()` for `init_in_progress` and `KEY_INIT_FORMAT` flags (must be flushed to disk before native code runs). Use `apply()` for everything else.
 
-4. **Xiaomi/MIUI is hostile.** It kills background processes aggressively, throttles CPU, has modified ART runtime with different mmap behavior. The battery optimization exemption (`TtsBridge.requestBatteryExemption()`) helps but isn't guaranteed.
+4. **Xiaomi/MIUI/HyperOS is hostile.** It kills background processes aggressively, throttles CPU, has modified ART runtime. HyperOS 2.0 dropped the MIUI system property — use `isXiaomiRom` (checks both `ro.miui.ui.version.name` and `ro.mi.os.version.incremental`). Battery exemption + OEM AutoStart intents help but aren't guaranteed. The TTS process watchdog in `ReaderApplication` auto-restarts after OS kills.
 
-5. **The `tts_status.json` file is the only IPC channel.** If the :tts process crashes, the file retains whatever was last written. The UI polls it every 1s and shows stale data until the process restarts.
+5. **The `tts_status.json` file is the only IPC channel.** If the :tts process crashes, the file retains whatever was last written. The UI polls it every 1s and shows stale data until the process restarts. The watchdog detects stale timestamps and calls `requestRebind()`.
 
 6. **Model extraction is expensive.** First run extracts 311MB from APK to filesystem. Uses atomic tmp+rename to prevent corruption from power loss. Version marker (`.extracted_version`) forces re-extraction on app update.
 
 7. **Config memory is invalidated on crash AND on app update.** Don't assume it's always valid.
 
-8. **Never delete `.onnx` originals after ORT conversion.** The `.ort` format is version-specific — if the build-time ORT version doesn't match the on-device ORT, `.ort` files cause SIGSEGV. The engine falls back to `.onnx` at runtime if `.ort` fails. Both formats ship in the APK and are extracted to filesystem.
+8. **Never delete `.onnx` originals after ORT conversion.** The `.ort` format is version-specific — if the build-time ORT version doesn't match the on-device ORT, `.ort` files cause SIGSEGV. The engine falls back to `.onnx` at runtime if `.ort` fails. Both formats ship in the APK and are extracted to filesystem. The format fallback survives SIGSEGV via `KEY_INIT_FORMAT` / `KEY_SKIP_ORT` in SharedPreferences.
+
+9. **Not all process deaths are native crashes.** HyperOS/MIUI kill the `:tts` process for battery management. Use `ApplicationExitInfo` (API 30+) to classify exit reasons. Only real crashes (`REASON_CRASH_NATIVE`, `REASON_CRASH`, `REASON_ANR`) should increment the crash counter.
+
+10. **All OEMs kill background processes, not just Xiaomi.** `OemProtection.kt` handles AutoStart intents for Samsung, Huawei, OnePlus, Oppo, Vivo, and many more. `HomeFragment.promptOemProtections()` runs on all devices.
+
+11. **`GitHubReporter` needs a token.** Set `github.issues.token=ghp_xxx` in `local.properties` for auto-reporting. Without it, the reporter is silently disabled. Remote config is fetched from `remote-config.json` in the repo root.

@@ -79,9 +79,12 @@ class HomeFragment : Fragment() {
         updateLogPath(logPathText)
         btnPermission.setOnClickListener {
             val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+: sideloaded apps need "Allow restricted settings" first.
+            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && !prefs.getBoolean("restricted_settings_prompted", false)) {
+                // Android 13+, first attempt: sideloaded apps need "Allow restricted settings".
                 // Open app details where the user can enable it via the ⋮ menu.
+                // On the next tap we'll go straight to notification listener settings.
+                prefs.edit().putBoolean("restricted_settings_prompted", true).apply()
                 try {
                     val appDetails = Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -89,12 +92,14 @@ class HomeFragment : Fragment() {
                     )
                     startActivity(appDetails)
                     Toast.makeText(ctx,
-                        "Tap ⋮ menu → \"Allow restricted settings\", then grant notification access",
+                        "Tap ⋮ menu → \"Allow restricted settings\", then come back",
                         Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
             } else {
+                // Either not Tiramisu, already prompted for restricted settings, or granted.
+                // Go straight to notification listener settings so user can enable the service.
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         }
@@ -215,7 +220,11 @@ class HomeFragment : Fragment() {
         engineRefreshRunnable = null
     }
 
-    /** Polls permission + service status every 2s for up to 30s after returning from settings. */
+    /**
+     * Polls permission + service status every 2s for up to 120s after returning from settings.
+     * The system can take 10-30s to bind the NotificationListenerService after the user
+     * toggles permission, so we need a generous window.
+     */
     private fun startPermissionRefresh() {
         stopPermissionRefresh()
         var attempts = 0
@@ -225,8 +234,8 @@ class HomeFragment : Fragment() {
                 refreshStatus()
                 val nowGranted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
                 val serviceAlive = context?.let { TtsBridge.readStatus(it).alive } == true
-                // Stop polling once permission granted AND service is alive, or after 30s
-                if ((nowGranted && serviceAlive) || ++attempts > 15) {
+                // Stop polling once permission granted AND service is alive, or after 120s
+                if ((nowGranted && serviceAlive) || ++attempts > 60) {
                     // Also kick off engine status polling since service just came alive
                     if (nowGranted) startEngineStatusRefresh()
                     return
@@ -292,6 +301,9 @@ class HomeFragment : Fragment() {
     private fun updateStatus(tv: TextView, serviceStatusTv: TextView, btn: Button) {
         val ctx = context ?: return
         val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+        // Reset restricted-settings flag once permission is granted, so the flow
+        // restarts correctly if the user ever revokes and needs to re-grant.
+        if (granted) prefs.edit().putBoolean("restricted_settings_prompted", false).apply()
         tv.text = if (granted) "✓ Active — reading notifications"
                   else "✗ Notification access required"
         tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
@@ -321,7 +333,12 @@ class HomeFragment : Fragment() {
         } else {
             instructionsTv?.visibility = android.view.View.VISIBLE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                instructionsTv?.text = "Step 1: Tap button below → tap ⋮ menu → \"Allow restricted settings\"\nStep 2: Go back → tap button again → enable Kyōkan in the list"
+                val alreadyPrompted = prefs.getBoolean("restricted_settings_prompted", false)
+                instructionsTv?.text = if (!alreadyPrompted) {
+                    "Step 1: Tap button below → tap ⋮ menu → \"Allow restricted settings\"\nStep 2: Come back → tap button again → enable Kyōkan in the list"
+                } else {
+                    "Tap the button below → find Kyōkan in the list → enable it"
+                }
             } else {
                 instructionsTv?.text = "Tap the button below → find Kyōkan in the list → enable it"
             }

@@ -220,6 +220,9 @@ object SherpaEngine {
     @Volatile private var isWarmingUp = false
     private val warmUpLock = Object()
 
+    /** True after we've verified the JNI/ORT native stack works with a lightweight probe. */
+    @Volatile private var nativeStackProbed = false
+
     // ── Asset resolution ──────────────────────────────────────────────────────
 
     /**
@@ -399,9 +402,61 @@ object SherpaEngine {
 
         return try {
             initProgress = 5
-            statusMessage = "verifying model assets…"
+            statusMessage = "probing native stack…"
             syncStatus()
             Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
+
+            // ── Stage 0: Probe native stack with a tiny model ────────────
+            // The JNI library loads when sherpa-onnx config classes are first
+            // constructed. Loading a small Piper model (~60MB) first proves
+            // System.loadLibrary, ORT runtime, and JNI bridge all work.
+            // If even THIS crashes, native code is fundamentally broken on
+            // this device — skip straight to Piper fallback without wasting
+            // 3 crash cycles on the huge Kokoro model.
+            if (!nativeStackProbed) {
+                Log.i(TAG, "│ Probing native stack with lightweight model…")
+                try {
+                    val probeVoiceId = PIPER_FALLBACK_VOICE
+                    val probeTokens = ensureTokensFile(ctx)
+                    val probeEspeak = ensureEspeakData(ctx)
+                    val probeModel = extractBundledPiperModel(ctx, probeVoiceId)
+                    if (probeModel != null) {
+                        val probeVitsConfig = OfflineTtsVitsModelConfig(
+                            model   = probeModel.absolutePath,
+                            tokens  = probeTokens.absolutePath,
+                            dataDir = probeEspeak.absolutePath
+                        )
+                        val probeModelConfig = OfflineTtsModelConfig(
+                            vits = probeVitsConfig, numThreads = 1,
+                            debug = false, provider = "cpu"
+                        )
+                        val probeEngine = OfflineTts(config = OfflineTtsConfig(model = probeModelConfig))
+                        // Probe succeeded — native stack is proven functional
+                        probeEngine.release()
+                        nativeStackProbed = true
+                        Log.i(TAG, "│ Native stack probe: ✓ (ORT + JNI working)")
+                    } else {
+                        Log.w(TAG, "│ Native stack probe: skipped (couldn't extract probe model)")
+                        nativeStackProbed = true  // Don't block Kokoro init on probe failure
+                    }
+                } catch (e: Throwable) {
+                    // Probe CRASHED — native code is broken. Don't attempt Kokoro at all.
+                    Log.e(TAG, "│ Native stack probe: ✗ FAILED (${e.javaClass.simpleName}: ${e.message})")
+                    Log.e(TAG, "│ Native stack is broken on this device — skipping Kokoro entirely")
+                    Log.e(TAG, "└── Kokoro init ABORTED (native probe failed) ─")
+                    writeInitLog(ctx, "Native stack probe failed: ${e.javaClass.simpleName}: ${e.message}. " +
+                        "JNI/ORT is broken on this device — Kokoro cannot work.", e)
+                    statusMessage = "error: native engine broken"
+                    errorMessage = "TTS native library failed basic probe test. " +
+                        "This device may have an incompatible ONNX Runtime configuration."
+                    isReady = false
+                    syncStatus()
+                    return false
+                }
+            } else {
+                Log.i(TAG, "│ Native stack probe: ✓ (cached)")
+            }
+
             // Log sherpa-onnx library version for diagnostics
             try {
                 val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
@@ -409,6 +464,10 @@ object SherpaEngine {
             } catch (_: Throwable) {
                 Log.i(TAG, "│ sherpa-onnx: version unavailable")
             }
+
+            initProgress = 10
+            statusMessage = "verifying model assets…"
+            syncStatus()
             Log.i(TAG, "│ Model dir: assets/$KOKORO_DIR")
 
             // ── Pre-flight: verify required assets exist BEFORE calling native code ──
@@ -532,6 +591,53 @@ object SherpaEngine {
             }
             Log.i(TAG, "│ Extraction verified: model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
 
+            // ── Stage 1: Memory preparation ─────────────────────────────
+            // Force garbage collection and trim JVM heap BEFORE loading the
+            // 311MB Kokoro model. On memory-constrained devices this can free
+            // 50-100MB of reclaimable heap, preventing OOM-triggered SIGSEGV
+            // inside ORT's mmap/malloc path.
+            initProgress = 28
+            statusMessage = "preparing memory…"
+            syncStatus()
+            Log.i(TAG, "│ Stage 1: Memory preparation")
+
+            val runtime = Runtime.getRuntime()
+            val heapBefore = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+            // Two-pass GC: first pass collects soft refs, second pass reclaims them
+            System.gc()
+            System.runFinalization()
+            System.gc()
+            // Brief yield to let finalizer thread complete
+            Thread.sleep(50)
+            val heapAfter = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+            Log.i(TAG, "│ GC: JVM heap ${heapBefore}MB → ${heapAfter}MB (freed ${heapBefore - heapAfter}MB)")
+
+            // Request the system to trim memory from other components
+            try {
+                val activityMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                val memInfo = android.app.ActivityManager.MemoryInfo()
+                activityMgr?.getMemoryInfo(memInfo)
+                Log.i(TAG, "│ System RAM: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
+                Log.i(TAG, "│ JVM heap: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
+
+                // ── Pre-check: refuse to load if device is low on RAM ────────
+                if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
+                    val msg = "Not enough RAM: ${memInfo.availMem / 1024 / 1024}MB available, " +
+                        "need ${MIN_RAM_FOR_INIT_BYTES / 1024 / 1024}MB for Kokoro model. " +
+                        "Close other apps and retry."
+                    Log.e(TAG, "│ $msg")
+                    Log.e(TAG, "└── Kokoro init FAILED (low memory) ──────────")
+                    statusMessage = "error: not enough RAM"
+                    errorMessage = msg
+                    isReady = false
+                    writeInitLog(ctx, msg)
+                    syncStatus()
+                    return false
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "│ Memory check failed: ${e.message}")
+            }
+
             initProgress = 30
             statusMessage = "preparing Kokoro config…"
             syncStatus()
@@ -542,9 +648,6 @@ object SherpaEngine {
             }
             val isOrt = modelFile.name.endsWith(".ort")
 
-            val provider = optimalProvider()
-            val threads = optimalThreadCount()
-
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = modelFile.absolutePath,
                 voices  = File(extractedDir, "voices.bin").absolutePath,
@@ -552,140 +655,154 @@ object SherpaEngine {
                 dataDir = File(extractedDir, "espeak-ng-data").absolutePath
             )
 
-            val modelConfig = OfflineTtsModelConfig(
-                kokoro     = kokoroConfig,
-                numThreads = threads,
-                debug      = false,
-                provider   = provider
+            // ── Stage 2: Auto-escalation ────────────────────────────────
+            // Try progressively safer configs within a single init cycle.
+            // If the optimal config crashes (Java exception, not SIGSEGV),
+            // automatically retry with a safer config instead of incrementing
+            // the crash counter and giving up.
+            //
+            // Escalation ladder:
+            //   Level 0: optimal threads + cpu provider (best performance)
+            //   Level 1: 1 thread + cpu (safest for MediaTek thread pool bugs)
+            //   Level 2: 1 thread + cpu + debug=true (max diagnostics, slowest)
+            data class InitConfig(
+                val threads: Int,
+                val provider: String,
+                val debug: Boolean,
+                val label: String
             )
 
-            val config = OfflineTtsConfig(model = modelConfig)
+            val optThreads = optimalThreadCount()
+            val optProvider = optimalProvider()
+            val escalationLadder = listOf(
+                InitConfig(optThreads, optProvider, false, "optimal ($optThreads threads, $optProvider)"),
+                InitConfig(1, "cpu", false, "safe (1 thread, cpu)"),
+                InitConfig(1, "cpu", true, "diagnostic (1 thread, cpu, debug)")
+            ).let { configs ->
+                // Skip duplicates — if optimal is already 1-thread/cpu, don't retry same config
+                configs.distinctBy { Triple(it.threads, it.provider, it.debug) }
+            }
 
             initProgress = 35
-            val providerLabel = if (isOrt) "loading optimized model…"
+            statusMessage = if (isOrt) "loading optimized model…"
                 else "loading native model (this may take 10-30s)…"
-            statusMessage = providerLabel
             syncStatus()
-            // Log memory state for OOM diagnostics (311MB model needs headroom)
-            val runtime = Runtime.getRuntime()
-            val activityMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
-            val memInfo = android.app.ActivityManager.MemoryInfo()
-            activityMgr?.getMemoryInfo(memInfo)
-            Log.i(TAG, "│ Memory: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
-            Log.i(TAG, "│ JVM heap: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
 
-            // ── Pre-check: refuse to load if device is low on RAM ────────
-            // Loading a 311MB model into memory when there's only 200MB free
-            // will cause ONNX Runtime to silently fail malloc() → SIGSEGV.
-            // Better to fail cleanly and try Piper fallback.
-            if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
-                val msg = "Not enough RAM: ${memInfo.availMem / 1024 / 1024}MB available, " +
-                    "need ${MIN_RAM_FOR_INIT_BYTES / 1024 / 1024}MB for Kokoro model. " +
-                    "Close other apps and retry."
-                Log.e(TAG, "│ $msg")
-                Log.e(TAG, "└── Kokoro init FAILED (low memory) ──────────")
-                statusMessage = "error: not enough RAM"
-                errorMessage = msg
-                isReady = false
-                // Don't count this as a crash — it's recoverable by freeing memory
-                writeInitLog(ctx, msg)
-                syncStatus()
-                return false
-            }
-
-            Log.i(TAG, "│ Provider: $provider, threads: $threads, SoC: $socVendor")
+            Log.i(TAG, "│ Stage 2: Auto-escalation (${escalationLadder.size} configs)")
             Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
             Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
-            Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
-            initStartTime.set(System.currentTimeMillis())
 
             // init_in_progress flag is already set by warmUp() before this thread started.
-            // This ensures the flag is persisted even if the native library load (triggered
-            // by config class constructors above) crashes the process.
+            initStartTime.set(System.currentTimeMillis())
 
-            // Run the native constructor on a separate thread with a timeout.
-            // OfflineTts() can hang indefinitely on some devices.
-            val resultHolder = arrayOfNulls<OfflineTts>(1)
-            val errorHolder = arrayOfNulls<Throwable>(1)
-            val latch = CountDownLatch(1)
+            var lastEscalationError: Throwable? = null
 
-            val initThread = Thread {
-                try {
-                    // File-based constructor — no AssetManager, no HWUI mutex corruption
-                    resultHolder[0] = OfflineTts(config = config)
-                } catch (e: Throwable) {
-                    errorHolder[0] = e
-                } finally {
-                    latch.countDown()
-                }
-            }.apply { name = "SherpaEngine-native-init"; isDaemon = true; start() }
+            for ((level, initCfg) in escalationLadder.withIndex()) {
+                Log.i(TAG, "│ Escalation level $level: ${initCfg.label}")
 
-            // Sync progress periodically while native init runs
-            val progressThread = Thread {
-                try {
-                    val start = System.currentTimeMillis()
-                    while (!latch.await(500, TimeUnit.MILLISECONDS)) {
-                        val elapsed = System.currentTimeMillis() - start
-                        // Asymptotic progress: approaches 90% over ~30s
-                        initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
-                        syncStatus()
-                    }
-                } catch (_: InterruptedException) {}
-            }.apply { name = "SherpaEngine-progress"; isDaemon = true; start() }
-
-            val completed = latch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            progressThread.interrupt()
-            val elapsed = System.currentTimeMillis() - initStartTime.get()
-            initStartTime.set(0)
-
-            if (!completed) {
-                // Native init hung — clear in-progress flag but DON'T increment crash counter.
-                // Timeouts are a different failure mode than SIGSEGV:
-                //   - SIGSEGV kills the process → init_in_progress stays set → detected on restart
-                //   - Timeout means the process survived → we can clear the flag ourselves
-                // Conflating them causes false positives (user gets locked out for 5 min after a timeout).
-                initPrefs.edit()
-                    .putBoolean(KEY_INIT_IN_PROGRESS, false)
-                    .apply()
-                Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms")
-                Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
-                statusMessage = "error: init timed out after ${elapsed / 1000}s"
-                errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
-                    "The model may be too large for this device's memory."
-                isReady = false
-                writeInitLog(ctx, "OfflineTts() timed out after ${elapsed}ms (NOT counted as crash — process survived)")
-                syncStatus()
-                // Interrupt the hung thread (best effort — native code may ignore this)
-                try { initThread.interrupt() } catch (_: Throwable) {}
-                return false
-            }
-
-            // Check if native init threw — if NNAPI failed, fall back to CPU
-            val initError = errorHolder[0]
-            if (initError != null && provider != "cpu") {
-                Log.w(TAG, "│ $provider provider failed: ${initError.message}")
-                Log.w(TAG, "│ Falling back to CPU provider…")
-                statusMessage = "NNAPI unavailable, falling back to CPU…"
-                syncStatus()
-
-                val cpuModelConfig = OfflineTtsModelConfig(
-                    kokoro = kokoroConfig, numThreads = 2, debug = false, provider = "cpu"
+                val modelConfig = OfflineTtsModelConfig(
+                    kokoro     = kokoroConfig,
+                    numThreads = initCfg.threads,
+                    debug      = initCfg.debug,
+                    provider   = initCfg.provider
                 )
-                val cpuConfig = OfflineTtsConfig(model = cpuModelConfig)
-                // Direct call — we already survived native library loading
-                resultHolder[0] = OfflineTts(config = cpuConfig)
-            } else if (initError != null) {
-                throw initError
+                val config = OfflineTtsConfig(model = modelConfig)
+
+                // Run the native constructor on a separate thread with a timeout.
+                val resultHolder = arrayOfNulls<OfflineTts>(1)
+                val errorHolder = arrayOfNulls<Throwable>(1)
+                val latch = CountDownLatch(1)
+
+                val initThread = Thread {
+                    try {
+                        resultHolder[0] = OfflineTts(config = config)
+                    } catch (e: Throwable) {
+                        errorHolder[0] = e
+                    } finally {
+                        latch.countDown()
+                    }
+                }.apply { name = "SherpaEngine-init-L$level"; isDaemon = true; start() }
+
+                // Sync progress periodically while native init runs
+                val progressThread = Thread {
+                    try {
+                        val start = System.currentTimeMillis()
+                        while (!latch.await(500, TimeUnit.MILLISECONDS)) {
+                            val elapsed = System.currentTimeMillis() - start
+                            initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
+                            syncStatus()
+                        }
+                    } catch (_: InterruptedException) {}
+                }.apply { name = "SherpaEngine-progress-L$level"; isDaemon = true; start() }
+
+                val completed = latch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                progressThread.interrupt()
+
+                if (!completed) {
+                    // Timed out at this escalation level
+                    Log.w(TAG, "│ Level $level TIMED OUT — ${initCfg.label}")
+                    try { initThread.interrupt() } catch (_: Throwable) {}
+
+                    if (level < escalationLadder.lastIndex) {
+                        Log.i(TAG, "│ Escalating to level ${level + 1}…")
+                        statusMessage = "retrying with safer config…"
+                        syncStatus()
+                        // Brief pause to let the timed-out thread settle
+                        Thread.sleep(100)
+                        continue
+                    }
+
+                    // All levels exhausted — report timeout
+                    val elapsed = System.currentTimeMillis() - initStartTime.get()
+                    initStartTime.set(0)
+                    initPrefs.edit()
+                        .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                        .apply()
+                    Log.e(TAG, "│ All escalation levels TIMED OUT")
+                    Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
+                    statusMessage = "error: init timed out after ${elapsed / 1000}s"
+                    errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
+                        "Tried ${escalationLadder.size} configurations."
+                    isReady = false
+                    writeInitLog(ctx, "All ${escalationLadder.size} escalation configs timed out after ${elapsed}ms")
+                    syncStatus()
+                    return false
+                }
+
+                val initError = errorHolder[0]
+                if (initError != null) {
+                    Log.w(TAG, "│ Level $level FAILED: ${initError.javaClass.simpleName}: ${initError.message}")
+                    lastEscalationError = initError
+
+                    if (level < escalationLadder.lastIndex) {
+                        Log.i(TAG, "│ Escalating to level ${level + 1}…")
+                        statusMessage = "retrying with safer config…"
+                        syncStatus()
+                        continue
+                    }
+
+                    // All levels exhausted — throw the last error
+                    throw initError
+                }
+
+                // SUCCESS at this level
+                if (level > 0) {
+                    Log.i(TAG, "│ Succeeded at escalation level $level (${initCfg.label}) after $level retries")
+                }
+
+                kokoroTts = resultHolder[0]
+                break
             }
 
-            kokoroTts = resultHolder[0]
+            val totalElapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
+
             if (kokoroTts == null) {
-                Log.e(TAG, "│ OfflineTts() returned null")
+                Log.e(TAG, "│ OfflineTts() returned null after all escalation levels")
                 Log.e(TAG, "└── Kokoro init FAILED ────────────────────────")
                 statusMessage = "error: engine returned null"
-                errorMessage = "Engine constructor returned null"
+                errorMessage = "Engine constructor returned null after trying ${escalationLadder.size} configurations"
                 isReady = false
-                writeInitLog(ctx, "OfflineTts() constructor returned null")
+                writeInitLog(ctx, "OfflineTts() returned null after ${escalationLadder.size} escalation configs (${totalElapsed}ms)")
                 return false
             }
 
@@ -700,7 +817,7 @@ object SherpaEngine {
             errorMessage = null
             statusMessage = "ready"
             syncStatus()
-            Log.i(TAG, "│ Kokoro engine ready in ${elapsed}ms")
+            Log.i(TAG, "│ Kokoro engine ready in ${totalElapsed}ms")
             Log.i(TAG, "└── Kokoro init SUCCESS ───────────────────────")
             true
 
@@ -712,12 +829,12 @@ object SherpaEngine {
                     .edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
             } catch (_: Throwable) {}
             Log.e(TAG, "│ Exception after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}")
-            Log.e(TAG, "└── Kokoro init FAILED ────────────────────────", e)
+            Log.e(TAG, "└── Kokoro init FAILED (all escalation levels exhausted) ──", e)
             kokoroTts = null
             isReady = false
             errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             statusMessage = "error: ${errorMessage}"
-            writeInitLog(ctx, "Exception after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}", e)
+            writeInitLog(ctx, "All escalation levels failed after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}", e)
             syncStatus()
             false
         }

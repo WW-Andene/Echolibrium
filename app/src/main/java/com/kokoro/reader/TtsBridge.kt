@@ -2,6 +2,11 @@ package com.kokoro.reader
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 
@@ -131,6 +136,85 @@ object TtsBridge {
             }
         } catch (_: Throwable) {
             // Best-effort — don't crash the TTS process over status reporting
+        }
+    }
+
+    // ── TTS process staleness detection ──────────────────────────────────────
+
+    /** Max age (ms) of the status timestamp before the TTS process is considered stale/dead. */
+    private const val STALENESS_THRESHOLD_MS = 30_000L  // 30 seconds
+
+    /**
+     * Checks if the TTS process is alive by comparing the status file timestamp
+     * to the current time. If the timestamp is older than [STALENESS_THRESHOLD_MS],
+     * the process is likely dead or hung (killed by MIUI, OOM, etc.).
+     *
+     * @return true if the TTS process appears healthy, false if stale/dead
+     */
+    fun isTtsProcessHealthy(ctx: Context): Boolean {
+        return try {
+            val text = File(ctx.filesDir, STATUS_FILE).readText()
+            val json = JSONObject(text)
+            val ts = json.optLong("ts", 0)
+            if (ts == 0L) return false
+            val age = System.currentTimeMillis() - ts
+            age < STALENESS_THRESHOLD_MS
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Returns the age in ms of the last TTS status update, or -1 if unknown.
+     */
+    fun getTtsProcessAgeMs(ctx: Context): Long {
+        return try {
+            val text = File(ctx.filesDir, STATUS_FILE).readText()
+            val json = JSONObject(text)
+            val ts = json.optLong("ts", 0)
+            if (ts == 0L) -1L else System.currentTimeMillis() - ts
+        } catch (_: Throwable) {
+            -1L
+        }
+    }
+
+    // ── Battery optimization exemption (Xiaomi/MIUI) ─────────────────────────
+
+    private const val TAG = "TtsBridge"
+
+    /**
+     * Checks if this app is exempt from battery optimizations.
+     * On Xiaomi/MIUI, battery optimization aggressively kills background processes
+     * including our :tts process. Requesting exemption tells the OS to not kill us.
+     */
+    fun isBatteryOptimized(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+        return !pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    }
+
+    /**
+     * Requests battery optimization exemption via system dialog.
+     * This is the only way to get exemption without being a system app.
+     * The system shows a dialog — no scary permission prompt.
+     *
+     * Call this from an Activity context (won't work from a Service).
+     */
+    fun requestBatteryExemption(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (!isBatteryOptimized(ctx)) {
+            Log.d(TAG, "Already exempt from battery optimization")
+            return
+        }
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${ctx.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            Log.i(TAG, "Requested battery optimization exemption")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to request battery exemption: ${e.message}")
         }
     }
 }

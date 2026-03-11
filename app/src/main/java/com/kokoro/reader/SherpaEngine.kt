@@ -12,8 +12,11 @@ import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import android.content.SharedPreferences
+import android.os.PowerManager
 import java.io.PrintWriter
+import java.io.RandomAccessFile
 import java.io.StringWriter
+import java.nio.channels.FileChannel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -239,22 +242,41 @@ object SherpaEngine {
     private fun prewarmModelFile(modelFile: File): Long {
         val start = System.currentTimeMillis()
         try {
-            val buffer = ByteArray(PREWARM_BUFFER_SIZE)
-            var totalRead = 0L
-            modelFile.inputStream().buffered(PREWARM_BUFFER_SIZE).use { input ->
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    totalRead += n
+            val fileSize = modelFile.length()
+            // Use mmap + MappedByteBuffer.load() for aggressive page residency.
+            // This forces the OS to page in the ENTIRE file and pin it in RAM.
+            // When ORT opens the same file via its own mmap, all pages are already
+            // resident — zero page faults, no OOM killer triggers.
+            RandomAccessFile(modelFile, "r").use { raf ->
+                raf.channel.use { channel ->
+                    val mapped = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize)
+                    mapped.load()  // Force all pages into physical RAM
+                    val elapsed = System.currentTimeMillis() - start
+                    val speedKBs = if (elapsed > 0) fileSize / elapsed else 0
+                    Log.i(TAG, "│   ${fileSize / 1024 / 1024}MB mmap+load in ${elapsed}ms (${speedKBs}KB/s)")
+                    return elapsed
                 }
             }
-            val elapsed = System.currentTimeMillis() - start
-            val speedKBs = if (elapsed > 0) totalRead / elapsed else 0
-            Log.i(TAG, "│   ${totalRead / 1024 / 1024}MB read in ${elapsed}ms (${speedKBs}KB/s)")
-            return elapsed
         } catch (e: Throwable) {
-            Log.w(TAG, "│   Pre-warm failed: ${e.message}")
-            return System.currentTimeMillis() - start
+            // Fallback to sequential read if mmap fails (e.g., on very old devices)
+            Log.w(TAG, "│   mmap pre-warm failed (${e.message}), falling back to sequential read")
+            try {
+                val buffer = ByteArray(PREWARM_BUFFER_SIZE)
+                var totalRead = 0L
+                modelFile.inputStream().buffered(PREWARM_BUFFER_SIZE).use { input ->
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        totalRead += n
+                    }
+                }
+                val elapsed = System.currentTimeMillis() - start
+                Log.i(TAG, "│   ${totalRead / 1024 / 1024}MB sequential read in ${elapsed}ms")
+                return elapsed
+            } catch (e2: Throwable) {
+                Log.w(TAG, "│   Sequential pre-warm also failed: ${e2.message}")
+                return System.currentTimeMillis() - start
+            }
         }
     }
 
@@ -482,10 +504,12 @@ object SherpaEngine {
     private const val KEY_INIT_CRASH_COUNT = "init_crash_count"
     private const val KEY_INIT_IN_PROGRESS = "init_in_progress"
     private const val KEY_INIT_LAST_CRASH_TIME = "init_last_crash_time"
-    /** Stop attempting init after this many consecutive crashes. */
-    private const val MAX_INIT_CRASHES = 3
-    /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
-    private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
+    /** Base delay (ms) for exponential backoff after crashes. Delay = base * 2^(n-1). */
+    private const val CRASH_BACKOFF_BASE_MS = 5_000L   // 5s, 10s, 20s, 40s, 80s…
+    /** Max backoff delay (ms) — caps at ~2.5 minutes, then retries forever at this interval. */
+    private const val CRASH_BACKOFF_MAX_MS = 150_000L  // 2.5 minutes
+    /** After this many crashes, try Piper first but still attempt Kokoro after backoff. */
+    private const val CRASH_PIPER_FIRST_THRESHOLD = 3
 
     /**
      * Initializes the Kokoro engine on a background thread.
@@ -534,27 +558,37 @@ object SherpaEngine {
             Log.d(TAG, "Init crash counter reset (>5min since last crash)")
         }
 
-        // If we've crashed too many times, don't attempt init — report error instead.
-        if (crashCount >= MAX_INIT_CRASHES) {
-            Log.e(TAG, "Kokoro init disabled after $crashCount consecutive crashes — trying Piper fallback")
-            writeInitLog(ctx, "Crash loop: $crashCount consecutive native crashes during Kokoro init, attempting Piper fallback")
+        // ── Exponential backoff after crashes (never give up) ────────
+        // Instead of permanently disabling after N crashes, we back off
+        // exponentially and keep retrying. Xiaomi's MIUI kills processes
+        // aggressively but conditions change (user closes apps, device
+        // cools down, memory frees up). We WILL eventually succeed.
+        if (crashCount >= CRASH_PIPER_FIRST_THRESHOLD) {
+            Log.w(TAG, "Kokoro crashed $crashCount times — activating Piper first, then backing off for Kokoro retry")
 
-            // Don't give up — try Piper as a fallback engine
+            // Activate Piper immediately so the user has TTS while we wait
             if (initPiperFallback(ctx)) {
                 Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crashes")
-                synchronized(warmUpLock) { isWarmingUp = false }
                 onReadyCallback?.invoke()
-                return
             }
 
-            // Both engines failed
-            errorMessage = "Engine crashed $crashCount times during initialization. " +
-                "Piper fallback also failed. " +
-                "Tap \"Retry engine init\" to try again, or restart the app after 5 minutes."
-            statusMessage = "error: repeated native crashes"
-            isReady = false
-            synchronized(warmUpLock) { isWarmingUp = false }
+            // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 150s, 150s, 150s…
+            val backoffMs = (CRASH_BACKOFF_BASE_MS * (1L shl (crashCount - 1).coerceAtMost(10)))
+                .coerceAtMost(CRASH_BACKOFF_MAX_MS)
+            Log.i(TAG, "Backing off ${backoffMs}ms before Kokoro retry (crash #$crashCount)")
+            statusMessage = "waiting ${backoffMs / 1000}s before retry (crash #$crashCount)…"
             syncStatus()
+
+            Thread {
+                try {
+                    Thread.sleep(backoffMs)
+                    Log.i(TAG, "Backoff complete — retrying Kokoro init (crash #$crashCount)")
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    warmUp(ctx)  // Recursive retry after backoff
+                } catch (_: InterruptedException) {
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+            }.apply { name = "SherpaEngine-backoff"; isDaemon = true; start() }
             return
         }
 
@@ -634,11 +668,12 @@ object SherpaEngine {
         // bypassing the crash-loop breaker by calling initializeKokoro() directly.
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
         val crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
-        if (crashCount >= MAX_INIT_CRASHES) {
-            Log.e(TAG, "initializeKokoro blocked — $crashCount consecutive init failures")
+        if (crashCount >= CRASH_PIPER_FIRST_THRESHOLD) {
+            Log.w(TAG, "initializeKokoro: $crashCount crashes — warmUp() handles backoff, skipping direct call")
             return false
         }
 
+        var initWakeLock: PowerManager.WakeLock? = null
         return try {
             val initGlobalStart = System.currentTimeMillis()
             var probeElapsedMs = 0L
@@ -936,6 +971,18 @@ object SherpaEngine {
             Log.i(TAG, "│")
             Log.i(TAG, "│ ═══ Stage 2: Config Memory + Auto-Escalation ═══")
 
+            // ── WakeLock: prevent MIUI from throttling/killing during native load ──
+            // Xiaomi's MIUI aggressively throttles CPU and kills background processes.
+            // A PARTIAL_WAKE_LOCK keeps the CPU at full speed during model loading.
+            val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            initWakeLock = pm?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK, "Echolibrium:KokoroInit"
+            )?.apply {
+                setReferenceCounted(false)
+                acquire(3 * 60 * 1000L)  // 3 min safety timeout
+            }
+            Log.i(TAG, "│ WakeLock acquired: ${initWakeLock != null}")
+
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = modelFile.absolutePath,
                 voices  = File(extractedDir, "voices.bin").absolutePath,
@@ -1060,6 +1107,7 @@ object SherpaEngine {
                     initPrefs.edit()
                         .putBoolean(KEY_INIT_IN_PROGRESS, false)
                         .apply()
+                    try { initWakeLock?.release() } catch (_: Throwable) {}
                     Log.e(TAG, "│ All ${escalationLadder.size} escalation levels TIMED OUT")
                     Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
                     statusMessage = "error: init timed out after ${elapsed / 1000}s"
@@ -1118,7 +1166,8 @@ object SherpaEngine {
                 return false
             }
 
-            // ── SUCCESS: persist everything ─────────────────────────────
+            // ── SUCCESS: release WakeLock + persist everything ──────────
+            try { initWakeLock?.release() } catch (_: Throwable) {}
             // Clear crash tracking flags
             initPrefs.edit()
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
@@ -1144,6 +1193,7 @@ object SherpaEngine {
             true
 
         } catch (e: Throwable) {
+            try { initWakeLock?.release() } catch (_: Throwable) {}
             val elapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
             // Clear in-progress flag — this was a Java exception, not a native crash
             try {

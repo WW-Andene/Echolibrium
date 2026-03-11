@@ -44,9 +44,9 @@ object PiperVoiceCatalog {
     /**
      * GitHub Releases base URL for downloadable voice models.
      * Each voice is a single .onnx file uploaded as a release asset.
-     * Tag: "voices-v1" — update when re-uploading optimized models.
+     * Tag: "tts-assets-v1" — all TTS assets live in one release.
      */
-    const val GITHUB_RELEASE_BASE = "https://github.com/WW-Andene/Echolibrium/releases/download/voices-v1"
+    const val GITHUB_RELEASE_BASE = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
 
     /** IDs of voices bundled in the APK. Keep in sync with download-models.sh BUNDLED_VOICES. */
     private val BUNDLED_IDS = setOf(

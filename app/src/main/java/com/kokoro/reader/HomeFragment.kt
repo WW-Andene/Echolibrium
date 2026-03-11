@@ -525,7 +525,7 @@ class HomeFragment : Fragment() {
     /**
      * Refreshes the init log panel with process log from :tts + latest init log file.
      */
-    private fun refreshLogPanel(ctx: Context, tv: TextView) {
+    private fun refreshLogPanel(ctx: android.content.Context, tv: TextView) {
         try {
             // Re-request fresh process log from :tts
             TtsBridge.requestProcessLog(ctx)
@@ -551,7 +551,7 @@ class HomeFragment : Fragment() {
                     sb.appendLine("error    : ${json.optString("error").ifEmpty { "(none)" }}")
                     sb.appendLine("alive    : ${json.optBoolean("alive")}")
                     sb.appendLine("progress : ${json.optInt("initProgress")}%")
-                    val ts = json.optLong("ts", 0)
+                    val ts = json.optLong("ts", 0L)
                     if (ts > 0) {
                         val age = (System.currentTimeMillis() - ts) / 1000
                         sb.appendLine("last update: ${age}s ago")

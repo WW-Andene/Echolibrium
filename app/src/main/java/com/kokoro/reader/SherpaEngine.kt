@@ -2,6 +2,7 @@ package com.kokoro.reader
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import java.io.File
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -35,6 +36,62 @@ object SherpaEngine {
 
     /** Maximum time (ms) to wait for native OfflineTts constructor before giving up. */
     private const val INIT_TIMEOUT_MS = 60_000L
+
+    // ── Device-adaptive engine configuration ────────────────────────────────────
+
+    /** Detected SoC vendor — cached at first access. */
+    private enum class SocVendor { MEDIATEK, QUALCOMM, OTHER }
+
+    private val socVendor: SocVendor by lazy {
+        val vendor = detectSocVendor()
+        Log.i(TAG, "SoC detected: $vendor (hw=${Build.HARDWARE}, " +
+            "mfr=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else "?"}, " +
+            "model=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else "?"})")
+        vendor
+    }
+
+    private fun detectSocVendor(): SocVendor {
+        // API 31+ gives us direct SoC info
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val mfr = Build.SOC_MANUFACTURER.lowercase()
+            if (mfr.contains("mediatek") || mfr.contains("mtk")) return SocVendor.MEDIATEK
+            if (mfr.contains("qualcomm") || mfr.contains("qcom")) return SocVendor.QUALCOMM
+        }
+        // Fallback: Build.HARDWARE heuristic (works on all API levels)
+        val hw = Build.HARDWARE.lowercase()
+        if (hw.contains("mt") || hw.contains("mediatek")) return SocVendor.MEDIATEK
+        if (hw.contains("qcom") || hw.contains("snapdragon") || hw.contains("kona")
+            || hw.contains("lahaina") || hw.contains("taro")) return SocVendor.QUALCOMM
+        return SocVendor.OTHER
+    }
+
+    /**
+     * Returns the optimal ONNX Runtime provider for this device.
+     *
+     * MediaTek: "nnapi" — routes inference to the APU (dedicated AI hardware).
+     *   This avoids the CPU thread pool entirely, which sidesteps the HWUI
+     *   mutex corruption on MIUI. Faster too — APU is purpose-built for this.
+     *
+     * Qualcomm: "cpu" — NNAPI on Qualcomm routes to Hexagon DSP which has
+     *   mixed compatibility with TTS model ops. CPU is more reliable.
+     *
+     * Other: "cpu" — safe default.
+     */
+    private fun optimalProvider(): String = when (socVendor) {
+        SocVendor.MEDIATEK -> "nnapi"
+        else -> "cpu"
+    }
+
+    /**
+     * Returns the optimal thread count for this device.
+     *
+     * MediaTek with NNAPI: 1 — APU handles parallelism internally.
+     * Qualcomm/other: 2 — safe multi-threading, no HWUI conflict.
+     */
+    private fun optimalThreadCount(): Int = when (socVendor) {
+        SocVendor.MEDIATEK -> 1
+        else -> 2
+    }
 
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null
@@ -315,6 +372,9 @@ object SherpaEngine {
             }
             val isOrt = modelFile.name.endsWith(".ort")
 
+            val provider = optimalProvider()
+            val threads = optimalThreadCount()
+
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = modelFile.absolutePath,
                 voices  = File(extractedDir, "voices.bin").absolutePath,
@@ -324,16 +384,20 @@ object SherpaEngine {
 
             val modelConfig = OfflineTtsModelConfig(
                 kokoro     = kokoroConfig,
-                numThreads = 1,  // Single thread — avoids thread pool crashes on Xiaomi/MediaTek
+                numThreads = threads,
                 debug      = false,
-                provider   = "cpu"
+                provider   = provider
             )
 
             val config = OfflineTtsConfig(model = modelConfig)
 
             initProgress = 35
-            statusMessage = if (isOrt) "loading optimized model…" else "loading native model (this may take 10-30s)…"
+            val providerLabel = if (provider == "nnapi") "loading via APU (NNAPI)…"
+                else if (isOrt) "loading optimized model…"
+                else "loading native model (this may take 10-30s)…"
+            statusMessage = providerLabel
             syncStatus()
+            Log.i(TAG, "│ Provider: $provider, threads: $threads, SoC: $socVendor")
             Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
             Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
             Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
@@ -398,8 +462,23 @@ object SherpaEngine {
                 return false
             }
 
-            // Check if native init threw
-            errorHolder[0]?.let { throw it }
+            // Check if native init threw — if NNAPI failed, fall back to CPU
+            val initError = errorHolder[0]
+            if (initError != null && provider != "cpu") {
+                Log.w(TAG, "│ $provider provider failed: ${initError.message}")
+                Log.w(TAG, "│ Falling back to CPU provider…")
+                statusMessage = "NNAPI unavailable, falling back to CPU…"
+                syncStatus()
+
+                val cpuModelConfig = OfflineTtsModelConfig(
+                    kokoro = kokoroConfig, numThreads = 2, debug = false, provider = "cpu"
+                )
+                val cpuConfig = OfflineTtsConfig(model = cpuModelConfig)
+                // Direct call — we already survived native library loading
+                resultHolder[0] = OfflineTts(config = cpuConfig)
+            } else if (initError != null) {
+                throw initError
+            }
 
             kokoroTts = resultHolder[0]
             if (kokoroTts == null) {
@@ -538,7 +617,8 @@ object SherpaEngine {
                 dataDir = espeakDir.absolutePath
             )
             val modelConfig = OfflineTtsModelConfig(
-                vits = vitsConfig, numThreads = 1, debug = false, provider = "cpu"
+                vits = vitsConfig, numThreads = optimalThreadCount(),
+                debug = false, provider = optimalProvider()
             )
             piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
 

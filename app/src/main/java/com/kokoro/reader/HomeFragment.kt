@@ -183,64 +183,45 @@ class HomeFragment : Fragment() {
         refreshStatus()
         startEngineStatusRefresh()
         startPermissionRefresh()
-        promptXiaomiProtections()
+        promptOemProtections()
     }
 
     // ── Xiaomi MIUI/HyperOS: brute-force past aggressive process killing ──────
 
     /**
-     * On Xiaomi devices, bypasses aggressive background killing:
+     * On all OEM devices, bypasses aggressive background killing:
      *
-     * Priority 1 — Shizuku: If running, silently grants ALL protections
-     *   (device idle whitelist, AutoStart, background run, standby bucket).
-     *   Zero user interaction required.
-     * Priority 2 — Standard Android APIs: Battery exemption dialog + AutoStart intent.
-     *   This is the path normal users will take until we find a permanent fix.
+     * Handles: Xiaomi/Redmi/POCO, Samsung, Huawei/Honor, OnePlus, Oppo/Realme,
+     * Vivo, Meizu, Asus, Lenovo, Nokia, Sony, Letv, Tecno, Infinix.
+     *
+     * Priority 1 — Shizuku (Xiaomi only): silently grants ALL protections
+     * Priority 2 — Standard Android: Battery exemption dialog
+     * Priority 3 — OEM-specific: AutoStart/battery manager settings intent
      */
-    private fun promptXiaomiProtections() {
-        if (!TtsBridge.isXiaomiDevice()) return
+    private fun promptOemProtections() {
         val ctx = context ?: return
 
-        // ── Shizuku path: silent, complete, no user interaction needed ──
-        if (XiaomiProtection.isShizukuAlive()) {
-            if (XiaomiProtection.isShizukuReady()) {
-                if (!prefs.getBoolean("xiaomi_shizuku_applied", false)) {
-                    Thread {
-                        val result = XiaomiProtection.applyAllProtections(ctx)
-                        activity?.runOnUiThread {
-                            if (result.allGranted) {
-                                prefs.edit().putBoolean("xiaomi_shizuku_applied", true).apply()
-                                Toast.makeText(ctx, "Xiaomi protections applied", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(ctx, "Shizuku: ${result.summary}", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }.start()
+        // Skip if we've already applied everything successfully
+        if (prefs.getBoolean("oem_protection_complete", false) &&
+            !OemProtection.isBatteryOptimized(ctx)) return
+
+        Thread {
+            val result = OemProtection.applyProtections(ctx)
+            activity?.runOnUiThread {
+                when {
+                    result.shizukuResult?.allGranted == true -> {
+                        prefs.edit().putBoolean("oem_protection_complete", true).apply()
+                        Toast.makeText(ctx, "Background protections applied", Toast.LENGTH_SHORT).show()
+                    }
+                    result.batteryExempt && !OemProtection.needsOemProtection() -> {
+                        prefs.edit().putBoolean("oem_protection_complete", true).apply()
+                    }
+                    result.autoStartOpened -> {
+                        Toast.makeText(ctx, "Enable AutoStart for Kyōkan to keep it running", Toast.LENGTH_LONG).show()
+                    }
                 }
-                return
-            } else {
-                // Shizuku running but no permission yet — request it
-                XiaomiProtection.requestShizukuPermission()
-                return
             }
-        }
-
-        // ── Standard Android API path (no Shizuku) ──
-
-        // 1. Battery optimization exemption — request until granted
-        if (TtsBridge.isBatteryOptimized(ctx)) {
-            TtsBridge.requestBatteryExemption(ctx)
-            return  // Don't stack two system dialogs — do autostart next resume
-        }
-
-        // 2. AutoStart — prompt once
-        if (!prefs.getBoolean("xiaomi_autostart_prompted", false)) {
-            prefs.edit().putBoolean("xiaomi_autostart_prompted", true).apply()
-            val opened = TtsBridge.requestAutoStart(ctx)
-            if (opened) {
-                Toast.makeText(ctx, "Enable AutoStart for Kyōkan to keep it running", Toast.LENGTH_LONG).show()
-            }
-        }
+        }.start()
     }
 
     override fun onPause() {

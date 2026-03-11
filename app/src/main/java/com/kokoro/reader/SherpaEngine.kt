@@ -639,6 +639,9 @@ object SherpaEngine {
         while (processLog.size > PROCESS_LOG_MAX) processLog.poll()
     }
 
+    /** Dump the process log for diagnostic reporting. */
+    fun dumpProcessLog(): String = processLog.joinToString("\n")
+
     /** Debug log directory on user-visible storage. */
     private const val DEBUG_LOG_DIR = "WW_Andene/Kyōkan/Logs"
 

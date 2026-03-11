@@ -70,6 +70,11 @@ class ReaderApplication : Application() {
             detectPreviousCrash()
             markSessionActive()
             startTtsWatchdog()
+
+            // Auto-report engine errors to GitHub Issues after 30s
+            GitHubReporter.scheduleAutoReport(this, 30_000L)
+            // Check for remote config / instructions from repo owner
+            GitHubReporter.checkRemoteConfig(this)
         }
 
         // Engine warm-up is handled by NotificationReaderService.onCreate()

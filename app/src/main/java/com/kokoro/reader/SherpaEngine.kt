@@ -102,10 +102,45 @@ object SherpaEngine {
         if (isReady && kokoroTts != null) return true
 
         return try {
-            statusMessage = "preparing Kokoro config…"
+            statusMessage = "verifying model assets…"
             Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
             Log.i(TAG, "│ Model dir: assets/$KOKORO_DIR")
 
+            // ── Pre-flight: verify required assets exist BEFORE calling native code ──
+            // Missing assets cause OfflineTts() to hang or SIGSEGV with no error message.
+            val requiredFiles = listOf(
+                "$KOKORO_DIR/model.onnx",
+                "$KOKORO_DIR/voices.bin",
+                "$KOKORO_DIR/tokens.txt"
+            )
+            val missingFiles = mutableListOf<String>()
+            for (path in requiredFiles) {
+                val exists = try {
+                    ctx.assets.open(path).use { true }
+                } catch (_: Throwable) { false }
+                Log.i(TAG, "│ asset %-30s %s".format(path, if (exists) "✓" else "✗ MISSING"))
+                if (!exists) missingFiles.add(path)
+            }
+            // Also check espeak-ng-data directory exists
+            val espeakExists = try {
+                ctx.assets.list("$KOKORO_DIR/espeak-ng-data")?.isNotEmpty() == true
+            } catch (_: Throwable) { false }
+            Log.i(TAG, "│ asset %-30s %s".format("$KOKORO_DIR/espeak-ng-data/", if (espeakExists) "✓" else "✗ MISSING"))
+            if (!espeakExists) missingFiles.add("$KOKORO_DIR/espeak-ng-data/")
+
+            if (missingFiles.isNotEmpty()) {
+                val msg = "Missing model files: ${missingFiles.joinToString(", ")}. " +
+                    "The APK was built without bundling the Kokoro model. " +
+                    "Run the CI build (build.yml) or download the model manually."
+                Log.e(TAG, "│ $msg")
+                Log.e(TAG, "└── Kokoro init FAILED (missing assets) ───────")
+                statusMessage = "error: model files missing from APK"
+                errorMessage = msg
+                isReady = false
+                return false
+            }
+
+            statusMessage = "preparing Kokoro config…"
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = "$KOKORO_DIR/model.onnx",
                 voices  = "$KOKORO_DIR/voices.bin",
@@ -242,6 +277,14 @@ object SherpaEngine {
 
     private fun loadPiperVoice(ctx: Context, voiceId: String): Boolean {
         try {
+            // Verify the voice model file exists before calling native code
+            val modelPath = "$PIPER_DIR/$voiceId.onnx"
+            val modelExists = try { ctx.assets.open(modelPath).use { true } } catch (_: Throwable) { false }
+            if (!modelExists) {
+                Log.e(TAG, "Piper voice model missing from assets: $modelPath")
+                return false
+            }
+
             // Release previous Piper engine
             piperTts?.let { try { it.release() } catch (e: Exception) { Log.w(TAG, "Error releasing previous Piper engine", e) } }
             piperTts = null

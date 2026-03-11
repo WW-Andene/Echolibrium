@@ -213,6 +213,15 @@ object SherpaEngine {
     fun initializeKokoro(ctx: Context): Boolean {
         if (isReady && kokoroTts != null) return true
 
+        // Check crash counter — prevents AudioPipeline's ensureKokoroReady() from
+        // bypassing the crash-loop breaker by calling initializeKokoro() directly.
+        val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+        val crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
+        if (crashCount >= MAX_INIT_CRASHES) {
+            Log.e(TAG, "initializeKokoro blocked — $crashCount consecutive init failures")
+            return false
+        }
+
         return try {
             initProgress = 5
             statusMessage = "verifying model assets…"
@@ -328,9 +337,14 @@ object SherpaEngine {
             initStartTime.set(0)
 
             if (!completed) {
-                // Native init hung — don't crash, but report clearly
-                initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
-                Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms")
+                // Native init hung — count as a failure to prevent infinite retry on restart
+                val prevCrashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
+                initPrefs.edit()
+                    .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                    .putInt(KEY_INIT_CRASH_COUNT, prevCrashCount + 1)
+                    .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
+                    .apply()
+                Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms (failure #${prevCrashCount + 1})")
                 Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
                 statusMessage = "error: init timed out after ${elapsed / 1000}s"
                 errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +

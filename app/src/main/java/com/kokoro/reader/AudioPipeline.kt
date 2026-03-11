@@ -130,6 +130,9 @@ object AudioPipeline {
     private fun ensureKokoroReady(ctx: Context): Boolean {
         if (SherpaEngine.isReady) return true
 
+        // If the engine already has an error (crash loop, timeout, etc.), don't retry
+        if (SherpaEngine.errorMessage != null) return false
+
         // Engine is warming up in the background — wait for it instead of dropping
         Log.d(TAG, "Engine not ready yet, waiting for warm-up…")
         val deadline = System.currentTimeMillis() + 50_000L // 50s max wait
@@ -140,7 +143,15 @@ object AudioPipeline {
 
         if (SherpaEngine.isReady) return true
 
+        // If there's now an error (set during our wait), don't attempt init
+        if (SherpaEngine.errorMessage != null) {
+            Log.w(TAG, "Engine has error, not attempting init: ${SherpaEngine.errorMessage}")
+            return false
+        }
+
         // Warm-up didn't succeed — try one direct init as last resort
+        // initializeKokoro() has its own crash-counter check and will refuse
+        // if too many previous attempts failed.
         Log.w(TAG, "Warm-up didn't complete, attempting direct init")
         return SherpaEngine.initializeKokoro(ctx)
     }

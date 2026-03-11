@@ -60,17 +60,10 @@ class ReaderApplication : Application() {
         detectPreviousCrash()
         markSessionActive()
 
-        // Only warm up the TTS engine in the :tts process.
-        // The main process has HWUI (for the Activity UI), and ONNX Runtime's
-        // native init corrupts HWUI's CommonPool mutexes on Xiaomi/MediaTek
-        // devices. The :tts process has no Activity/Views/HWUI, so it's safe.
-        if (!isMainProcess()) {
-            try {
-                SherpaEngine.warmUp(this)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Engine warm-up failed — native library may be missing", e)
-            }
-        }
+        // Engine warm-up is handled by NotificationReaderService.onCreate()
+        // in the :tts process. Do NOT call warmUp() here — it races with the
+        // Service's warmUp(), and if the crash-loop breaker fires, the Service's
+        // TtsBridge.writeStatus("starting") overwrites the error status.
     }
 
     override fun onTrimMemory(level: Int) {

@@ -61,6 +61,36 @@ object GitHubReporter {
         }.apply { name = "GitHubReporter-autoReport"; isDaemon = true; start() }
     }
 
+    /**
+     * Manually triggered report — bypasses rate limiting and delay.
+     * Called from "Force report to GitHub" button.
+     * Returns a result message for the UI.
+     */
+    fun forceReport(ctx: Context): String {
+        val token = BuildConfig.GITHUB_ISSUES_TOKEN
+        if (token.isEmpty()) {
+            return "No GitHub token configured (set github.issues.token in local.properties)"
+        }
+
+        val status = TtsBridge.readStatus(ctx)
+
+        // Build diagnostics even if no error — user wants to force it
+        val title = buildTitle(ctx, status)
+        val body = buildBody(ctx, status)
+
+        val success = createGitHubIssue(token, title, body, listOf("manual-report"))
+        return if (success) {
+            val p = prefs(ctx)
+            p.edit()
+                .putString(KEY_LAST_REPORT_HASH, (status.error ?: "manual").hashCode().toString())
+                .putLong(KEY_LAST_REPORT_TIME, System.currentTimeMillis())
+                .apply()
+            "Report sent to GitHub Issues"
+        } else {
+            "Failed to create GitHub issue — check token/network"
+        }
+    }
+
     private fun checkAndReport(ctx: Context) {
         // Read TTS status
         val status = TtsBridge.readStatus(ctx) ?: return

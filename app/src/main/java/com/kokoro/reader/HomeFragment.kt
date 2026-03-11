@@ -74,6 +74,10 @@ class HomeFragment : Fragment() {
         val txtDndEnd        = v.findViewById<TextView>(R.id.txt_dnd_end)
         val btnStop          = v.findViewById<Button>(R.id.btn_stop)
         val btnDumpDebug     = v.findViewById<Button>(R.id.btn_dump_debug)
+        val btnShowInitLogs  = v.findViewById<Button>(R.id.btn_show_init_logs)
+        val initLogPanel     = v.findViewById<View>(R.id.init_log_panel)
+        val initLogContent   = v.findViewById<TextView>(R.id.init_log_content)
+        val btnForceReport   = v.findViewById<Button>(R.id.btn_force_report)
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         updateEngineStatus(engineStatusText)
@@ -83,6 +87,53 @@ class HomeFragment : Fragment() {
             val c = context ?: return@setOnClickListener
             TtsBridge.dumpDebugLog(c)
             Toast.makeText(c, "Debug log saved to /storage/emulated/0/WW_Andene/Kyōkan/Logs/", Toast.LENGTH_LONG).show()
+        }
+
+        // ── Show init logs panel (inline) ──────────────────────────────────────
+        var logPanelVisible = false
+        var logRefreshRunnable: Runnable? = null
+
+        btnShowInitLogs.setOnClickListener {
+            val c = context ?: return@setOnClickListener
+            logPanelVisible = !logPanelVisible
+            if (logPanelVisible) {
+                initLogPanel.visibility = View.VISIBLE
+                btnShowInitLogs.text = "▼ Hide init logs"
+                // Request process log from :tts process
+                TtsBridge.requestProcessLog(c)
+                // Start auto-refresh: poll every 1s
+                logRefreshRunnable = object : Runnable {
+                    override fun run() {
+                        if (!isAdded || !logPanelVisible) return
+                        refreshLogPanel(c, initLogContent)
+                        refreshHandler.postDelayed(this, 1000)
+                    }
+                }
+                // First read after a short delay to let :tts write the file
+                refreshHandler.postDelayed(logRefreshRunnable!!, 300)
+            } else {
+                initLogPanel.visibility = View.GONE
+                btnShowInitLogs.text = "▶ Show init logs"
+                logRefreshRunnable?.let { refreshHandler.removeCallbacks(it) }
+                logRefreshRunnable = null
+            }
+        }
+
+        // ── Force report to GitHub ─────────────────────────────────────────────
+        btnForceReport.setOnClickListener {
+            val c = context ?: return@setOnClickListener
+            btnForceReport.isEnabled = false
+            btnForceReport.text = "Sending…"
+            // Also request a fresh debug dump so the report has current data
+            TtsBridge.dumpDebugLog(c)
+            Thread {
+                val result = GitHubReporter.forceReport(c)
+                activity?.runOnUiThread {
+                    btnForceReport.isEnabled = true
+                    btnForceReport.text = "Force report to GitHub"
+                    Toast.makeText(c, result, Toast.LENGTH_LONG).show()
+                }
+            }.apply { name = "ForceReport"; isDaemon = true; start() }
         }
         btnPermission.setOnClickListener {
             val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
@@ -468,6 +519,70 @@ class HomeFragment : Fragment() {
             } catch (e: Exception) {
                 android.util.Log.e("HomeFragment", "Error copying log", e)
             }
+        }
+    }
+
+    /**
+     * Refreshes the init log panel with process log from :tts + latest init log file.
+     */
+    private fun refreshLogPanel(ctx: Context, tv: TextView) {
+        try {
+            // Re-request fresh process log from :tts
+            TtsBridge.requestProcessLog(ctx)
+
+            val sb = StringBuilder()
+
+            // 1. Process log (live init steps from :tts memory)
+            val processLog = TtsBridge.readProcessLog(ctx)
+            if (processLog.isNotEmpty()) {
+                sb.appendLine("═══ LIVE PROCESS LOG ═══")
+                sb.appendLine(processLog)
+                sb.appendLine()
+            }
+
+            // 2. TTS status file
+            val statusFile = java.io.File(ctx.filesDir, "tts_status.json")
+            if (statusFile.exists()) {
+                sb.appendLine("═══ TTS STATUS ═══")
+                try {
+                    val json = org.json.JSONObject(statusFile.readText())
+                    sb.appendLine("ready    : ${json.optBoolean("ready")}")
+                    sb.appendLine("status   : ${json.optString("status")}")
+                    sb.appendLine("error    : ${json.optString("error").ifEmpty { "(none)" }}")
+                    sb.appendLine("alive    : ${json.optBoolean("alive")}")
+                    sb.appendLine("progress : ${json.optInt("initProgress")}%")
+                    val ts = json.optLong("ts", 0)
+                    if (ts > 0) {
+                        val age = (System.currentTimeMillis() - ts) / 1000
+                        sb.appendLine("last update: ${age}s ago")
+                    }
+                } catch (_: Throwable) {
+                    sb.appendLine(statusFile.readText())
+                }
+                sb.appendLine()
+            }
+
+            // 3. Latest init log file
+            val dirs = listOfNotNull(
+                ReaderApplication.resolvedLogDir,
+                java.io.File(ctx.applicationContext.filesDir, "logs")
+            )
+            val latestLog = dirs.flatMap { dir ->
+                dir.listFiles { f -> f.name.startsWith("engine_init_") }?.toList() ?: emptyList()
+            }.maxByOrNull { it.lastModified() }
+
+            if (latestLog != null && latestLog.exists()) {
+                sb.appendLine("═══ LATEST INIT LOG (${latestLog.name}) ═══")
+                sb.appendLine(latestLog.readText())
+            }
+
+            if (sb.isEmpty()) {
+                sb.appendLine("(no logs available — engine may not have started yet)")
+            }
+
+            tv.text = sb.toString()
+        } catch (e: Throwable) {
+            tv.text = "(error reading logs: ${e.message})"
         }
     }
 

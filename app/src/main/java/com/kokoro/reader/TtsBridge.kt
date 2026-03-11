@@ -26,6 +26,7 @@ object TtsBridge {
     const val ACTION_VOICE_CMD_STOP  = "com.kokoro.reader.action.VOICE_CMD_STOP"
     const val ACTION_RETRY_INIT      = "com.kokoro.reader.action.RETRY_INIT"
     const val ACTION_DUMP_DEBUG_LOG  = "com.kokoro.reader.action.DUMP_DEBUG_LOG"
+    const val ACTION_DUMP_PROCESS_LOG = "com.kokoro.reader.action.DUMP_PROCESS_LOG"
 
     private const val STATUS_FILE = "tts_status.json"
 
@@ -74,6 +75,42 @@ object TtsBridge {
         val intent = Intent(ACTION_DUMP_DEBUG_LOG)
         intent.setPackage(ctx.packageName)
         ctx.sendBroadcast(intent)
+    }
+
+    /**
+     * Requests the :tts process to write its in-memory process log to a shared file.
+     * The UI can then read it via [readProcessLog].
+     */
+    fun requestProcessLog(ctx: Context) {
+        val intent = Intent(ACTION_DUMP_PROCESS_LOG)
+        intent.setPackage(ctx.packageName)
+        ctx.sendBroadcast(intent)
+    }
+
+    private const val PROCESS_LOG_FILE = "process_log.txt"
+
+    /**
+     * Writes the process log content to a file in filesDir (called from :tts process).
+     */
+    fun writeProcessLog(ctx: Context, content: String) {
+        try {
+            val file = File(ctx.filesDir, PROCESS_LOG_FILE)
+            val tmp = File(ctx.filesDir, "$PROCESS_LOG_FILE.tmp")
+            tmp.writeText(content)
+            if (!tmp.renameTo(file)) {
+                tmp.copyTo(file, overwrite = true)
+                tmp.delete()
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Reads the process log written by the :tts process. Returns empty string if unavailable.
+     */
+    fun readProcessLog(ctx: Context): String {
+        return try {
+            File(ctx.filesDir, PROCESS_LOG_FILE).readText()
+        } catch (_: Throwable) { "" }
     }
 
     // ── Status (written by TTS process, read by UI process) ──────────────────

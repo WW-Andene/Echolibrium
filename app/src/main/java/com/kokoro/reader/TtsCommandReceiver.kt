@@ -33,6 +33,10 @@ class TtsCommandReceiver : BroadcastReceiver() {
                     val path = SherpaEngine.dumpDebugLog(context.applicationContext)
                     Log.i(TAG, "Debug log written to: $path")
                 }
+                TtsBridge.ACTION_DUMP_PROCESS_LOG -> {
+                    val log = SherpaEngine.dumpProcessLog()
+                    TtsBridge.writeProcessLog(context.applicationContext, log)
+                }
                 else -> Log.w(TAG, "Unknown action: ${intent.action}")
             }
         } catch (e: Throwable) {

@@ -733,5 +733,159 @@ a better body to live in.
 
 
 ================================================================================
+ PART 13 — UNIMPLEMENTED ENGINE IMPROVEMENTS (from ENGINE_IMPROVEMENTS_TODO.txt)
+================================================================================
+
+Cross-referenced against current codebase. Only items that are STILL RELEVANT
+and NOT YET IMPLEMENTED are listed here.
+
+
+── KNOWN ISSUES (still active) ────────────────────────────────────────────────
+
+ISSUE 1: Native SIGSEGV on SherpaEngine.warmUp()                    [ACTIVE]
+  SherpaEngine.kt:93-112 — warmUp() is called from both
+  ReaderApplication.onCreate() (line 44) AND NotificationReaderService (line 89).
+  Current workaround: guard with isWarmingUp flag + synchronized block, catch
+  Throwable. But the underlying native crash risk remains. A proper fix would
+  use a retry-with-backoff strategy and process-level isolation (see §3.1).
+
+ISSUE 2: Piper voice extraction slow on first launch                [OBSOLETE]
+  No longer relevant. PiperVoiceManager now returns isBundled()=true for all
+  voices. Voices load directly from assets via AssetManager. No extraction step
+  exists in the current code. VoiceDownloadManager is dead code.
+
+ISSUE 3: Android 13+ restricted settings for NotificationListener   [ACTIVE]
+  Users must manually enable the notification listener in Settings. The app
+  shows a dialog guiding them, but Android 13+ makes it harder to discover.
+  No programmatic workaround exists — this is an OS-level restriction.
+  Mitigation: Improve onboarding UX with clearer step-by-step instructions.
+
+
+── UNIMPLEMENTED IMPROVEMENTS ─────────────────────────────────────────────────
+
+§3.1 — SAFE ENGINE WARM-UP                                   [HIGH PRIORITY]
+  Status: NOT implemented.
+  Problem: SherpaEngine.warmUp() runs on a raw daemon Thread with no retry,
+  no backoff, and a bare catch(Throwable). If native init crashes (SIGSEGV),
+  the engine stays dead for the session.
+  What to build:
+    - Retry with exponential backoff (3 attempts, 1s → 2s → 4s)
+    - State machine: IDLE → WARMING_UP → READY | FAILED(retryCount)
+    - Livedata/callback to notify UI of warm-up progress
+    - Consider moving native init to a separate process (isolates SIGSEGV)
+  Where it fits in restructuring: Part of SherpaEngine refactor (Phase 1).
+  Related code: SherpaEngine.kt:93-112, ReaderApplication.kt:44,
+                NotificationReaderService.kt:89
+
+§3.2 — VOICE QUALITY SELECTOR IN UI                          [MEDIUM PRIORITY]
+  Status: NOT implemented.
+  Problem: Piper voices come in low/medium/high quality variants (see
+  PiperVoiceCatalog.kt — e.g., lessac has all 3 qualities). The UI shows all
+  variants as separate entries. No quality picker per voice exists.
+  What to build:
+    - Group Piper voices by name, show quality as a sub-selector (low/med/high)
+    - Default to "medium" for bandwidth/quality balance
+    - Show model size estimates per quality tier
+  Where it fits: ProfilesFragment voice grid refactor (Phase 5 in audit).
+  Related code: PiperVoiceCatalog.kt:65-92 (multiple quality entries per voice)
+
+§3.3 — STREAMING / CHUNKED SYNTHESIS                         [MEDIUM PRIORITY]
+  Status: NOT implemented.
+  Problem: SherpaEngine synthesizes the entire text in one blocking call
+  (generate()), then returns the full PCM buffer. Long notifications cause
+  noticeable latency before playback begins.
+  What to build:
+    - Split text into sentence-level chunks
+    - Synthesize chunk N while playing chunk N-1
+    - Use AudioPipeline's existing queue for chunk sequencing
+  Where it fits: AudioPipeline + SherpaEngine refactor (Phase 1).
+  Complexity: Medium-high. Requires careful handling of DSP effects across
+  chunk boundaries (breathiness, trailing-off, vocal fry need continuity).
+  Related code: SherpaEngine.kt (generate), AudioPipeline.kt:180-240
+
+§3.4 — VOICE PREVIEW / SAMPLE PLAYBACK                      [MEDIUM PRIORITY]
+  Status: PARTIALLY implemented.
+  ProfilesFragment.kt:755 has a "test voice" button that synthesizes
+  "Hello! This is how I sound." — but only for the currently selected profile.
+  What's missing:
+    - Preview button on each voice in the voice selection grid
+    - Pre-rendered audio samples (avoids synthesis delay for previews)
+    - Quick A/B comparison between voices
+  Where it fits: ProfilesFragment voice grid refactor (Phase 5).
+  Related code: ProfilesFragment.kt:755-770
+
+§3.5 — MULTI-LANGUAGE AUTO-DETECTION                         [LOW PRIORITY]
+  Status: NOT implemented.
+  Problem: The app always uses the voice's language for synthesis. If a
+  notification contains mixed languages (e.g., English text with French words),
+  pronunciation is wrong for the foreign words.
+  What to build:
+    - Lightweight language detection on text segments (trigram-based, no network)
+    - Automatic voice switching or phoneme adaptation per segment
+  Where it fits: SignalExtractor enhancement (Phase 2 — after core refactor).
+  Complexity: High. Requires multi-voice orchestration within a single
+  utterance and cross-engine coordination (Kokoro vs Piper per language).
+  Related code: SignalExtractor.kt, SherpaEngine.kt
+
+§3.6 — PITCH SHIFTING AT DSP LEVEL                          [LOW PRIORITY]
+  Status: PARTIALLY implemented.
+  AudioPipeline.kt:285 applies pitch shift via AudioTrack playback rate.
+  VoiceTransform already carries pitchShiftSemitones. But the current approach
+  (playback rate) also changes speed, not just pitch.
+  What to build:
+    - True pitch shifting via PSOLA or phase vocoder in AudioDsp
+    - Decouple pitch from speed so emotional modulation doesn't alter pacing
+  Where it fits: AudioDsp enhancement (Phase 2).
+  Complexity: Medium. PSOLA is well-documented but tricky to get artifact-free.
+  Related code: AudioPipeline.kt:285, VoiceTransform.kt (pitchShiftSemitones),
+                AudioDsp.kt
+
+§3.7 — ADAPTIVE VOLUME BASED ON AMBIENT NOISE               [LOW PRIORITY]
+  Status: NOT implemented.
+  Problem: Notification volume is fixed. In noisy environments, the TTS is
+  too quiet; in quiet environments, it's too loud.
+  What to build:
+    - Microphone sampling to estimate ambient noise level
+    - Dynamic gain adjustment in AudioDsp before AudioTrack output
+    - User-configurable sensitivity and min/max volume bounds
+  Where it fits: AudioDsp / AudioPipeline enhancement (Phase 2+).
+  Complexity: Medium. Requires RECORD_AUDIO permission and careful feedback
+  loop prevention (don't amplify based on own TTS output).
+  Related code: AudioDsp.kt, AudioPipeline.kt
+
+§3.8 — CONVERSATION GROUPING                                [MEDIUM PRIORITY]
+  Status: NOT implemented.
+  Problem: Rapid-fire messages from the same sender are read individually,
+  each with full voice modulation setup. This creates a "robotic" feel for
+  chat conversations.
+  What to build:
+    - Group messages from same sender within a time window (e.g., 5 seconds)
+    - Batch-read grouped messages with natural pauses between them
+    - Maintain mood continuity across the group (don't reset MoodState)
+    - Use sender history (NotificationReaderService.kt:SenderRecord) for
+      grouping decisions
+  Where it fits: NotificationReaderService + AudioPipeline refactor (Phase 1).
+  Related code: NotificationReaderService.kt:120-140 (SenderRecord tracking),
+                AudioPipeline.kt
+
+
+── PRIORITY SUMMARY ───────────────────────────────────────────────────────────
+
+  RESTRUCTURING PHASE 1 (do first — these have the highest user impact):
+    §3.1 Safe warm-up        — Prevents dead engine after crash
+    §3.3 Chunked synthesis   — Reduces perceived latency
+    §3.8 Conversation group  — Improves chat readback quality
+
+  RESTRUCTURING PHASE 2 (after core refactor):
+    §3.2 Quality selector    — Better UX for voice picking
+    §3.4 Voice preview       — Already partially working, easy win
+    §3.6 True pitch shift    — Decouples pitch from speed
+
+  NICE-TO-HAVE (low priority, high complexity):
+    §3.5 Language detection   — Hard, requires multi-engine orchestration
+    §3.7 Adaptive volume      — Needs new permission, feedback loop risk
+
+
+================================================================================
  END OF AUDIT
 ================================================================================

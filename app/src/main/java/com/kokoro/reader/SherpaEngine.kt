@@ -11,6 +11,7 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import android.content.SharedPreferences
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
@@ -40,8 +41,9 @@ object SherpaEngine {
     private const val KOKORO_DIR = "kokoro-model"
     private const val PIPER_DIR  = "piper-models"
 
-    /** Maximum time (ms) to wait for native OfflineTts constructor before giving up. */
-    private const val INIT_TIMEOUT_MS = 60_000L
+    /** Base timeout (ms) — actual timeout is adaptive based on device + model format. */
+    private const val BASE_TIMEOUT_ORT_MS = 30_000L
+    private const val BASE_TIMEOUT_ONNX_MS = 90_000L
 
     /** Minimum free disk space (bytes) required before extracting the Kokoro model. */
     private const val MIN_DISK_SPACE_BYTES = 400L * 1024 * 1024  // 400 MB
@@ -51,6 +53,27 @@ object SherpaEngine {
 
     /** Minimum expected model.ort/.onnx file size — below this, extraction is corrupt. */
     private const val MIN_MODEL_FILE_SIZE = 100L * 1024 * 1024  // 100 MB
+
+    /** Pre-warming: read model file in 256KB chunks to populate OS page cache. */
+    private const val PREWARM_BUFFER_SIZE = 256 * 1024
+
+    // ── Configuration memory keys ────────────────────────────────────────────────
+    // Persists the last config that successfully loaded Kokoro. On next launch,
+    // skips the entire escalation ladder and goes straight to the known-good config.
+    // Invalidated on app update (model or native lib may have changed).
+    private const val KEY_LAST_GOOD_THREADS  = "last_good_threads"
+    private const val KEY_LAST_GOOD_PROVIDER = "last_good_provider"
+    private const val KEY_LAST_GOOD_DEBUG    = "last_good_debug"
+    private const val KEY_LAST_GOOD_VERSION  = "last_good_version"
+
+    // ── Init config (used by escalation ladder + config memory) ──────────────────
+
+    private data class InitConfig(
+        val threads: Int,
+        val provider: String,
+        val debug: Boolean,
+        val label: String
+    )
 
     // ── Device-adaptive engine configuration ────────────────────────────────────
 
@@ -105,6 +128,202 @@ object SherpaEngine {
         else -> 2
     }
 
+    // ── Device profiling ─────────────────────────────────────────────────────────
+    // Comprehensive device capability assessment. Drives timeout, memory thresholds,
+    // escalation strategy, and thread priority decisions. This is what separates a
+    // world-class engine from a "hope it works" engine.
+
+    enum class DeviceTier { HIGH, MEDIUM, LOW }
+
+    data class DeviceProfile(
+        val totalRamMB: Long,
+        val availRamMB: Long,
+        val cpuCores: Int,
+        val socVendor: SocVendor,
+        val apiLevel: Int,
+        val isXiaomi: Boolean,
+        val isMIUI: Boolean,
+        val tier: DeviceTier,
+        val manufacturer: String,
+        val model: String
+    ) {
+        /** Timeout multiplier — low-tier devices get more time, not less. */
+        val timeoutMultiplier: Float get() = when (tier) {
+            DeviceTier.HIGH -> 0.75f
+            DeviceTier.MEDIUM -> 1.0f
+            DeviceTier.LOW -> 1.5f
+        }
+
+        override fun toString(): String = buildString {
+            append("DeviceProfile(")
+            append("$manufacturer $model, ")
+            append("${totalRamMB}MB RAM, ${availRamMB}MB free, ")
+            append("${cpuCores} cores, $socVendor, API $apiLevel, ")
+            append("tier=$tier")
+            if (isXiaomi) append(", Xiaomi")
+            if (isMIUI) append(", MIUI")
+            append(")")
+        }
+    }
+
+    private fun profileDevice(ctx: Context): DeviceProfile {
+        val actMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val memInfo = android.app.ActivityManager.MemoryInfo()
+        actMgr?.getMemoryInfo(memInfo)
+
+        val totalRamMB = memInfo.totalMem / 1024 / 1024
+        val availRamMB = memInfo.availMem / 1024 / 1024
+        val cpuCores = Runtime.getRuntime().availableProcessors()
+        val mfr = Build.MANUFACTURER.lowercase()
+        val isXiaomi = mfr.contains("xiaomi") || mfr.contains("redmi") || mfr.contains("poco")
+        // MIUI detection: Xiaomi's custom ROM has unique system properties
+        val isMIUI = isXiaomi && try {
+            @Suppress("PrivateApi")
+            Class.forName("android.os.SystemProperties")
+                .getMethod("get", String::class.java)
+                .invoke(null, "ro.miui.ui.version.name")
+                ?.toString()?.isNotEmpty() == true
+        } catch (_: Throwable) { false }
+
+        val tier = when {
+            totalRamMB >= 6000 && cpuCores >= 6 && !memInfo.lowMemory -> DeviceTier.HIGH
+            totalRamMB >= 3000 && cpuCores >= 4 -> DeviceTier.MEDIUM
+            else -> DeviceTier.LOW
+        }
+
+        return DeviceProfile(
+            totalRamMB, availRamMB, cpuCores, socVendor,
+            Build.VERSION.SDK_INT, isXiaomi, isMIUI, tier,
+            Build.MANUFACTURER, Build.MODEL
+        )
+    }
+
+    // ── Config memory ────────────────────────────────────────────────────────────
+    // Remembers the exact config that worked. Skips escalation on next launch.
+    // Google TTS does this — learn from success, don't re-probe every time.
+
+    private fun loadGoodConfig(prefs: SharedPreferences, appVersion: Long): InitConfig? {
+        val savedVersion = prefs.getLong(KEY_LAST_GOOD_VERSION, -1)
+        if (savedVersion != appVersion) return null  // App updated — re-probe
+        val threads = prefs.getInt(KEY_LAST_GOOD_THREADS, -1)
+        val provider = prefs.getString(KEY_LAST_GOOD_PROVIDER, null)
+        val debug = prefs.getBoolean(KEY_LAST_GOOD_DEBUG, false)
+        if (threads < 1 || provider == null) return null
+        return InitConfig(threads, provider, debug, "remembered ($threads threads, $provider)")
+    }
+
+    private fun saveGoodConfig(prefs: SharedPreferences, config: InitConfig, appVersion: Long) {
+        prefs.edit()
+            .putInt(KEY_LAST_GOOD_THREADS, config.threads)
+            .putString(KEY_LAST_GOOD_PROVIDER, config.provider)
+            .putBoolean(KEY_LAST_GOOD_DEBUG, config.debug)
+            .putLong(KEY_LAST_GOOD_VERSION, appVersion)
+            .apply()
+    }
+
+    private fun clearGoodConfig(prefs: SharedPreferences) {
+        prefs.edit()
+            .remove(KEY_LAST_GOOD_THREADS)
+            .remove(KEY_LAST_GOOD_PROVIDER)
+            .remove(KEY_LAST_GOOD_DEBUG)
+            .remove(KEY_LAST_GOOD_VERSION)
+            .apply()
+    }
+
+    // ── Model pre-warming ────────────────────────────────────────────────────────
+    // Sequentially reads the entire model file to populate the OS page cache.
+    // When ORT opens the file via mmap, ALL pages are already in RAM — no random
+    // page faults during model parsing. This is critical on low-memory devices
+    // where random page faults during mmap can trigger the OOM killer (SIGSEGV).
+
+    private fun prewarmModelFile(modelFile: File): Long {
+        val start = System.currentTimeMillis()
+        try {
+            val buffer = ByteArray(PREWARM_BUFFER_SIZE)
+            var totalRead = 0L
+            modelFile.inputStream().buffered(PREWARM_BUFFER_SIZE).use { input ->
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    totalRead += n
+                }
+            }
+            val elapsed = System.currentTimeMillis() - start
+            val speedKBs = if (elapsed > 0) totalRead / elapsed else 0
+            Log.i(TAG, "│   ${totalRead / 1024 / 1024}MB read in ${elapsed}ms (${speedKBs}KB/s)")
+            return elapsed
+        } catch (e: Throwable) {
+            Log.w(TAG, "│   Pre-warm failed: ${e.message}")
+            return System.currentTimeMillis() - start
+        }
+    }
+
+    // ── Heap reservation ─────────────────────────────────────────────────────────
+    // Forces the JVM to expand its heap region BEFORE native code starts allocating.
+    // Without this, the JVM may grow its heap DURING native model loading, causing
+    // virtual memory region collisions that manifest as SIGSEGV on some Android ROMs
+    // (especially MIUI's modified ART runtime).
+
+    private fun reserveAndReleaseHeap(): Long {
+        val start = System.currentTimeMillis()
+        try {
+            val heapMax = Runtime.getRuntime().maxMemory()
+            val reserveSize = (heapMax / 4).toInt().coerceIn(8 * 1024 * 1024, 64 * 1024 * 1024)
+            val buffer = ByteArray(reserveSize)
+            // Touch every page to force physical backing
+            for (i in buffer.indices step 4096) { buffer[i] = 1 }
+            Log.i(TAG, "│   Heap expanded by ${reserveSize / 1024 / 1024}MB")
+            // Buffer goes out of scope → eligible for GC
+            // The heap region stays expanded even after GC reclaims the buffer
+        } catch (_: OutOfMemoryError) {
+            Log.w(TAG, "│   Heap reservation skipped (device very low on memory)")
+        }
+        System.gc()
+        return System.currentTimeMillis() - start
+    }
+
+    // ── Adaptive timeout ─────────────────────────────────────────────────────────
+    // .ort loads 5-10x faster than .onnx. Low-tier devices need MORE time, not less.
+    // A fixed timeout is wrong for both fast and slow devices.
+
+    private fun adaptiveTimeoutMs(isOrt: Boolean, profile: DeviceProfile): Long {
+        val baseMs = if (isOrt) BASE_TIMEOUT_ORT_MS else BASE_TIMEOUT_ONNX_MS
+        val adjusted = (baseMs * profile.timeoutMultiplier).toLong()
+        return adjusted.coerceIn(20_000L, 120_000L)
+    }
+
+    // ── Phase telemetry ──────────────────────────────────────────────────────────
+    // Granular timing of every init stage. Written to init log for diagnostics.
+
+    data class InitTelemetry(
+        var probeMs: Long = 0,
+        var extractionMs: Long = 0,
+        var gcMs: Long = 0,
+        var heapReserveMs: Long = 0,
+        var prewarmMs: Long = 0,
+        var nativeLoadMs: Long = 0,
+        var totalMs: Long = 0,
+        var escalationLevel: Int = 0,
+        var modelFormat: String = "",
+        var configUsed: String = "",
+        var deviceProfile: DeviceProfile? = null,
+        var timeoutMs: Long = 0
+    ) {
+        override fun toString(): String = buildString {
+            appendLine("Phase Timing:")
+            appendLine("  probe       : ${probeMs}ms")
+            appendLine("  extraction  : ${extractionMs}ms")
+            appendLine("  GC+heap     : ${gcMs + heapReserveMs}ms (gc=${gcMs}ms, heap=${heapReserveMs}ms)")
+            appendLine("  prewarm     : ${prewarmMs}ms")
+            appendLine("  native load : ${nativeLoadMs}ms")
+            appendLine("  TOTAL       : ${totalMs}ms")
+            appendLine("Escalation    : level $escalationLevel ($configUsed)")
+            appendLine("Model format  : $modelFormat")
+            appendLine("Timeout       : ${timeoutMs}ms")
+            appendLine("Device        : $deviceProfile")
+        }
+    }
+
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null
 
@@ -156,7 +375,13 @@ object SherpaEngine {
      * Writes an engine init failure log file so the user can copy it from the UI.
      * Mirrors [ReaderApplication.writeCrashLog] but for non-fatal init failures.
      */
-    private fun writeInitLog(ctx: Context, reason: String, throwable: Throwable? = null) {
+    /** Last telemetry from init — available for the log even after init returns. */
+    @Volatile private var lastTelemetry: InitTelemetry? = null
+
+    private fun writeInitLog(
+        ctx: Context, reason: String, throwable: Throwable? = null,
+        telemetry: InitTelemetry? = lastTelemetry
+    ) {
         try {
             val dir = ReaderApplication.resolvedLogDir ?: return
             if (!dir.exists()) dir.mkdirs()
@@ -169,25 +394,36 @@ object SherpaEngine {
             } else null
 
             file.writeText(buildString {
-                appendLine("=== Kyōkan Engine Init Failure ===")
+                appendLine("=== Kyōkan Engine Init Report ===")
                 appendLine("Time       : ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
                 appendLine("Reason     : $reason")
-                appendLine("Device     : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-                appendLine("Android    : ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
-                appendLine("SoC        : $socVendor (hw=${android.os.Build.HARDWARE})")
-                appendLine("Threads    : ${optimalThreadCount()}, Provider: ${optimalProvider()}")
+                appendLine()
+                appendLine("--- Device Profile ---")
+                val dp = telemetry?.deviceProfile
+                if (dp != null) {
+                    appendLine("Manufacturer: ${dp.manufacturer}")
+                    appendLine("Model       : ${dp.model}")
+                    appendLine("RAM         : ${dp.availRamMB}MB free / ${dp.totalRamMB}MB total")
+                    appendLine("CPU cores   : ${dp.cpuCores}")
+                    appendLine("SoC         : ${dp.socVendor} (hw=${Build.HARDWARE})")
+                    appendLine("Tier        : ${dp.tier}")
+                    appendLine("Xiaomi/MIUI : ${dp.isXiaomi} / ${dp.isMIUI}")
+                } else {
+                    appendLine("Device     : ${Build.MANUFACTURER} ${Build.MODEL}")
+                    appendLine("SoC        : $socVendor (hw=${Build.HARDWARE})")
+                }
+                appendLine("Android    : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
                 appendLine("App version: ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Exception) { "?" }}")
                 try {
                     val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
                     appendLine("sherpa-onnx : ${vi.version} (${vi.gitSha1})")
                 } catch (_: Throwable) {}
-                try {
-                    val actMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
-                    val mi = android.app.ActivityManager.MemoryInfo()
-                    actMgr?.getMemoryInfo(mi)
-                    appendLine("Memory     : ${mi.availMem / 1024 / 1024}MB free / ${mi.totalMem / 1024 / 1024}MB total (low=${mi.lowMemory})")
-                } catch (_: Throwable) {}
                 appendLine()
+                if (telemetry != null) {
+                    appendLine("--- Telemetry ---")
+                    append(telemetry.toString())
+                    appendLine()
+                }
                 if (stackTrace != null) {
                     appendLine("--- Stack Trace ---")
                     appendLine(stackTrace)
@@ -278,6 +514,7 @@ object SherpaEngine {
         val lastCrashTime = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
 
         // If the previous init was still "in progress" when the process died, it crashed.
+        // Clear config memory — the remembered config may be the one that crashed.
         if (wasInProgress) {
             crashCount++
             initPrefs.edit()
@@ -285,7 +522,9 @@ object SherpaEngine {
                 .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .apply()
-            Log.w(TAG, "Previous engine init crashed (crash #$crashCount)")
+            // The config that was in use when we crashed is suspect — forget it
+            clearGoodConfig(initPrefs)
+            Log.w(TAG, "Previous engine init crashed (crash #$crashCount) — cleared config memory")
         }
 
         // Reset crash counter if enough time has passed (device might have cooled down)
@@ -401,6 +640,9 @@ object SherpaEngine {
         }
 
         return try {
+            val initGlobalStart = System.currentTimeMillis()
+            var probeElapsedMs = 0L
+
             initProgress = 5
             statusMessage = "probing native stack…"
             syncStatus()
@@ -414,6 +656,7 @@ object SherpaEngine {
             // this device — skip straight to Piper fallback without wasting
             // 3 crash cycles on the huge Kokoro model.
             if (!nativeStackProbed) {
+                val probeStart = System.currentTimeMillis()
                 Log.i(TAG, "│ Probing native stack with lightweight model…")
                 try {
                     val probeVoiceId = PIPER_FALLBACK_VOICE
@@ -434,10 +677,12 @@ object SherpaEngine {
                         // Probe succeeded — native stack is proven functional
                         probeEngine.release()
                         nativeStackProbed = true
-                        Log.i(TAG, "│ Native stack probe: ✓ (ORT + JNI working)")
+                        probeElapsedMs = System.currentTimeMillis() - probeStart
+                        Log.i(TAG, "│ Native stack probe: ✓ in ${probeElapsedMs}ms (ORT + JNI working)")
                     } else {
                         Log.w(TAG, "│ Native stack probe: skipped (couldn't extract probe model)")
-                        nativeStackProbed = true  // Don't block Kokoro init on probe failure
+                        nativeStackProbed = true
+                        probeElapsedMs = System.currentTimeMillis() - probeStart
                     }
                 } catch (e: Throwable) {
                     // Probe CRASHED — native code is broken. Don't attempt Kokoro at all.
@@ -591,62 +836,105 @@ object SherpaEngine {
             }
             Log.i(TAG, "│ Extraction verified: model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
 
-            // ── Stage 1: Memory preparation ─────────────────────────────
-            // Force garbage collection and trim JVM heap BEFORE loading the
-            // 311MB Kokoro model. On memory-constrained devices this can free
-            // 50-100MB of reclaimable heap, preventing OOM-triggered SIGSEGV
-            // inside ORT's mmap/malloc path.
-            initProgress = 28
-            statusMessage = "preparing memory…"
-            syncStatus()
-            Log.i(TAG, "│ Stage 1: Memory preparation")
+            // ══════════════════════════════════════════════════════════════
+            // Stage 1: Device Profiling + Memory Preparation
+            // ══════════════════════════════════════════════════════════════
+            // Profile the device FIRST — all subsequent decisions (timeout,
+            // escalation, memory thresholds) are driven by the profile.
+            // Then prepare memory: GC, heap reservation, model pre-warming.
+            val telemetry = InitTelemetry(probeMs = probeElapsedMs)
+            val stageStart = System.currentTimeMillis()
 
+            initProgress = 25
+            statusMessage = "profiling device…"
+            syncStatus()
+            Log.i(TAG, "│")
+            Log.i(TAG, "│ ═══ Stage 1: Device Profile + Memory Prep ═══")
+
+            val profile = profileDevice(ctx)
+            telemetry.deviceProfile = profile
+            Log.i(TAG, "│ $profile")
+
+            // ── 1a. Garbage collection ──────────────────────────────────
+            val gcStart = System.currentTimeMillis()
             val runtime = Runtime.getRuntime()
             val heapBefore = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
-            // Two-pass GC: first pass collects soft refs, second pass reclaims them
             System.gc()
             System.runFinalization()
             System.gc()
-            // Brief yield to let finalizer thread complete
             Thread.sleep(50)
             val heapAfter = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
-            Log.i(TAG, "│ GC: JVM heap ${heapBefore}MB → ${heapAfter}MB (freed ${heapBefore - heapAfter}MB)")
+            telemetry.gcMs = System.currentTimeMillis() - gcStart
+            Log.i(TAG, "│ GC: heap ${heapBefore}MB → ${heapAfter}MB (freed ${heapBefore - heapAfter}MB, ${telemetry.gcMs}ms)")
 
-            // Request the system to trim memory from other components
-            try {
-                val activityMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
-                val memInfo = android.app.ActivityManager.MemoryInfo()
-                activityMgr?.getMemoryInfo(memInfo)
-                Log.i(TAG, "│ System RAM: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
-                Log.i(TAG, "│ JVM heap: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
+            // ── 1b. RAM check (AFTER GC for accurate reading) ───────────
+            val memInfo = android.app.ActivityManager.MemoryInfo()
+            (ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                ?.getMemoryInfo(memInfo)
+            Log.i(TAG, "│ RAM: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
+            Log.i(TAG, "│ JVM: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
 
-                // ── Pre-check: refuse to load if device is low on RAM ────────
-                if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
-                    val msg = "Not enough RAM: ${memInfo.availMem / 1024 / 1024}MB available, " +
-                        "need ${MIN_RAM_FOR_INIT_BYTES / 1024 / 1024}MB for Kokoro model. " +
-                        "Close other apps and retry."
-                    Log.e(TAG, "│ $msg")
-                    Log.e(TAG, "└── Kokoro init FAILED (low memory) ──────────")
-                    statusMessage = "error: not enough RAM"
-                    errorMessage = msg
-                    isReady = false
-                    writeInitLog(ctx, msg)
-                    syncStatus()
-                    return false
-                }
-            } catch (e: Throwable) {
-                Log.w(TAG, "│ Memory check failed: ${e.message}")
+            if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
+                val msg = "Not enough RAM: ${memInfo.availMem / 1024 / 1024}MB available, " +
+                    "need ${MIN_RAM_FOR_INIT_BYTES / 1024 / 1024}MB for Kokoro model. " +
+                    "Close other apps and retry."
+                Log.e(TAG, "│ $msg")
+                Log.e(TAG, "└── Kokoro init FAILED (low memory) ──────────")
+                statusMessage = "error: not enough RAM"
+                errorMessage = msg
+                isReady = false
+                lastTelemetry = telemetry
+                writeInitLog(ctx, msg, telemetry = telemetry)
+                syncStatus()
+                return false
             }
 
-            initProgress = 30
-            statusMessage = "preparing Kokoro config…"
+            // ── 1c. Heap reservation ────────────────────────────────────
+            // Force JVM to expand its heap region BEFORE native code runs.
+            // Prevents virtual memory collisions with ORT's allocator.
+            initProgress = 27
+            statusMessage = "preparing memory…"
             syncStatus()
+            telemetry.heapReserveMs = reserveAndReleaseHeap()
+            Log.i(TAG, "│ Heap reservation: ${telemetry.heapReserveMs}ms")
 
-            // Resolve which model file was extracted (.ort or .onnx)
+            // ── 1d. Model file resolution ───────────────────────────────
+            initProgress = 28
             val modelFile = File(extractedDir, "model.ort").let {
                 if (it.exists()) it else File(extractedDir, "model.onnx")
             }
             val isOrt = modelFile.name.endsWith(".ort")
+            telemetry.modelFormat = if (isOrt) "ORT (pre-optimized)" else "ONNX (runtime optimization)"
+            Log.i(TAG, "│ Model: ${modelFile.name} (${modelFile.length() / 1024 / 1024}MB, ${telemetry.modelFormat})")
+
+            // ── 1e. Model file pre-warming ──────────────────────────────
+            // Read the entire model file sequentially into OS page cache.
+            // When ORT opens it via mmap, ALL pages are already resident —
+            // no random page faults that can trigger OOM killer on low-RAM devices.
+            initProgress = 29
+            statusMessage = "pre-warming model…"
+            syncStatus()
+            Log.i(TAG, "│ Pre-warming model file into page cache…")
+            telemetry.prewarmMs = prewarmModelFile(modelFile)
+            // Also pre-warm voices.bin (smaller but accessed during init)
+            prewarmModelFile(File(extractedDir, "voices.bin"))
+
+            telemetry.extractionMs = System.currentTimeMillis() - stageStart - telemetry.gcMs -
+                telemetry.heapReserveMs - telemetry.prewarmMs
+
+            // ══════════════════════════════════════════════════════════════
+            // Stage 2: Config Memory + Auto-Escalation
+            // ══════════════════════════════════════════════════════════════
+            // 1. Try remembered good config (if any) — skips entire ladder
+            // 2. Try escalation ladder: optimal → safe → diagnostic
+            // 3. Save successful config for next launch
+            // 4. Thread priority elevated during native load (like Google TTS)
+            // 5. Adaptive timeout based on device profile + model format
+            initProgress = 30
+            statusMessage = "preparing Kokoro config…"
+            syncStatus()
+            Log.i(TAG, "│")
+            Log.i(TAG, "│ ═══ Stage 2: Config Memory + Auto-Escalation ═══")
 
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = modelFile.absolutePath,
@@ -655,50 +943,53 @@ object SherpaEngine {
                 dataDir = File(extractedDir, "espeak-ng-data").absolutePath
             )
 
-            // ── Stage 2: Auto-escalation ────────────────────────────────
-            // Try progressively safer configs within a single init cycle.
-            // If the optimal config crashes (Java exception, not SIGSEGV),
-            // automatically retry with a safer config instead of incrementing
-            // the crash counter and giving up.
-            //
-            // Escalation ladder:
-            //   Level 0: optimal threads + cpu provider (best performance)
-            //   Level 1: 1 thread + cpu (safest for MediaTek thread pool bugs)
-            //   Level 2: 1 thread + cpu + debug=true (max diagnostics, slowest)
-            data class InitConfig(
-                val threads: Int,
-                val provider: String,
-                val debug: Boolean,
-                val label: String
-            )
+            val appVersion = getAppVersionCode(ctx)
+            val timeoutMs = adaptiveTimeoutMs(isOrt, profile)
+            telemetry.timeoutMs = timeoutMs
+            Log.i(TAG, "│ Adaptive timeout: ${timeoutMs}ms (ort=$isOrt, tier=${profile.tier})")
 
+            // Build escalation ladder
             val optThreads = optimalThreadCount()
             val optProvider = optimalProvider()
-            val escalationLadder = listOf(
+            val freshLadder = listOf(
                 InitConfig(optThreads, optProvider, false, "optimal ($optThreads threads, $optProvider)"),
                 InitConfig(1, "cpu", false, "safe (1 thread, cpu)"),
                 InitConfig(1, "cpu", true, "diagnostic (1 thread, cpu, debug)")
-            ).let { configs ->
-                // Skip duplicates — if optimal is already 1-thread/cpu, don't retry same config
-                configs.distinctBy { Triple(it.threads, it.provider, it.debug) }
+            ).distinctBy { Triple(it.threads, it.provider, it.debug) }
+
+            // Check config memory — if we remember what worked, try it first
+            val rememberedConfig = loadGoodConfig(initPrefs, appVersion)
+            val escalationLadder = if (rememberedConfig != null) {
+                Log.i(TAG, "│ Config memory: ${rememberedConfig.label}")
+                // Put remembered config first, then the rest of the ladder (deduplicated)
+                val rest = freshLadder.filter {
+                    Triple(it.threads, it.provider, it.debug) !=
+                        Triple(rememberedConfig.threads, rememberedConfig.provider, rememberedConfig.debug)
+                }
+                listOf(rememberedConfig) + rest
+            } else {
+                Log.i(TAG, "│ Config memory: empty (first run or app updated)")
+                freshLadder
             }
+
+            Log.i(TAG, "│ Escalation ladder: ${escalationLadder.size} configs")
+            escalationLadder.forEachIndexed { i, c -> Log.i(TAG, "│   [$i] ${c.label}") }
 
             initProgress = 35
             statusMessage = if (isOrt) "loading optimized model…"
                 else "loading native model (this may take 10-30s)…"
             syncStatus()
 
-            Log.i(TAG, "│ Stage 2: Auto-escalation (${escalationLadder.size} configs)")
             Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
             Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
 
             // init_in_progress flag is already set by warmUp() before this thread started.
             initStartTime.set(System.currentTimeMillis())
 
-            var lastEscalationError: Throwable? = null
+            var successConfig: InitConfig? = null
 
             for ((level, initCfg) in escalationLadder.withIndex()) {
-                Log.i(TAG, "│ Escalation level $level: ${initCfg.label}")
+                Log.i(TAG, "│ ── Escalation level $level: ${initCfg.label} ──")
 
                 val modelConfig = OfflineTtsModelConfig(
                     kokoro     = kokoroConfig,
@@ -708,13 +999,20 @@ object SherpaEngine {
                 )
                 val config = OfflineTtsConfig(model = modelConfig)
 
-                // Run the native constructor on a separate thread with a timeout.
+                // Run the native constructor on a dedicated thread with elevated priority.
+                // Setting THREAD_PRIORITY_URGENT_AUDIO tells the kernel this thread is
+                // time-sensitive — prevents the scheduler from deprioritizing us during
+                // the heavy model load (this is what Google TTS does).
                 val resultHolder = arrayOfNulls<OfflineTts>(1)
                 val errorHolder = arrayOfNulls<Throwable>(1)
                 val latch = CountDownLatch(1)
+                val levelStart = System.currentTimeMillis()
 
                 val initThread = Thread {
                     try {
+                        android.os.Process.setThreadPriority(
+                            android.os.Process.THREAD_PRIORITY_URGENT_AUDIO
+                        )
                         resultHolder[0] = OfflineTts(config = config)
                     } catch (e: Throwable) {
                         errorHolder[0] = e
@@ -726,53 +1024,57 @@ object SherpaEngine {
                 // Sync progress periodically while native init runs
                 val progressThread = Thread {
                     try {
-                        val start = System.currentTimeMillis()
+                        val pStart = System.currentTimeMillis()
                         while (!latch.await(500, TimeUnit.MILLISECONDS)) {
-                            val elapsed = System.currentTimeMillis() - start
+                            val elapsed = System.currentTimeMillis() - pStart
                             initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
                             syncStatus()
                         }
                     } catch (_: InterruptedException) {}
                 }.apply { name = "SherpaEngine-progress-L$level"; isDaemon = true; start() }
 
-                val completed = latch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                val completed = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
                 progressThread.interrupt()
+                val levelElapsed = System.currentTimeMillis() - levelStart
 
                 if (!completed) {
-                    // Timed out at this escalation level
-                    Log.w(TAG, "│ Level $level TIMED OUT — ${initCfg.label}")
+                    Log.w(TAG, "│ Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label}")
                     try { initThread.interrupt() } catch (_: Throwable) {}
 
                     if (level < escalationLadder.lastIndex) {
                         Log.i(TAG, "│ Escalating to level ${level + 1}…")
                         statusMessage = "retrying with safer config…"
                         syncStatus()
-                        // Brief pause to let the timed-out thread settle
                         Thread.sleep(100)
                         continue
                     }
 
-                    // All levels exhausted — report timeout
+                    // All levels exhausted
                     val elapsed = System.currentTimeMillis() - initStartTime.get()
                     initStartTime.set(0)
+                    telemetry.nativeLoadMs = elapsed
+                    telemetry.totalMs = System.currentTimeMillis() - stageStart
+                    telemetry.escalationLevel = level
+                    telemetry.configUsed = initCfg.label
+                    lastTelemetry = telemetry
                     initPrefs.edit()
                         .putBoolean(KEY_INIT_IN_PROGRESS, false)
                         .apply()
-                    Log.e(TAG, "│ All escalation levels TIMED OUT")
+                    Log.e(TAG, "│ All ${escalationLadder.size} escalation levels TIMED OUT")
                     Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
                     statusMessage = "error: init timed out after ${elapsed / 1000}s"
-                    errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
-                        "Tried ${escalationLadder.size} configurations."
+                    errorMessage = "Engine timed out after ${elapsed / 1000}s. " +
+                        "Tried ${escalationLadder.size} configs. Device: ${profile.tier}"
                     isReady = false
-                    writeInitLog(ctx, "All ${escalationLadder.size} escalation configs timed out after ${elapsed}ms")
+                    writeInitLog(ctx, "All escalation configs timed out", telemetry = telemetry)
                     syncStatus()
                     return false
                 }
 
                 val initError = errorHolder[0]
                 if (initError != null) {
-                    Log.w(TAG, "│ Level $level FAILED: ${initError.javaClass.simpleName}: ${initError.message}")
-                    lastEscalationError = initError
+                    Log.w(TAG, "│ Level $level FAILED in ${levelElapsed}ms: " +
+                        "${initError.javaClass.simpleName}: ${initError.message}")
 
                     if (level < escalationLadder.lastIndex) {
                         Log.i(TAG, "│ Escalating to level ${level + 1}…")
@@ -782,35 +1084,52 @@ object SherpaEngine {
                     }
 
                     // All levels exhausted — throw the last error
+                    telemetry.escalationLevel = level
+                    telemetry.configUsed = initCfg.label
+                    lastTelemetry = telemetry
                     throw initError
                 }
 
                 // SUCCESS at this level
+                Log.i(TAG, "│ OfflineTts() constructor: ${levelElapsed}ms at level $level")
                 if (level > 0) {
-                    Log.i(TAG, "│ Succeeded at escalation level $level (${initCfg.label}) after $level retries")
+                    Log.i(TAG, "│ ✓ Succeeded after $level escalations (${initCfg.label})")
                 }
 
                 kokoroTts = resultHolder[0]
+                successConfig = initCfg
+                telemetry.nativeLoadMs = levelElapsed
+                telemetry.escalationLevel = level
+                telemetry.configUsed = initCfg.label
                 break
             }
 
             val totalElapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
+            telemetry.totalMs = System.currentTimeMillis() - stageStart
+            lastTelemetry = telemetry
 
             if (kokoroTts == null) {
                 Log.e(TAG, "│ OfflineTts() returned null after all escalation levels")
                 Log.e(TAG, "└── Kokoro init FAILED ────────────────────────")
                 statusMessage = "error: engine returned null"
-                errorMessage = "Engine constructor returned null after trying ${escalationLadder.size} configurations"
+                errorMessage = "Engine returned null after ${escalationLadder.size} configs"
                 isReady = false
-                writeInitLog(ctx, "OfflineTts() returned null after ${escalationLadder.size} escalation configs (${totalElapsed}ms)")
+                writeInitLog(ctx, "OfflineTts() returned null", telemetry = telemetry)
                 return false
             }
 
-            // Native init succeeded — clear crash tracking flags
+            // ── SUCCESS: persist everything ─────────────────────────────
+            // Clear crash tracking flags
             initPrefs.edit()
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
                 .apply()
+
+            // Save the successful config — next launch skips the entire ladder
+            if (successConfig != null) {
+                saveGoodConfig(initPrefs, successConfig, appVersion)
+                Log.i(TAG, "│ Config saved to memory: ${successConfig.label}")
+            }
 
             initProgress = 100
             isReady = true
@@ -818,6 +1137,9 @@ object SherpaEngine {
             statusMessage = "ready"
             syncStatus()
             Log.i(TAG, "│ Kokoro engine ready in ${totalElapsed}ms")
+            Log.i(TAG, "│ Telemetry: probe=${telemetry.probeMs}ms extract=${telemetry.extractionMs}ms " +
+                "gc=${telemetry.gcMs}ms heap=${telemetry.heapReserveMs}ms " +
+                "prewarm=${telemetry.prewarmMs}ms native=${telemetry.nativeLoadMs}ms")
             Log.i(TAG, "└── Kokoro init SUCCESS ───────────────────────")
             true
 
@@ -828,13 +1150,15 @@ object SherpaEngine {
                 ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
                     .edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
             } catch (_: Throwable) {}
+            val telem = lastTelemetry
+            telem?.totalMs = elapsed
             Log.e(TAG, "│ Exception after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}")
             Log.e(TAG, "└── Kokoro init FAILED (all escalation levels exhausted) ──", e)
             kokoroTts = null
             isReady = false
             errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             statusMessage = "error: ${errorMessage}"
-            writeInitLog(ctx, "All escalation levels failed after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}", e)
+            writeInitLog(ctx, "All escalation levels failed: ${e.javaClass.simpleName}: ${e.message}", e, telem)
             syncStatus()
             false
         }

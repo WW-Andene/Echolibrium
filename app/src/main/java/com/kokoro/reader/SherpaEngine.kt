@@ -510,6 +510,8 @@ object SherpaEngine {
     private const val CRASH_BACKOFF_MAX_MS = 150_000L  // 2.5 minutes
     /** After this many crashes, try Piper first but still attempt Kokoro after backoff. */
     private const val CRASH_PIPER_FIRST_THRESHOLD = 3
+    /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
+    private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
 
     /**
      * Initializes the Kokoro engine on a background thread.
@@ -517,8 +519,9 @@ object SherpaEngine {
      * constructor. Guarded against duplicate concurrent calls and crash loops.
      *
      * If previous init attempts crashed the process (SIGSEGV), this method
-     * tracks the failures and stops retrying after [MAX_INIT_CRASHES] to break
-     * the crash loop. The user can force a retry from the UI.
+     * tracks the failures and backs off exponentially with increasing delays.
+     * After [CRASH_PIPER_FIRST_THRESHOLD] crashes, Piper fallback activates
+     * immediately while Kokoro retries continue in the background.
      */
     fun warmUp(ctx: Context) {
         statusContext = ctx.applicationContext

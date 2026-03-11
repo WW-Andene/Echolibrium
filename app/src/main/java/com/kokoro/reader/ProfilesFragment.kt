@@ -248,7 +248,10 @@ class ProfilesFragment : Fragment() {
                 tvSelectedVoiceIcon?.text = piperVoice.genderIcon
                 tvSelectedVoiceIcon?.setTextColor(piperVoice.genderColor)
                 tvSelectedVoiceName?.text = if (alias.isNotBlank()) "$alias (${piperVoice.displayName})" else piperVoice.displayName
-                val status = "bundled"
+                val status = if (piperVoice.bundled) "bundled" else {
+                    val appCtx = context?.applicationContext
+                    if (appCtx != null && VoiceDownloadManager.isDownloaded(appCtx, piperVoice.id)) "downloaded" else "not downloaded"
+                }
                 tvSelectedVoiceDetail?.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
                 selectedVoiceBanner?.setBackgroundColor(0xFF0d1a2a.toInt())
             }
@@ -303,7 +306,7 @@ class ProfilesFragment : Fragment() {
             }
         }
 
-        // ── Piper voices (grouped by language, all bundled) ──────────────
+        // ── Piper voices (grouped by language, bundled + downloadable) ──
         if (piperFiltered.isNotEmpty()) {
             piperFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
                 // De-duplicate by name (show only recommended quality per voice name)
@@ -311,16 +314,29 @@ class ProfilesFragment : Fragment() {
                     variants.find { it.quality == "medium" } ?: variants.firstOrNull()
                 }.filterNotNull()
 
+                val bundledCount = deduped.count { it.bundled || VoiceDownloadManager.isDownloaded(ctx, it.id) }
+                val totalCount = deduped.size
                 voiceGrid?.addView(TextView(ctx).apply {
-                    text = "PIPER · ${lang.uppercase()}  (${deduped.size} bundled)"
+                    text = "PIPER · ${lang.uppercase()}  ($bundledCount/$totalCount ready)"
                     textSize = 10f; setTextColor(0xFF446644.toInt())
                     setPadding(4, 14, 0, 6)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 })
                 renderVoiceCardRows(deduped.map { v ->
+                    val state = VoiceDownloadManager.getState(ctx, v.id)
+                    val isReady = state == VoiceDownloadManager.State.DOWNLOADED
+                    val statusText = when (state) {
+                        VoiceDownloadManager.State.DOWNLOADED -> if (v.bundled) "bundled" else "downloaded"
+                        VoiceDownloadManager.State.DOWNLOADING -> "downloading…"
+                        else -> "tap to download"
+                    }
+                    val accentColor = when (state) {
+                        VoiceDownloadManager.State.DOWNLOADED -> 0xFF00ccff.toInt()
+                        VoiceDownloadManager.State.DOWNLOADING -> 0xFFffaa00.toInt()
+                        else -> 0xFF555555.toInt()
+                    }
                     VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                        "${v.flagEmoji} ${v.nationality}", "bundled", 0xFF00ccff.toInt(),
-                        true)
+                        "${v.flagEmoji} ${v.nationality}", statusText, accentColor, isReady)
                 })
             }
         }
@@ -356,18 +372,42 @@ class ProfilesFragment : Fragment() {
                         cornerRadius = 8f
                     }
                     setOnClickListener {
-                        currentProfile = currentProfile.copy(voiceName = c.voiceId)
-                        renderVoiceGrid()
-                        // Pre-warm Piper engine for the selected voice to reduce test lag
-                        if (PiperVoiceCatalog.byId(c.voiceId) != null) {
+                        if (c.isReady) {
+                            // Voice is available — select it
+                            currentProfile = currentProfile.copy(voiceName = c.voiceId)
+                            renderVoiceGrid()
+                            // Pre-warm Piper engine for the selected voice to reduce test lag
+                            if (PiperVoiceCatalog.byId(c.voiceId) != null) {
+                                val appCtx = context?.applicationContext ?: return@setOnClickListener
+                                Thread {
+                                    SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
+                                }.apply {
+                                    name = "PiperPreload-${c.voiceId}"
+                                    isDaemon = true
+                                    start()
+                                }
+                            }
+                        } else {
+                            // Voice needs downloading — start download
                             val appCtx = context?.applicationContext ?: return@setOnClickListener
                             Thread {
-                                SherpaEngine.preloadPiperVoice(appCtx, c.voiceId)
+                                val success = VoiceDownloadManager.download(appCtx, c.voiceId)
+                                if (success) {
+                                    // Auto-select the voice after download
+                                    activity?.runOnUiThread {
+                                        currentProfile = currentProfile.copy(voiceName = c.voiceId)
+                                        renderVoiceGrid()
+                                    }
+                                } else {
+                                    activity?.runOnUiThread { renderVoiceGrid() }
+                                }
                             }.apply {
-                                name = "PiperPreload-${c.voiceId}"
+                                name = "VoiceDownload-${c.voiceId}"
                                 isDaemon = true
                                 start()
                             }
+                            // Immediately refresh to show "downloading…" state
+                            renderVoiceGrid()
                         }
                     }
                 }

@@ -1,14 +1,14 @@
 package com.kokoro.reader
 
 /**
- * Catalog of Piper TTS voices available for download.
+ * Catalog of all Piper TTS voices.
+ *
+ * Voices are split into two tiers:
+ *   • BUNDLED — shipped inside the APK (assets/piper-models/), ready instantly
+ *   • DOWNLOADABLE — fetched on demand from GitHub Releases to app internal storage
  *
  * Voice data sourced from:
  *   https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md
- *
- * Each voice requires two files (.onnx + .onnx.json) downloaded from HuggingFace.
- * The catalog is stored in assets/piper_voices/{locale}/voices.json and also
- * defined here as a compile-time constant for UI display without asset loading.
  */
 data class PiperVoice(
     val id: String,           // e.g. "en_US-lessac-medium"
@@ -19,8 +19,7 @@ data class PiperVoice(
     val nationality: String,  // e.g. "American" | "French"
     val locale: String,       // e.g. "en_US" | "fr_FR"
     val quality: String,      // e.g. "medium" | "low" | "high"
-    val modelUrl: String,     // HuggingFace direct download URL for .onnx
-    val configUrl: String     // HuggingFace direct download URL for .onnx.json
+    val bundled: Boolean      // true = in APK assets, false = download from GitHub
 ) {
     val genderIcon get() = when (gender) {
         "Female" -> "♀"
@@ -42,22 +41,37 @@ data class PiperVoice(
 
 object PiperVoiceCatalog {
 
-    private const val HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+    /**
+     * GitHub Releases base URL for downloadable voice models.
+     * Each voice is a single .onnx file uploaded as a release asset.
+     * Tag: "voices-v1" — update when re-uploading optimized models.
+     */
+    const val GITHUB_RELEASE_BASE = "https://github.com/WW-Andene/Echolibrium/releases/download/voices-v1"
+
+    /** IDs of voices bundled in the APK. Keep in sync with download-models.sh BUNDLED_VOICES. */
+    private val BUNDLED_IDS = setOf(
+        "en_US-lessac-medium",
+        "en_US-ryan-medium",
+        "en_US-amy-medium",
+        "en_US-joe-medium",
+        "en_GB-alba-medium",
+        "en_GB-alan-medium",
+        "fr_FR-siwis-medium",
+        "fr_FR-tom-medium"
+    )
 
     private fun piper(
         name: String, gender: String, language: String, nationality: String,
         locale: String, quality: String
     ): PiperVoice {
         val id = "$locale-$name-$quality"
-        val dir = "$HF_BASE/${locale.substringBefore("_").lowercase()}/$locale/$name/$quality"
         return PiperVoice(
             id = id,
             name = name,
             displayName = name.split("_").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } },
             gender = gender, language = language, nationality = nationality,
             locale = locale, quality = quality,
-            modelUrl  = "$dir/$id.onnx?download=true",
-            configUrl = "$dir/$id.onnx.json?download=true"
+            bundled = id in BUNDLED_IDS
         )
     }
 
@@ -134,4 +148,7 @@ object PiperVoiceCatalog {
 
     /** Find a Piper voice by its full ID */
     fun byId(id: String): PiperVoice? = ALL.find { it.id == id }
+
+    /** Download URL for a voice model (.onnx) from GitHub Releases */
+    fun downloadUrl(voiceId: String): String = "$GITHUB_RELEASE_BASE/$voiceId.onnx"
 }

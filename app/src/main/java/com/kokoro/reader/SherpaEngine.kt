@@ -301,11 +301,15 @@ object SherpaEngine {
 
     private fun loadPiperVoice(ctx: Context, voiceId: String): Boolean {
         try {
-            // Verify the voice model file exists (prefer .ort over .onnx)
-            val resolvedPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
-            val modelExists = try { ctx.assets.open(resolvedPath).use { true } } catch (_: Throwable) { false }
-            if (!modelExists) {
-                Log.e(TAG, "Piper voice model missing from assets: $resolvedPath")
+            val voice = PiperVoiceCatalog.byId(voiceId)
+
+            // Determine where the model lives: assets (bundled) or filesDir (downloaded)
+            val isBundled = voice?.bundled == true
+            val downloadedFile = VoiceDownloadManager.getVoiceFile(ctx, voiceId)
+            val isDownloaded = downloadedFile.exists()
+
+            if (!isBundled && !isDownloaded) {
+                Log.e(TAG, "Piper voice not available: $voiceId (not bundled, not downloaded)")
                 return false
             }
 
@@ -314,30 +318,99 @@ object SherpaEngine {
             piperTts = null
             piperLoadedVoiceId = null
 
-            Log.d(TAG, "Loading Piper voice from assets: $voiceId (${if (resolvedPath.endsWith(".ort")) "ORT" else "ONNX"})")
+            if (isBundled) {
+                // Load from APK assets
+                val resolvedPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
+                Log.d(TAG, "Loading Piper voice from assets: $voiceId")
 
-            val vitsConfig = OfflineTtsVitsModelConfig(
-                model   = resolvedPath,
-                tokens  = "$PIPER_DIR/tokens.txt",
-                dataDir = "$KOKORO_DIR/espeak-ng-data"
-            )
+                val vitsConfig = OfflineTtsVitsModelConfig(
+                    model   = resolvedPath,
+                    tokens  = "$PIPER_DIR/tokens.txt",
+                    dataDir = "$KOKORO_DIR/espeak-ng-data"
+                )
+                val modelConfig = OfflineTtsModelConfig(
+                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
+                )
+                piperTts = OfflineTts(assetManager = ctx.assets, config = OfflineTtsConfig(model = modelConfig))
+            } else {
+                // Load from downloaded file path
+                // tokens.txt is still in assets — copy to filesDir if not already there
+                val tokensFile = ensureTokensFile(ctx)
+                val espeakDir = ensureEspeakData(ctx)
+                Log.d(TAG, "Loading Piper voice from file: $voiceId (${downloadedFile.length() / 1024 / 1024}MB)")
 
-            val modelConfig = OfflineTtsModelConfig(
-                vits       = vitsConfig,
-                numThreads = 2,
-                debug      = false,
-                provider   = "cpu"
-            )
+                val vitsConfig = OfflineTtsVitsModelConfig(
+                    model   = downloadedFile.absolutePath,
+                    tokens  = tokensFile.absolutePath,
+                    dataDir = espeakDir.absolutePath
+                )
+                val modelConfig = OfflineTtsModelConfig(
+                    vits = vitsConfig, numThreads = 2, debug = false, provider = "cpu"
+                )
+                piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
+            }
 
-            val config = OfflineTtsConfig(model = modelConfig)
-            piperTts = OfflineTts(assetManager = ctx.assets, config = config)
             piperLoadedVoiceId = voiceId
-            Log.d(TAG, "Piper voice loaded from assets: $voiceId")
+            Log.d(TAG, "Piper voice loaded: $voiceId (${if (isBundled) "bundled" else "downloaded"})")
             return true
 
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Piper voice $voiceId", e)
             return false
+        }
+    }
+
+    /**
+     * Ensure tokens.txt is available on the filesystem for downloaded voices.
+     * Copies from assets/piper-models/tokens.txt on first call.
+     */
+    private fun ensureTokensFile(ctx: Context): File {
+        val dir = VoiceDownloadManager.getDownloadDir(ctx)
+        val tokensFile = File(dir, "tokens.txt")
+        if (!tokensFile.exists()) {
+            ctx.assets.open("$PIPER_DIR/tokens.txt").use { input ->
+                tokensFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        return tokensFile
+    }
+
+    /**
+     * Ensure espeak-ng-data is available on the filesystem for downloaded voices.
+     * Copies the entire directory tree from assets on first call.
+     */
+    private fun ensureEspeakData(ctx: Context): File {
+        val baseDir = File(ctx.filesDir, "kokoro-model")
+        val espeakDir = File(baseDir, "espeak-ng-data")
+        if (espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0) return espeakDir
+        espeakDir.mkdirs()
+        copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
+        return espeakDir
+    }
+
+    private fun copyAssetDir(ctx: Context, assetPath: String, destDir: File) {
+        val children = ctx.assets.list(assetPath) ?: return
+        if (children.isEmpty()) {
+            // It's a file — copy it
+            ctx.assets.open(assetPath).use { input ->
+                File(destDir.parentFile, destDir.name).also { dest ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        } else {
+            destDir.mkdirs()
+            for (child in children) {
+                val childDest = File(destDir, child)
+                val childAsset = "$assetPath/$child"
+                val subChildren = ctx.assets.list(childAsset)
+                if (subChildren != null && subChildren.isNotEmpty()) {
+                    copyAssetDir(ctx, childAsset, childDest)
+                } else {
+                    ctx.assets.open(childAsset).use { input ->
+                        childDest.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
         }
     }
 

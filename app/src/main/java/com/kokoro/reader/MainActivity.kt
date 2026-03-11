@@ -36,6 +36,12 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
+        // Start TTS engine warm-up after the first frame renders.
+        // This must NOT run during Application.onCreate() — see ReaderApplication for details.
+        if (savedInstanceState == null) {
+            scheduleEngineWarmUp()
+        }
+
         // Restore existing fragments after configuration change
         if (savedInstanceState != null) {
             for (id in tabIds) {
@@ -130,6 +136,23 @@ class MainActivity : AppCompatActivity() {
         R.id.nav_apps     -> "Apps"
         R.id.nav_rules    -> "Words"
         else              -> "Unknown"
+    }
+
+    /**
+     * Schedules SherpaEngine.warmUp() to run after HWUI has fully rendered the
+     * first frame. decorView.post {} fires after the view tree layout + draw,
+     * guaranteeing HWUI's CommonPool is initialized. Without this sequencing,
+     * ONNX Runtime's native allocation corrupts HWUI's pthread mutexes on
+     * Xiaomi/MediaTek devices (SIGABRT in hwuiTask threads).
+     */
+    private fun scheduleEngineWarmUp() {
+        window.decorView.post {
+            try {
+                SherpaEngine.warmUp(applicationContext)
+            } catch (e: Throwable) {
+                android.util.Log.e("MainActivity", "Engine warm-up failed", e)
+            }
+        }
     }
 
     fun isNotificationAccessGranted(): Boolean {

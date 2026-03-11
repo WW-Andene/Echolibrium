@@ -189,13 +189,42 @@ class HomeFragment : Fragment() {
     // ── Xiaomi MIUI/HyperOS: brute-force past aggressive process killing ──────
 
     /**
-     * On Xiaomi devices, automatically requests battery optimization exemption
-     * and prompts for AutoStart permission (once). Without these, HyperOS/MIUI
-     * will kill the :tts process within minutes of the screen turning off.
+     * On Xiaomi devices, bypasses aggressive background killing:
+     *
+     * Priority 1 — Shizuku: If running, auto-grants ALL protections silently
+     *   (device idle whitelist, AutoStart, background run, standby bucket).
+     * Priority 2 — Standard Android APIs: Battery exemption dialog + AutoStart intent.
+     * Priority 3 — ADB fallback: Copies commands to clipboard for manual execution.
      */
     private fun promptXiaomiProtections() {
         if (!TtsBridge.isXiaomiDevice()) return
         val ctx = context ?: return
+
+        // ── Shizuku path: silent, complete, no user interaction needed ──
+        if (XiaomiProtection.isShizukuAlive()) {
+            if (XiaomiProtection.isShizukuReady()) {
+                if (!prefs.getBoolean("xiaomi_shizuku_applied", false)) {
+                    Thread {
+                        val result = XiaomiProtection.applyAllProtections(ctx)
+                        activity?.runOnUiThread {
+                            if (result.allGranted) {
+                                prefs.edit().putBoolean("xiaomi_shizuku_applied", true).apply()
+                                Toast.makeText(ctx, "All Xiaomi protections applied via Shizuku", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(ctx, "Shizuku: ${result.summary}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }.start()
+                }
+                return
+            } else {
+                // Shizuku running but no permission yet — request it
+                XiaomiProtection.requestShizukuPermission()
+                return
+            }
+        }
+
+        // ── Standard Android API path (no Shizuku) ──
 
         // 1. Battery optimization exemption — request every time until granted
         if (TtsBridge.isBatteryOptimized(ctx)) {
@@ -203,13 +232,25 @@ class HomeFragment : Fragment() {
             return  // Don't stack two system dialogs — do autostart next resume
         }
 
-        // 2. AutoStart — prompt once (tracked by SharedPreferences)
+        // 2. AutoStart — prompt once
         if (!prefs.getBoolean("xiaomi_autostart_prompted", false)) {
             prefs.edit().putBoolean("xiaomi_autostart_prompted", true).apply()
             val opened = TtsBridge.requestAutoStart(ctx)
             if (opened) {
                 Toast.makeText(ctx, "Enable AutoStart for Kyōkan to keep it running", Toast.LENGTH_LONG).show()
             }
+            return
+        }
+
+        // 3. ADB commands fallback — offer to copy to clipboard (once)
+        if (!prefs.getBoolean("xiaomi_adb_shown", false)) {
+            prefs.edit().putBoolean("xiaomi_adb_shown", true).apply()
+            val commands = XiaomiProtection.getManualAdbCommands(ctx)
+            val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("ADB commands", commands))
+            Toast.makeText(ctx,
+                "ADB commands copied to clipboard — paste in terminal with phone connected via USB",
+                Toast.LENGTH_LONG).show()
         }
     }
 

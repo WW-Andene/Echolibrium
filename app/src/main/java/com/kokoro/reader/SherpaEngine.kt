@@ -1,6 +1,7 @@
 package com.kokoro.reader
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import java.io.File
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -554,62 +555,144 @@ object SherpaEngine {
     /**
      * Extract a bundled Piper model from APK assets to the filesystem.
      * Returns the extracted .onnx/.ort file, or null on failure.
-     * Skips extraction if the file already exists (idempotent).
+     * Uses atomic writes and version tracking to prevent corrupt/stale files.
      */
     private fun extractBundledPiperModel(ctx: Context, voiceId: String): File? {
-        val destDir = File(ctx.filesDir, "piper-models")
-        destDir.mkdirs()
+        synchronized(extractionLock) {
+            val destDir = File(ctx.filesDir, "piper-models")
+            destDir.mkdirs()
 
-        val assetPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
-        val fileName = assetPath.substringAfterLast("/")
-        val destFile = File(destDir, fileName)
+            val assetPath = resolveModel(ctx, "$PIPER_DIR/$voiceId.onnx")
+            val fileName = assetPath.substringAfterLast("/")
+            val destFile = File(destDir, fileName)
 
-        if (destFile.exists() && destFile.length() > 0) {
-            return destFile
-        }
-
-        return try {
-            Log.i(TAG, "Extracting bundled Piper model: $fileName")
-            ctx.assets.open(assetPath).use { input ->
-                destFile.outputStream().use { output -> input.copyTo(output) }
+            // Re-extract if file missing, empty, or APK was updated
+            if (destFile.exists() && destFile.length() > 0 && isExtractionCurrent(destDir, ctx)) {
+                return destFile
             }
-            Log.i(TAG, "Extracted $fileName: ${destFile.length() / 1024 / 1024}MB")
-            destFile
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to extract bundled Piper model: $voiceId", e)
-            null
+
+            return try {
+                Log.i(TAG, "Extracting bundled Piper model: $fileName")
+                extractAssetAtomic(ctx, assetPath, destFile)
+                writeVersionMarker(destDir, ctx)
+                Log.i(TAG, "Extracted $fileName: ${destFile.length() / 1024 / 1024}MB")
+                destFile
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to extract bundled Piper model: $voiceId", e)
+                null
+            }
         }
     }
 
     /**
-     * Ensure tokens.txt is available on the filesystem for downloaded voices.
-     * Copies from assets/piper-models/tokens.txt on first call.
+     * Ensure tokens.txt is available on the filesystem for Piper voices.
+     * Re-extracts if missing or if the APK was updated (tokens may change).
      */
     private fun ensureTokensFile(ctx: Context): File {
         val dir = VoiceDownloadManager.getDownloadDir(ctx)
         val tokensFile = File(dir, "tokens.txt")
-        if (!tokensFile.exists()) {
-            ctx.assets.open("$PIPER_DIR/tokens.txt").use { input ->
-                tokensFile.outputStream().use { output -> input.copyTo(output) }
+        if (tokensFile.exists() && tokensFile.length() > 0 && isExtractionCurrent(dir, ctx)) {
+            return tokensFile
+        }
+        synchronized(extractionLock) {
+            if (tokensFile.exists() && tokensFile.length() > 0 && isExtractionCurrent(dir, ctx)) {
+                return tokensFile
             }
+            extractAssetAtomic(ctx, "$PIPER_DIR/tokens.txt", tokensFile)
+            writeVersionMarker(dir, ctx)
         }
         return tokensFile
     }
 
     /**
-     * Ensure espeak-ng-data is available on the filesystem for downloaded voices.
-     * Copies the entire directory tree from assets on first call.
+     * Ensure espeak-ng-data is available on the filesystem.
+     * Re-extracts if missing or if the APK was updated.
      */
     private fun ensureEspeakData(ctx: Context): File {
         val baseDir = File(ctx.filesDir, "kokoro-model")
         val espeakDir = File(baseDir, "espeak-ng-data")
-        if (espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0) return espeakDir
-        espeakDir.mkdirs()
-        copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
+        if (espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
+            && isExtractionCurrent(baseDir, ctx)) return espeakDir
+        synchronized(extractionLock) {
+            // Double-check after acquiring lock
+            if (espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
+                && isExtractionCurrent(baseDir, ctx)) return espeakDir
+            if (espeakDir.exists()) espeakDir.deleteRecursively()
+            espeakDir.mkdirs()
+            copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
+            writeVersionMarker(baseDir, ctx)
+        }
         return espeakDir
     }
 
-    // ── Kokoro model extraction ────────────────────────────────────────────────
+    // ── Model extraction (hardened) ───────────────────────────────────────────
+
+    /** Lock to prevent concurrent extraction from multiple threads/processes. */
+    private val extractionLock = Object()
+
+    /** Name of the marker file that tracks which APK version was extracted. */
+    private const val VERSION_MARKER = ".extracted_version"
+
+    /**
+     * Returns the app's versionCode, used to detect APK updates.
+     * When the APK is updated, extracted model files must be re-extracted
+     * because the bundled model may have changed.
+     */
+    private fun getAppVersionCode(ctx: Context): Long {
+        return try {
+            val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+        } catch (_: PackageManager.NameNotFoundException) { 0L }
+    }
+
+    /**
+     * Checks if extracted files match the current APK version.
+     * Returns true if the version marker exists and matches.
+     */
+    private fun isExtractionCurrent(dir: File, ctx: Context): Boolean {
+        val marker = File(dir, VERSION_MARKER)
+        if (!marker.exists()) return false
+        return try {
+            marker.readText().trim() == getAppVersionCode(ctx).toString()
+        } catch (_: Throwable) { false }
+    }
+
+    /** Writes a version marker after successful extraction. */
+    private fun writeVersionMarker(dir: File, ctx: Context) {
+        try {
+            File(dir, VERSION_MARKER).writeText(getAppVersionCode(ctx).toString())
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to write version marker", e)
+        }
+    }
+
+    /**
+     * Atomically copies an asset to a destination file.
+     * Writes to a .tmp file first, then renames. If the process is killed
+     * mid-copy, only the .tmp file is left (and will be overwritten next time).
+     */
+    private fun extractAssetAtomic(ctx: Context, assetPath: String, destFile: File) {
+        val tmpFile = File(destFile.parent, "${destFile.name}.tmp")
+        try {
+            ctx.assets.open(assetPath).use { input ->
+                tmpFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            // Atomic rename — either the full file appears or nothing
+            if (!tmpFile.renameTo(destFile)) {
+                // renameTo can fail on some filesystems — fall back to copy+delete
+                tmpFile.copyTo(destFile, overwrite = true)
+                tmpFile.delete()
+            }
+        } catch (e: Throwable) {
+            tmpFile.delete()  // Clean up partial write
+            throw e
+        }
+    }
 
     /**
      * Extracts the Kokoro model from APK assets to the filesystem.
@@ -620,85 +703,85 @@ object SherpaEngine {
      * the filesystem first, we can use the file-based constructor which
      * avoids this entirely.
      *
-     * Files extracted:
-     *   - model.onnx (or model.ort)
-     *   - voices.bin
-     *   - tokens.txt
-     *   - espeak-ng-data/ (directory tree)
+     * Hardened against:
+     *   - Partial writes: uses atomic write (tmp + rename)
+     *   - Stale files after APK update: version marker invalidates old extraction
+     *   - Concurrent access: synchronized on extractionLock
      *
      * Returns the extraction directory, or null on failure.
-     * Skips extraction if files already exist (idempotent).
      */
     private fun extractKokoroModel(ctx: Context): File? {
-        val destDir = File(ctx.filesDir, "kokoro-model")
-        destDir.mkdirs()
+        synchronized(extractionLock) {
+            val destDir = File(ctx.filesDir, "kokoro-model")
+            destDir.mkdirs()
 
-        // Determine which model file to extract (.ort preferred over .onnx)
-        val modelAsset = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
-        val modelFileName = modelAsset.substringAfterLast("/")
-        val modelFile = File(destDir, modelFileName)
+            // Determine which model file to extract (.ort preferred over .onnx)
+            val modelAsset = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
+            val modelFileName = modelAsset.substringAfterLast("/")
+            val modelFile = File(destDir, modelFileName)
 
-        val voicesFile = File(destDir, "voices.bin")
-        val tokensFile = File(destDir, "tokens.txt")
-        val espeakDir = File(destDir, "espeak-ng-data")
+            val voicesFile = File(destDir, "voices.bin")
+            val tokensFile = File(destDir, "tokens.txt")
+            val espeakDir = File(destDir, "espeak-ng-data")
 
-        // Check if already fully extracted
-        if (modelFile.exists() && modelFile.length() > 0 &&
-            voicesFile.exists() && voicesFile.length() > 0 &&
-            tokensFile.exists() && tokensFile.length() > 0 &&
-            espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
-        ) {
-            Log.d(TAG, "Kokoro model already extracted to ${destDir.absolutePath}")
+            // Check if already fully extracted AND matches current APK version
+            if (isExtractionCurrent(destDir, ctx) &&
+                modelFile.exists() && modelFile.length() > 0 &&
+                voicesFile.exists() && voicesFile.length() > 0 &&
+                tokensFile.exists() && tokensFile.length() > 0 &&
+                espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
+            ) {
+                Log.d(TAG, "Kokoro model already extracted (version current)")
+                return destDir
+            }
+
+            Log.i(TAG, "│ Extracting Kokoro model from assets to filesystem…")
+
+            // Clean up any leftover .tmp files from previous failed extraction
+            destDir.listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.delete() }
+
+            // Extract model file
+            if (!modelFile.exists() || modelFile.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                Log.i(TAG, "│   Extracting $modelFileName…")
+                extractAssetAtomic(ctx, modelAsset, modelFile)
+                Log.i(TAG, "│   $modelFileName: ${modelFile.length() / 1024 / 1024}MB")
+            }
+
+            // Extract voices.bin
+            if (!voicesFile.exists() || voicesFile.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                Log.i(TAG, "│   Extracting voices.bin…")
+                extractAssetAtomic(ctx, "$KOKORO_DIR/voices.bin", voicesFile)
+            }
+
+            // Extract tokens.txt
+            if (!tokensFile.exists() || tokensFile.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                Log.i(TAG, "│   Extracting tokens.txt…")
+                extractAssetAtomic(ctx, "$KOKORO_DIR/tokens.txt", tokensFile)
+            }
+
+            // Extract espeak-ng-data directory tree
+            if (!espeakDir.exists() || (espeakDir.listFiles()?.size ?: 0) == 0 || !isExtractionCurrent(destDir, ctx)) {
+                Log.i(TAG, "│   Extracting espeak-ng-data/…")
+                // Delete old espeak data on version change to avoid stale files
+                if (espeakDir.exists()) espeakDir.deleteRecursively()
+                espeakDir.mkdirs()
+                copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
+            }
+
+            // Mark extraction as complete for this APK version
+            writeVersionMarker(destDir, ctx)
+
+            Log.i(TAG, "│ Kokoro model extraction complete → ${destDir.absolutePath}")
             return destDir
         }
-
-        Log.i(TAG, "│ Extracting Kokoro model from assets to filesystem…")
-
-        // Extract model file
-        if (!modelFile.exists() || modelFile.length() == 0L) {
-            Log.i(TAG, "│   Extracting $modelFileName…")
-            ctx.assets.open(modelAsset).use { input ->
-                modelFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            Log.i(TAG, "│   $modelFileName: ${modelFile.length() / 1024 / 1024}MB")
-        }
-
-        // Extract voices.bin
-        if (!voicesFile.exists() || voicesFile.length() == 0L) {
-            Log.i(TAG, "│   Extracting voices.bin…")
-            ctx.assets.open("$KOKORO_DIR/voices.bin").use { input ->
-                voicesFile.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
-
-        // Extract tokens.txt
-        if (!tokensFile.exists() || tokensFile.length() == 0L) {
-            Log.i(TAG, "│   Extracting tokens.txt…")
-            ctx.assets.open("$KOKORO_DIR/tokens.txt").use { input ->
-                tokensFile.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
-
-        // Extract espeak-ng-data directory tree
-        if (!espeakDir.exists() || (espeakDir.listFiles()?.size ?: 0) == 0) {
-            Log.i(TAG, "│   Extracting espeak-ng-data/…")
-            espeakDir.mkdirs()
-            copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
-        }
-
-        Log.i(TAG, "│ Kokoro model extraction complete → ${destDir.absolutePath}")
-        return destDir
     }
 
     private fun copyAssetDir(ctx: Context, assetPath: String, destDir: File) {
         val children = ctx.assets.list(assetPath) ?: return
         if (children.isEmpty()) {
-            // It's a file — copy it
-            ctx.assets.open(assetPath).use { input ->
-                File(destDir.parentFile, destDir.name).also { dest ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
+            // It's a file — copy it atomically
+            val destFile = File(destDir.parentFile, destDir.name)
+            extractAssetAtomic(ctx, assetPath, destFile)
         } else {
             destDir.mkdirs()
             for (child in children) {
@@ -708,9 +791,7 @@ object SherpaEngine {
                 if (subChildren != null && subChildren.isNotEmpty()) {
                     copyAssetDir(ctx, childAsset, childDest)
                 } else {
-                    ctx.assets.open(childAsset).use { input ->
-                        childDest.outputStream().use { output -> input.copyTo(output) }
-                    }
+                    extractAssetAtomic(ctx, childAsset, childDest)
                 }
             }
         }

@@ -3,6 +3,7 @@ package com.kokoro.reader
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.StatFs
 import android.util.Log
 import java.io.File
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -41,6 +42,15 @@ object SherpaEngine {
 
     /** Maximum time (ms) to wait for native OfflineTts constructor before giving up. */
     private const val INIT_TIMEOUT_MS = 60_000L
+
+    /** Minimum free disk space (bytes) required before extracting the Kokoro model. */
+    private const val MIN_DISK_SPACE_BYTES = 400L * 1024 * 1024  // 400 MB
+
+    /** Minimum free RAM (bytes) required before attempting native model loading. */
+    private const val MIN_RAM_FOR_INIT_BYTES = 350L * 1024 * 1024  // 350 MB
+
+    /** Minimum expected model.ort/.onnx file size — below this, extraction is corrupt. */
+    private const val MIN_MODEL_FILE_SIZE = 100L * 1024 * 1024  // 100 MB
 
     // ── Device-adaptive engine configuration ────────────────────────────────────
 
@@ -444,6 +454,32 @@ object SherpaEngine {
             }
 
             initProgress = 15
+            statusMessage = "checking device resources…"
+            syncStatus()
+
+            // ── Pre-check: disk space ────────────────────────────────────
+            // The 311MB model needs ~400MB free (model + temp file during atomic write).
+            // Fail fast with a clear message instead of crashing mid-extraction.
+            try {
+                val stat = StatFs(ctx.filesDir.absolutePath)
+                val freeBytes = stat.availableBytes
+                Log.i(TAG, "│ Disk free: ${freeBytes / 1024 / 1024}MB (need ${MIN_DISK_SPACE_BYTES / 1024 / 1024}MB)")
+                if (freeBytes < MIN_DISK_SPACE_BYTES) {
+                    val msg = "Not enough storage: ${freeBytes / 1024 / 1024}MB free, need ${MIN_DISK_SPACE_BYTES / 1024 / 1024}MB. " +
+                        "Free up space and restart the app."
+                    Log.e(TAG, "│ $msg")
+                    Log.e(TAG, "└── Kokoro init FAILED (disk space) ──────────")
+                    statusMessage = "error: not enough storage"
+                    errorMessage = msg
+                    isReady = false
+                    writeInitLog(ctx, msg)
+                    syncStatus()
+                    return false
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "│ Could not check disk space: ${e.message}")
+            }
+
             statusMessage = "extracting model to filesystem…"
             syncStatus()
 
@@ -463,6 +499,38 @@ object SherpaEngine {
                 syncStatus()
                 return false
             }
+
+            // ── Post-extraction integrity check ──────────────────────────
+            // Verify extracted files aren't truncated/corrupt (e.g. from power loss mid-write).
+            val modelCandidate = File(extractedDir, "model.ort").let {
+                if (it.exists()) it else File(extractedDir, "model.onnx")
+            }
+            val voicesCheck = File(extractedDir, "voices.bin")
+            val tokensCheck = File(extractedDir, "tokens.txt")
+            if (!modelCandidate.exists() || modelCandidate.length() < MIN_MODEL_FILE_SIZE) {
+                val msg = "Extracted model file is missing or corrupt (${modelCandidate.name}: ${modelCandidate.length() / 1024 / 1024}MB, expected >100MB). " +
+                    "Deleting and re-extracting on next launch."
+                Log.e(TAG, "│ $msg")
+                // Delete version marker to force re-extraction
+                File(extractedDir, ".extracted_version").delete()
+                modelCandidate.delete()
+                writeInitLog(ctx, msg)
+                statusMessage = "error: corrupt model, will re-extract"
+                errorMessage = msg
+                syncStatus()
+                return false
+            }
+            if (!voicesCheck.exists() || voicesCheck.length() < 1024) {
+                Log.e(TAG, "│ voices.bin missing or empty — forcing re-extraction")
+                File(extractedDir, ".extracted_version").delete()
+                voicesCheck.delete()
+                writeInitLog(ctx, "voices.bin missing or empty after extraction")
+                statusMessage = "error: corrupt voices file, will re-extract"
+                errorMessage = "Voice data is corrupt. Restart to re-extract."
+                syncStatus()
+                return false
+            }
+            Log.i(TAG, "│ Extraction verified: model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
 
             initProgress = 30
             statusMessage = "preparing Kokoro config…"
@@ -505,6 +573,26 @@ object SherpaEngine {
             activityMgr?.getMemoryInfo(memInfo)
             Log.i(TAG, "│ Memory: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
             Log.i(TAG, "│ JVM heap: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
+
+            // ── Pre-check: refuse to load if device is low on RAM ────────
+            // Loading a 311MB model into memory when there's only 200MB free
+            // will cause ONNX Runtime to silently fail malloc() → SIGSEGV.
+            // Better to fail cleanly and try Piper fallback.
+            if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
+                val msg = "Not enough RAM: ${memInfo.availMem / 1024 / 1024}MB available, " +
+                    "need ${MIN_RAM_FOR_INIT_BYTES / 1024 / 1024}MB for Kokoro model. " +
+                    "Close other apps and retry."
+                Log.e(TAG, "│ $msg")
+                Log.e(TAG, "└── Kokoro init FAILED (low memory) ──────────")
+                statusMessage = "error: not enough RAM"
+                errorMessage = msg
+                isReady = false
+                // Don't count this as a crash — it's recoverable by freeing memory
+                writeInitLog(ctx, msg)
+                syncStatus()
+                return false
+            }
+
             Log.i(TAG, "│ Provider: $provider, threads: $threads, SoC: $socVendor")
             Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
             Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
@@ -551,20 +639,21 @@ object SherpaEngine {
             initStartTime.set(0)
 
             if (!completed) {
-                // Native init hung — count as a failure to prevent infinite retry on restart
-                val prevCrashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
+                // Native init hung — clear in-progress flag but DON'T increment crash counter.
+                // Timeouts are a different failure mode than SIGSEGV:
+                //   - SIGSEGV kills the process → init_in_progress stays set → detected on restart
+                //   - Timeout means the process survived → we can clear the flag ourselves
+                // Conflating them causes false positives (user gets locked out for 5 min after a timeout).
                 initPrefs.edit()
                     .putBoolean(KEY_INIT_IN_PROGRESS, false)
-                    .putInt(KEY_INIT_CRASH_COUNT, prevCrashCount + 1)
-                    .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
                     .apply()
-                Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms (failure #${prevCrashCount + 1})")
+                Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms")
                 Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
                 statusMessage = "error: init timed out after ${elapsed / 1000}s"
                 errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
                     "The model may be too large for this device's memory."
                 isReady = false
-                writeInitLog(ctx, "OfflineTts() timed out after ${elapsed}ms (failure #${prevCrashCount + 1})")
+                writeInitLog(ctx, "OfflineTts() timed out after ${elapsed}ms (NOT counted as crash — process survived)")
                 syncStatus()
                 // Interrupt the hung thread (best effort — native code may ignore this)
                 try { initThread.interrupt() } catch (_: Throwable) {}

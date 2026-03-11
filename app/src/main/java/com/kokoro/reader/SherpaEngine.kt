@@ -378,6 +378,162 @@ object SherpaEngine {
     @Volatile var statusMessage: String = "idle"
         private set
 
+    // ── Process log: captures every step of init for debug dump ──────────
+    private val processLog = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    private const val PROCESS_LOG_MAX = 500
+
+    /** Append a timestamped line to the in-memory process log. */
+    private fun plog(msg: String) {
+        val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        val line = "[$ts] $msg"
+        processLog.add(line)
+        while (processLog.size > PROCESS_LOG_MAX) processLog.poll()
+    }
+
+    /** Debug log directory on user-visible storage. */
+    private const val DEBUG_LOG_DIR = "WW_Andene/Kyōkan/Logs"
+
+    /**
+     * Dump comprehensive debug log to /storage/emulated/0/WW_Andene/Kyōkan/Logs/.
+     * Includes: device info, engine state, crash tracking, config memory,
+     * SharedPreferences, full init process log, and current telemetry.
+     * Called from the UI via TtsBridge command.
+     */
+    fun dumpDebugLog(ctx: Context): String? {
+        return try {
+            val dir = File(android.os.Environment.getExternalStorageDirectory(), DEBUG_LOG_DIR)
+            if (!dir.exists()) dir.mkdirs()
+
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+            val file = File(dir, "debug_$timestamp.log")
+
+            val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+
+            file.writeText(buildString {
+                appendLine("╔══════════════════════════════════════════════════╗")
+                appendLine("║        KYŌKAN FULL DEBUG LOG                    ║")
+                appendLine("╚══════════════════════════════════════════════════╝")
+                appendLine("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+                appendLine()
+
+                // ── Device Info ──
+                appendLine("═══ DEVICE ═══")
+                appendLine("Manufacturer : ${Build.MANUFACTURER}")
+                appendLine("Model        : ${Build.MODEL}")
+                appendLine("Hardware     : ${Build.HARDWARE}")
+                appendLine("Android      : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+                if (Build.VERSION.SDK_INT >= 31) {
+                    appendLine("SoC Mfg      : ${Build.SOC_MANUFACTURER}")
+                    appendLine("SoC Model    : ${Build.SOC_MODEL}")
+                }
+                appendLine("SoC Vendor   : $socVendor")
+                appendLine("App version  : ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Throwable) { "?" }}")
+                try {
+                    val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
+                    appendLine("sherpa-onnx  : ${vi.version} (${vi.gitSha1})")
+                } catch (_: Throwable) {
+                    appendLine("sherpa-onnx  : version unavailable")
+                }
+                appendLine()
+
+                // ── Memory ──
+                appendLine("═══ MEMORY ═══")
+                val runtime = Runtime.getRuntime()
+                appendLine("JVM heap used: ${(runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024}MB")
+                appendLine("JVM heap max : ${runtime.maxMemory() / 1024 / 1024}MB")
+                val memInfo = android.app.ActivityManager.MemoryInfo()
+                (ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                    ?.getMemoryInfo(memInfo)
+                appendLine("RAM available: ${memInfo.availMem / 1024 / 1024}MB")
+                appendLine("RAM total    : ${memInfo.totalMem / 1024 / 1024}MB")
+                appendLine("Low memory   : ${memInfo.lowMemory}")
+                try {
+                    val stat = StatFs(ctx.filesDir.absolutePath)
+                    appendLine("Disk free    : ${stat.availableBytes / 1024 / 1024}MB")
+                } catch (_: Throwable) {}
+                appendLine()
+
+                // ── Engine State ──
+                appendLine("═══ ENGINE STATE ═══")
+                appendLine("isReady          : $isReady")
+                appendLine("statusMessage    : $statusMessage")
+                appendLine("errorMessage     : $errorMessage")
+                appendLine("initProgress     : $initProgress")
+                appendLine("isWarmingUp      : $isWarmingUp")
+                appendLine("nativeStackProbed: $nativeStackProbed")
+                appendLine("kokoroTts        : ${if (kokoroTts != null) "loaded" else "null"}")
+                appendLine("piperTts         : ${if (piperTts != null) "loaded (${piperLoadedVoiceId})" else "null"}")
+                appendLine("isPiperFallback  : $isPiperFallbackReady")
+                appendLine("lastSampleRate   : $lastSampleRate")
+                appendLine()
+
+                // ── Crash Tracking ──
+                appendLine("═══ CRASH TRACKING (SharedPrefs: $INIT_PREFS) ═══")
+                appendLine("init_in_progress : ${initPrefs.getBoolean(KEY_INIT_IN_PROGRESS, false)}")
+                appendLine("init_crash_count : ${initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)}")
+                val lastCrash = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
+                appendLine("last_crash_time  : ${if (lastCrash > 0) SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastCrash)) else "never"}")
+                appendLine("crash_age_ms     : ${if (lastCrash > 0) System.currentTimeMillis() - lastCrash else "N/A"}")
+                appendLine()
+
+                // ── Config Memory ──
+                appendLine("═══ CONFIG MEMORY ═══")
+                appendLine("last_good_threads  : ${initPrefs.getInt(KEY_LAST_GOOD_THREADS, -1)}")
+                appendLine("last_good_provider : ${initPrefs.getString(KEY_LAST_GOOD_PROVIDER, "none")}")
+                appendLine("last_good_debug    : ${initPrefs.getBoolean(KEY_LAST_GOOD_DEBUG, false)}")
+                appendLine("last_good_version  : ${initPrefs.getInt(KEY_LAST_GOOD_VERSION, -1)}")
+                appendLine()
+
+                // ── Model Files ──
+                appendLine("═══ MODEL FILES ═══")
+                val kokoroDir = File(ctx.filesDir, "sherpa/kokoro-multi-lang-v1_0")
+                if (kokoroDir.exists()) {
+                    kokoroDir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+                        appendLine("  ${f.name} (${f.length() / 1024}KB)")
+                    }
+                } else {
+                    appendLine("  Kokoro dir not extracted: ${kokoroDir.absolutePath}")
+                }
+                appendLine()
+
+                // ── Telemetry ──
+                val telem = lastTelemetry
+                if (telem != null) {
+                    appendLine("═══ LAST TELEMETRY ═══")
+                    appendLine(telem.toString())
+                    appendLine()
+                }
+
+                // ── TTS Status File ──
+                appendLine("═══ TTS STATUS FILE ═══")
+                try {
+                    val statusFile = File(ctx.filesDir, "tts_status.json")
+                    if (statusFile.exists()) {
+                        appendLine(statusFile.readText())
+                    } else {
+                        appendLine("(file does not exist)")
+                    }
+                } catch (e: Throwable) {
+                    appendLine("(error reading: ${e.message})")
+                }
+                appendLine()
+
+                // ── Process Log (every step of init) ──
+                appendLine("═══ INIT PROCESS LOG (${processLog.size} entries) ═══")
+                processLog.forEach { appendLine(it) }
+                if (processLog.isEmpty()) {
+                    appendLine("(no init steps recorded yet — engine may not have started)")
+                }
+            })
+
+            Log.i(TAG, "Debug log written to ${file.absolutePath}")
+            file.absolutePath
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write debug log", e)
+            null
+        }
+    }
+
     /** Writes current engine status to the cross-process status file. */
     private fun syncStatus() {
         val ctx = statusContext ?: return
@@ -527,11 +683,13 @@ object SherpaEngine {
      */
     fun warmUp(ctx: Context) {
         statusContext = ctx.applicationContext
-        if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
+        plog("warmUp() called")
+        if (isReady && kokoroTts != null) { plog("warmUp: already ready, skipping"); onReadyCallback?.invoke(); return }
         synchronized(warmUpLock) {
-            if (isWarmingUp) return
+            if (isWarmingUp) { plog("warmUp: already warming up, skipping"); return }
             isWarmingUp = true
         }
+        plog("warmUp: starting init sequence")
 
         // ── Crash-loop detection ─────────────────────────────────────────
         // Before calling native code that can SIGSEGV, check if previous
@@ -544,6 +702,7 @@ object SherpaEngine {
 
         // If the previous init was still "in progress" when the process died, it crashed.
         // Clear config memory — the remembered config may be the one that crashed.
+        plog("warmUp: wasInProgress=$wasInProgress, crashCount=$crashCount, lastCrashTime=$lastCrashTime")
         if (wasInProgress) {
             crashCount++
             initPrefs.edit()
@@ -551,13 +710,14 @@ object SherpaEngine {
                 .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .apply()
-            // The config that was in use when we crashed is suspect — forget it
             clearGoodConfig(initPrefs)
+            plog("warmUp: previous init crashed — crash #$crashCount, cleared config memory")
             Log.w(TAG, "Previous engine init crashed (crash #$crashCount) — cleared config memory")
         }
 
         // Reset crash counter if enough time has passed (device might have cooled down)
         if (crashCount > 0 && System.currentTimeMillis() - lastCrashTime > CRASH_RESET_WINDOW_MS) {
+            plog("warmUp: crash counter reset (>5min since last crash)")
             crashCount = 0
             initPrefs.edit().putInt(KEY_INIT_CRASH_COUNT, 0).apply()
             Log.d(TAG, "Init crash counter reset (>5min since last crash)")
@@ -575,10 +735,11 @@ object SherpaEngine {
         // After NATIVE_BROKEN_THRESHOLD crashes, we stop calling ANY native
         // code and show an error instead of crash-looping forever.
         if (crashCount > 0) {
+            plog("warmUp: entering crash recovery (crashCount=$crashCount)")
             Log.w(TAG, "Native code crashed $crashCount time(s)")
 
-            // ── Native stack completely broken — give up on native code ──
             if (crashCount >= NATIVE_BROKEN_THRESHOLD) {
+                plog("warmUp: NATIVE_BROKEN_THRESHOLD reached ($crashCount >= $NATIVE_BROKEN_THRESHOLD) — disabling all TTS")
                 Log.e(TAG, "Native stack appears broken ($crashCount crashes) — disabling all TTS")
                 errorMessage = "TTS engine crashed $crashCount times — native code incompatible with this device"
                 statusMessage = "error: native engine incompatible"
@@ -605,6 +766,7 @@ object SherpaEngine {
             // Set the flag BEFORE any native code so that if Piper also
             // SIGSEGVs, the crash counter increments on next restart.
             initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+            plog("warmUp: set init_in_progress=true, attempting Piper fallback")
             Log.i(TAG, "Attempting Piper fallback (crash #$crashCount)…")
             statusMessage = "trying fallback engine…"
             syncStatus()
@@ -612,11 +774,13 @@ object SherpaEngine {
             var piperOk = false
             try {
                 piperOk = initPiperFallback(ctx)
+                plog("warmUp: Piper fallback result=$piperOk")
             } catch (e: Throwable) {
+                plog("warmUp: Piper fallback threw ${e.javaClass.simpleName}: ${e.message}")
                 Log.e(TAG, "Piper fallback threw exception", e)
             }
-            // If we reach here, the process survived — clear the flag
             initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+            plog("warmUp: cleared init_in_progress")
 
             if (piperOk) {
                 Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crash(es)")
@@ -651,24 +815,33 @@ object SherpaEngine {
         }
 
         // ── Set init_in_progress BEFORE any sherpa-onnx code runs ────────
-        // The native library loads when sherpa-onnx config classes are first
-        // constructed (JNI System.loadLibrary). If that crashes (SIGSEGV),
-        // this flag must already be persisted so the next startup detects it.
-        // Using commit() (synchronous) to ensure it's flushed to disk.
         initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+        plog("warmUp: crashCount=0, set init_in_progress=true, launching init thread")
 
         Thread {
             try {
-                if (initializeKokoro(ctx)) {
+                plog("warmUp thread: calling initializeKokoro()")
+                val kokoroOk = initializeKokoro(ctx)
+                plog("warmUp thread: initializeKokoro returned $kokoroOk")
+                if (kokoroOk) {
                     onReadyCallback?.invoke()
                 } else {
-                    // Kokoro failed — try Piper fallback automatically
+                    plog("warmUp thread: Kokoro failed, trying Piper fallback")
                     Log.w(TAG, "Kokoro init failed, attempting Piper fallback…")
-                    if (initPiperFallback(ctx)) {
+                    val piperOk = initPiperFallback(ctx)
+                    plog("warmUp thread: Piper fallback returned $piperOk")
+                    if (piperOk) {
                         Log.i(TAG, "Piper fallback activated — speech will continue with Piper voice")
                         onReadyCallback?.invoke()
                     } else {
                         Log.e(TAG, "Both Kokoro and Piper fallback failed — no TTS available")
+                        plog("warmUp thread: BOTH engines failed — errorMessage=$errorMessage")
+                        if (errorMessage == null) {
+                            errorMessage = "Both Kokoro and Piper engines failed to initialize"
+                        }
+                        statusMessage = "error: ${errorMessage}"
+                        syncStatus()
+                        writeInitLog(ctx, "Both engines failed: ${errorMessage}")
                     }
                 }
             } catch (e: Throwable) {
@@ -720,13 +893,13 @@ object SherpaEngine {
 
     @Synchronized
     fun initializeKokoro(ctx: Context): Boolean {
+        plog("initializeKokoro: called (isReady=$isReady, kokoroTts=${kokoroTts != null})")
         if (isReady && kokoroTts != null) return true
 
-        // Check crash counter — prevents AudioPipeline's ensureKokoroReady() from
-        // bypassing the crash-loop breaker by calling initializeKokoro() directly.
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
         val crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
         if (crashCount > 0) {
+            plog("initializeKokoro: blocked — $crashCount crash(es), warmUp() handles backoff")
             Log.w(TAG, "initializeKokoro: $crashCount crash(es) — warmUp() handles backoff, skipping direct call")
             return false
         }
@@ -739,6 +912,7 @@ object SherpaEngine {
             initProgress = 5
             statusMessage = "probing native stack…"
             syncStatus()
+            plog("initKokoro: Stage 0 — probing native stack")
             Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
 
             // ── Stage 0: Probe native stack with a tiny model ────────────
@@ -771,6 +945,7 @@ object SherpaEngine {
                         probeEngine.release()
                         nativeStackProbed = true
                         probeElapsedMs = System.currentTimeMillis() - probeStart
+                        plog("initKokoro: native probe ✓ in ${probeElapsedMs}ms")
                         Log.i(TAG, "│ Native stack probe: ✓ in ${probeElapsedMs}ms (ORT + JNI working)")
                     } else {
                         Log.w(TAG, "│ Native stack probe: skipped (couldn't extract probe model)")
@@ -779,6 +954,7 @@ object SherpaEngine {
                     }
                 } catch (e: Throwable) {
                     // Probe CRASHED — native code is broken. Don't attempt Kokoro at all.
+                    plog("initKokoro: native probe ✗ FAILED: ${e.javaClass.simpleName}: ${e.message}")
                     Log.e(TAG, "│ Native stack probe: ✗ FAILED (${e.javaClass.simpleName}: ${e.message})")
                     Log.e(TAG, "│ Native stack is broken on this device — skipping Kokoro entirely")
                     Log.e(TAG, "└── Kokoro init ABORTED (native probe failed) ─")
@@ -836,6 +1012,7 @@ object SherpaEngine {
             Log.i(TAG, "│ asset %-30s %s".format("$KOKORO_DIR/espeak-ng-data/", if (espeakExists) "✓" else "✗ MISSING"))
             if (!espeakExists) missingFiles.add("$KOKORO_DIR/espeak-ng-data/")
 
+            plog("initKokoro: pre-flight done — missing=${missingFiles.size}")
             if (missingFiles.isNotEmpty()) {
                 val msg = "Missing model files: ${missingFiles.joinToString(", ")}. " +
                     "The APK was built without bundling the Kokoro model. " +
@@ -927,6 +1104,7 @@ object SherpaEngine {
                 syncStatus()
                 return false
             }
+            plog("initKokoro: extraction verified — model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
             Log.i(TAG, "│ Extraction verified: model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
 
             // ══════════════════════════════════════════════════════════════
@@ -946,6 +1124,7 @@ object SherpaEngine {
 
             val profile = profileDevice(ctx)
             telemetry.deviceProfile = profile
+            plog("initKokoro: Stage 1 — device=${profile.manufacturer} ${profile.model}, tier=${profile.tier}, ram=${profile.availRamMB}MB/${profile.totalRamMB}MB, soc=${profile.socVendor}")
             Log.i(TAG, "│ $profile")
 
             // ── 1a. Garbage collection ──────────────────────────────────
@@ -1077,6 +1256,7 @@ object SherpaEngine {
                 freshLadder
             }
 
+            plog("initKokoro: Stage 2 — ladder=${escalationLadder.size} configs, timeout=${timeoutMs}ms, ort=$isOrt")
             Log.i(TAG, "│ Escalation ladder: ${escalationLadder.size} configs")
             escalationLadder.forEachIndexed { i, c -> Log.i(TAG, "│   [$i] ${c.label}") }
 
@@ -1143,6 +1323,7 @@ object SherpaEngine {
                 val levelElapsed = System.currentTimeMillis() - levelStart
 
                 if (!completed) {
+                    plog("initKokoro: Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label}")
                     Log.w(TAG, "│ Level $level TIMED OUT after ${levelElapsed}ms — ${initCfg.label}")
                     try { initThread.interrupt() } catch (_: Throwable) {}
 
@@ -1179,6 +1360,7 @@ object SherpaEngine {
 
                 val initError = errorHolder[0]
                 if (initError != null) {
+                    plog("initKokoro: Level $level FAILED in ${levelElapsed}ms: ${initError.javaClass.simpleName}: ${initError.message}")
                     Log.w(TAG, "│ Level $level FAILED in ${levelElapsed}ms: " +
                         "${initError.javaClass.simpleName}: ${initError.message}")
 
@@ -1197,6 +1379,7 @@ object SherpaEngine {
                 }
 
                 // SUCCESS at this level
+                plog("initKokoro: Level $level SUCCESS in ${levelElapsed}ms — ${initCfg.label}")
                 Log.i(TAG, "│ OfflineTts() constructor: ${levelElapsed}ms at level $level")
                 if (level > 0) {
                     Log.i(TAG, "│ ✓ Succeeded after $level escalations (${initCfg.label})")
@@ -1243,6 +1426,7 @@ object SherpaEngine {
             errorMessage = null
             statusMessage = "ready"
             syncStatus()
+            plog("initKokoro: ✓ SUCCESS in ${totalElapsed}ms — config=${successConfig?.label}")
             Log.i(TAG, "│ Kokoro engine ready in ${totalElapsed}ms")
             Log.i(TAG, "│ Telemetry: probe=${telemetry.probeMs}ms extract=${telemetry.extractionMs}ms " +
                 "gc=${telemetry.gcMs}ms heap=${telemetry.heapReserveMs}ms " +
@@ -1251,9 +1435,9 @@ object SherpaEngine {
             true
 
         } catch (e: Throwable) {
+            plog("initKokoro: ✗ EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
             try { initWakeLock?.release() } catch (_: Throwable) {}
             val elapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
-            // Clear in-progress flag — this was a Java exception, not a native crash
             try {
                 ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
                     .edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()

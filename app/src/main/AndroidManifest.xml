@@ -62,6 +62,7 @@
                 <action android:name="com.kokoro.reader.action.VOICE_CMD_START"/>
                 <action android:name="com.kokoro.reader.action.VOICE_CMD_STOP"/>
                 <action android:name="com.kokoro.reader.action.RETRY_INIT"/>
+                <action android:name="com.kokoro.reader.action.DUMP_DEBUG_LOG"/>
             </intent-filter>
         </receiver>
 

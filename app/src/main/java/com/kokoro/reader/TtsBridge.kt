@@ -25,6 +25,7 @@ object TtsBridge {
     const val ACTION_VOICE_CMD_START = "com.kokoro.reader.action.VOICE_CMD_START"
     const val ACTION_VOICE_CMD_STOP  = "com.kokoro.reader.action.VOICE_CMD_STOP"
     const val ACTION_RETRY_INIT      = "com.kokoro.reader.action.RETRY_INIT"
+    const val ACTION_DUMP_DEBUG_LOG  = "com.kokoro.reader.action.DUMP_DEBUG_LOG"
 
     private const val STATUS_FILE = "tts_status.json"
 
@@ -65,6 +66,12 @@ object TtsBridge {
 
     fun retryEngineInit(ctx: Context) {
         val intent = Intent(ACTION_RETRY_INIT)
+        intent.setPackage(ctx.packageName)
+        ctx.sendBroadcast(intent)
+    }
+
+    fun dumpDebugLog(ctx: Context) {
+        val intent = Intent(ACTION_DUMP_DEBUG_LOG)
         intent.setPackage(ctx.packageName)
         ctx.sendBroadcast(intent)
     }

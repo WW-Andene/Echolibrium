@@ -33,6 +33,12 @@
         <TextView android:id="@+id/log_path_text" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
             android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/text_hint"
+            android:layout_marginBottom="4dp"/>
+
+        <Button android:id="@+id/btn_dump_debug" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="Dump debug log"
+            android:backgroundTint="@color/surface" android:textColor="@color/text_dim"
+            android:fontFamily="monospace" android:textSize="11sp"
             android:layout_marginBottom="8dp"/>
 
         <!-- Permission instructions — updates based on current permission state -->

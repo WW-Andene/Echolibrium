@@ -73,10 +73,17 @@ class HomeFragment : Fragment() {
         val txtDndStart      = v.findViewById<TextView>(R.id.txt_dnd_start)
         val txtDndEnd        = v.findViewById<TextView>(R.id.txt_dnd_end)
         val btnStop          = v.findViewById<Button>(R.id.btn_stop)
+        val btnDumpDebug     = v.findViewById<Button>(R.id.btn_dump_debug)
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         updateEngineStatus(engineStatusText)
         updateLogPath(logPathText)
+
+        btnDumpDebug.setOnClickListener {
+            val c = context ?: return@setOnClickListener
+            TtsBridge.dumpDebugLog(c)
+            Toast.makeText(c, "Debug log saved to /storage/emulated/0/WW_Andene/Kyōkan/Logs/", Toast.LENGTH_LONG).show()
+        }
         btnPermission.setOnClickListener {
             val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
             if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU

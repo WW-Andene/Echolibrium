@@ -105,7 +105,7 @@ class ReaderApplication : Application() {
     // MIUI/HyperOS kills the :tts process aggressively. This watchdog runs in
     // the main process and requests a service rebind when the TTS process goes
     // stale. This is what makes the app self-healing on Xiaomi devices without
-    // requiring Shizuku or manual ADB commands.
+    // requiring manual ADB commands.
 
     /** How often to check if the :tts process is alive (ms). */
     private val WATCHDOG_INTERVAL_MS = 15_000L

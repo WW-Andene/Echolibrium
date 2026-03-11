@@ -94,11 +94,6 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
 
-    // Shizuku — shell-level access to bypass Xiaomi/HyperOS restrictions
-    def shizuku_version = '13.1.5'
-    implementation "dev.rikka.shizuku:api:${shizuku_version}"
-    implementation "dev.rikka.shizuku:provider:${shizuku_version}"
-
     // Sherpa-onnx Android library (auto-downloaded by downloadTtsModels task)
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
 }

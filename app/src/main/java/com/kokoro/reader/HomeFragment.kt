@@ -194,9 +194,8 @@ class HomeFragment : Fragment() {
      * Handles: Xiaomi/Redmi/POCO, Samsung, Huawei/Honor, OnePlus, Oppo/Realme,
      * Vivo, Meizu, Asus, Lenovo, Nokia, Sony, Letv, Tecno, Infinix.
      *
-     * Priority 1 — Shizuku (Xiaomi only): silently grants ALL protections
-     * Priority 2 — Standard Android: Battery exemption dialog
-     * Priority 3 — OEM-specific: AutoStart/battery manager settings intent
+     * 1. Standard Android: Battery exemption dialog
+     * 2. OEM-specific: AutoStart/battery manager settings intent
      */
     private fun promptOemProtections() {
         val ctx = context ?: return
@@ -209,10 +208,6 @@ class HomeFragment : Fragment() {
             val result = OemProtection.applyProtections(ctx)
             activity?.runOnUiThread {
                 when {
-                    result.shizukuResult?.allGranted == true -> {
-                        prefs.edit().putBoolean("oem_protection_complete", true).apply()
-                        Toast.makeText(ctx, "Background protections applied", Toast.LENGTH_SHORT).show()
-                    }
                     result.batteryExempt && !OemProtection.needsOemProtection() -> {
                         prefs.edit().putBoolean("oem_protection_complete", true).apply()
                     }

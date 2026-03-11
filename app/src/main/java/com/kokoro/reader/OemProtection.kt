@@ -16,10 +16,9 @@ import android.util.Log
  * Xiaomi/Redmi/POCO, Samsung, Huawei/Honor, OnePlus, Oppo/Realme, Vivo,
  * Meizu, Asus, Lenovo/Motorola, Nokia, Sony, Letv/LeEco.
  *
- * Uses three layers:
+ * Uses two layers:
  * 1. Standard Android battery optimization exemption (all devices)
  * 2. OEM-specific AutoStart/battery manager intents (per manufacturer)
- * 3. Shizuku shell commands for Xiaomi (via [XiaomiProtection])
  *
  * Sources: dontkillmyapp.com, AutoStarter library, community research.
  */
@@ -127,7 +126,7 @@ object OemProtection {
         return !pm.isIgnoringBatteryOptimizations(ctx.packageName)
     }
 
-    /** Request battery optimization exemption via system dialog. No Shizuku needed. */
+    /** Request battery optimization exemption via system dialog. */
     fun requestBatteryExemption(ctx: Context): Boolean {
         if (!isBatteryOptimized(ctx)) return true  // Already exempt
         return try {
@@ -192,8 +191,7 @@ object OemProtection {
     data class ProtectionStatus(
         val oem: String,
         val batteryExempt: Boolean,
-        val autoStartOpened: Boolean,
-        val shizukuResult: XiaomiProtection.ProtectionResult? = null
+        val autoStartOpened: Boolean
     )
 
     /**
@@ -201,51 +199,35 @@ object OemProtection {
      * Called from HomeFragment on first launch or when protection is incomplete.
      *
      * Flow:
-     * 1. Xiaomi + Shizuku available → use XiaomiProtection (shell commands)
-     * 2. Any OEM → request battery exemption (system dialog)
-     * 3. Any OEM → open AutoStart settings (one-time prompt)
+     * 1. Any OEM → request battery exemption (system dialog)
+     * 2. Any OEM → open AutoStart settings (one-time prompt)
      */
     fun applyProtections(ctx: Context): ProtectionStatus {
         val oem = detectOem()
         val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        var shizukuResult: XiaomiProtection.ProtectionResult? = null
         var autoStartOpened = false
 
         Log.i(TAG, "Applying protections for OEM: $oem (${Build.MANUFACTURER} ${Build.MODEL})")
 
-        // 1. Xiaomi + Shizuku: use the full programmatic approach
-        if (oem in listOf("xiaomi", "redmi", "poco") && XiaomiProtection.isShizukuAlive()) {
-            if (XiaomiProtection.isShizukuReady()) {
-                shizukuResult = XiaomiProtection.applyAllProtections(ctx)
-                Log.i(TAG, "Shizuku protections: ${shizukuResult.summary}")
-            } else {
-                XiaomiProtection.requestShizukuPermission()
-            }
-        }
-
-        // 2. Battery optimization exemption (all devices)
+        // 1. Battery optimization exemption (all devices)
         val batteryExempt = !isBatteryOptimized(ctx)
         if (!batteryExempt && !prefs.getBoolean(KEY_BATTERY_PROMPTED, false)) {
             requestBatteryExemption(ctx)
             prefs.edit().putBoolean(KEY_BATTERY_PROMPTED, true).apply()
         }
 
-        // 3. AutoStart settings (one-time prompt for OEM devices)
+        // 2. AutoStart settings (one-time prompt for OEM devices)
         if (needsOemProtection() && !prefs.getBoolean(KEY_AUTOSTART_PROMPTED, false)) {
-            // Don't open if Shizuku already handled everything for Xiaomi
-            if (shizukuResult?.allGranted != true) {
-                autoStartOpened = openAutoStartSettings(ctx)
-                if (autoStartOpened) {
-                    prefs.edit().putBoolean(KEY_AUTOSTART_PROMPTED, true).apply()
-                }
+            autoStartOpened = openAutoStartSettings(ctx)
+            if (autoStartOpened) {
+                prefs.edit().putBoolean(KEY_AUTOSTART_PROMPTED, true).apply()
             }
         }
 
         return ProtectionStatus(
             oem = oem,
             batteryExempt = !isBatteryOptimized(ctx),
-            autoStartOpened = autoStartOpened,
-            shizukuResult = shizukuResult
+            autoStartOpened = autoStartOpened
         )
     }
 

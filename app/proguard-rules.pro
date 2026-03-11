@@ -16,7 +16,3 @@
 # Kotlin metadata needed for reflection
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
-
-# Shizuku — keep API classes for shell command execution
--keep class rikka.shizuku.** { *; }
--dontwarn rikka.shizuku.**

@@ -159,9 +159,8 @@ object AudioPipeline {
                 )
             }
 
-            // Piper voice: extract on demand if needed, then synthesize
-            piperVoice != null && (PiperVoiceManager.isVoiceReady(ctx, voiceId)
-                || PiperVoiceManager.ensureVoiceExtracted(ctx, voiceId)) -> {
+            // Piper voice: loaded directly from assets by SherpaEngine
+            piperVoice != null -> {
                 try {
                     SherpaEngine.synthesizePiper(
                         ctx     = ctx,

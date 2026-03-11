@@ -1,156 +1,28 @@
 package com.kokoro.reader
 
 import android.content.Context
-import android.util.Log
 import java.io.File
 
 /**
- * Manages the Kokoro TTS model bundled in app assets.
+ * Legacy model path manager.
  *
- * The model is pre-packaged at build time in assets/kokoro-model/
- * and extracted to context.filesDir/sherpa/kokoro-multi-lang-v1_0/ on first launch.
- * No internet connection is required — the APK is fully autonomous.
+ * Previously handled extracting models from assets to internal storage.
+ * Now models are loaded directly from assets via AssetManager in SherpaEngine.
  *
- * Model files after extraction:
- *   model.onnx, voices.bin, tokens.txt, espeak-ng-data/
+ * This object is kept only for backward compatibility — it provides path helpers
+ * that may be referenced elsewhere. No extraction happens anymore.
  */
 object VoiceDownloadManager {
 
-    private const val TAG = "ModelManager"
-
-    const val MODEL_NAME    = "kokoro-multi-lang-v1_0"
-    private const val ASSET_DIR = "kokoro-model"
+    const val MODEL_NAME = "kokoro-multi-lang-v1_0"
 
     enum class State { NOT_EXTRACTED, EXTRACTING, READY, ERROR }
 
-    @Volatile var state: State = State.NOT_EXTRACTED
-    @Volatile var progressPercent: Int = 0
-    @Volatile var errorMessage: String = ""
-
-    @Volatile private var progressCallback: ((Int) -> Unit)? = null
-    @Volatile private var stateCallback: ((State) -> Unit)? = null
-
-    fun onProgress(cb: (Int) -> Unit) { progressCallback = cb }
-    fun onStateChange(cb: (State) -> Unit) { stateCallback = cb }
-
-    // ── Paths ─────────────────────────────────────────────────────────────────
+    @Volatile var state: State = State.READY
 
     fun getSherpaDir(ctx: Context): File = File(ctx.filesDir, "sherpa").also { it.mkdirs() }
     fun getModelDir(ctx: Context): File = File(getSherpaDir(ctx), MODEL_NAME)
 
-    fun isModelReady(ctx: Context): Boolean {
-        val dir = getModelDir(ctx)
-        // Fast path: marker file confirms previous successful extraction
-        if (File(dir, ".extracted").exists()) return true
-        return dir.exists()
-            && File(dir, "model.onnx").exists()
-            && File(dir, "voices.bin").exists()
-            && File(dir, "tokens.txt").exists()
-            && File(dir, "espeak-ng-data").exists()
-    }
-
-    // ── Extract from assets ───────────────────────────────────────────────────
-
-    /**
-     * Extracts the bundled model from assets to internal storage.
-     * Safe to call multiple times — skips if already extracted.
-     * Runs on a background thread and reports progress via callbacks.
-     */
-    fun ensureModel(ctx: Context) {
-        if (state == State.EXTRACTING) return
-        if (isModelReady(ctx)) { updateState(State.READY); return }
-
-        updateState(State.EXTRACTING)
-        progressPercent = 0
-
-        Thread {
-            try {
-                Log.d(TAG, "Extracting model from assets/$ASSET_DIR")
-                val destDir = getModelDir(ctx)
-                destDir.mkdirs()
-
-                copyAssetsRecursive(ctx, ASSET_DIR, destDir)
-
-                if (isModelReady(ctx) || (File(destDir, "model.onnx").exists()
-                        && File(destDir, "voices.bin").exists()
-                        && File(destDir, "tokens.txt").exists()
-                        && File(destDir, "espeak-ng-data").exists())) {
-                    File(destDir, ".extracted").createNewFile()
-                    Log.d(TAG, "Model ready at $destDir")
-                    updateState(State.READY)
-                } else {
-                    updateState(State.ERROR)
-                    errorMessage = "Extraction incomplete — missing required files"
-                }
-            } catch (e: Exception) {
-                errorMessage = e.message ?: "Unknown error"
-                Log.e(TAG, "Asset extraction failed", e)
-                updateState(State.ERROR)
-            }
-        }.apply { name = "ModelExtractor"; isDaemon = true; start() }
-    }
-
-    /**
-     * Synchronous version — blocks until model is extracted.
-     * Use from background threads only. Synchronized to prevent concurrent extraction.
-     */
-    @Synchronized
-    fun ensureModelSync(ctx: Context): Boolean {
-        if (isModelReady(ctx)) { updateState(State.READY); return true }
-        return try {
-            val destDir = getModelDir(ctx)
-            destDir.mkdirs()
-            copyAssetsRecursive(ctx, ASSET_DIR, destDir)
-            // Verify all required files exist
-            val ready = destDir.exists()
-                && File(destDir, "model.onnx").exists()
-                && File(destDir, "voices.bin").exists()
-                && File(destDir, "tokens.txt").exists()
-                && File(destDir, "espeak-ng-data").exists()
-            if (ready) {
-                // Write marker so future checks skip the full file scan
-                File(destDir, ".extracted").createNewFile()
-            }
-            updateState(if (ready) State.READY else State.ERROR)
-            ready
-        } catch (e: Exception) {
-            Log.e(TAG, "Asset extraction failed", e)
-            updateState(State.ERROR)
-            false
-        }
-    }
-
-    fun deleteModel(ctx: Context) {
-        getModelDir(ctx).deleteRecursively()
-        updateState(State.NOT_EXTRACTED)
-    }
-
-    // ── Internal ──────────────────────────────────────────────────────────────
-
-    private fun updateState(s: State) {
-        state = s
-        stateCallback?.invoke(s)
-    }
-
-    private fun copyAssetsRecursive(ctx: Context, assetPath: String, dest: File) {
-        val assetManager = ctx.assets
-        val entries = assetManager.list(assetPath) ?: return
-
-        if (entries.isEmpty()) {
-            // It's a file — skip if already extracted with non-zero size
-            if (dest.exists() && dest.length() > 0) return
-            dest.parentFile?.mkdirs()
-            assetManager.open(assetPath).use { input ->
-                dest.outputStream().use { output ->
-                    input.copyTo(output, bufferSize = 32 * 1024)
-                }
-            }
-        } else {
-            // It's a directory — recurse into each child
-            dest.mkdirs()
-            for (entry in entries) {
-                copyAssetsRecursive(ctx, "$assetPath/$entry", File(dest, entry))
-            }
-        }
-    }
+    /** Models are loaded directly from assets now — always considered ready */
+    fun isModelReady(ctx: Context): Boolean = true
 }

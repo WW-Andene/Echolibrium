@@ -248,13 +248,7 @@ class ProfilesFragment : Fragment() {
                 tvSelectedVoiceIcon?.text = piperVoice.genderIcon
                 tvSelectedVoiceIcon?.setTextColor(piperVoice.genderColor)
                 tvSelectedVoiceName?.text = if (alias.isNotBlank()) "$alias (${piperVoice.displayName})" else piperVoice.displayName
-                val ctx = context
-                val status = when {
-                    ctx != null && PiperVoiceManager.isVoiceReady(ctx, piperVoice.id) ->
-                        if (PiperVoiceManager.isBundled(piperVoice.id)) "bundled" else "ready"
-                    PiperVoiceManager.isBundled(piperVoice.id) -> "bundled · extracting"
-                    else -> "not downloaded"
-                }
+                val status = "bundled"
                 tvSelectedVoiceDetail?.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
                 selectedVoiceBanner?.setBackgroundColor(0xFF0d1a2a.toInt())
             }
@@ -324,11 +318,9 @@ class ProfilesFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 })
                 renderVoiceCardRows(deduped.map { v ->
-                    val ready = PiperVoiceManager.isVoiceReady(ctx, v.id)
-                    val statusText = if (ready) "bundled" else "extracting…"
                     VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                        "${v.flagEmoji} ${v.nationality}", statusText, 0xFF00ccff.toInt(),
-                        true) // All voices are bundled — always selectable
+                        "${v.flagEmoji} ${v.nationality}", "bundled", 0xFF00ccff.toInt(),
+                        true)
                 })
             }
         }

@@ -167,6 +167,16 @@ object SherpaEngine {
                 appendLine("SoC        : $socVendor (hw=${android.os.Build.HARDWARE})")
                 appendLine("Threads    : ${optimalThreadCount()}, Provider: ${optimalProvider()}")
                 appendLine("App version: ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Exception) { "?" }}")
+                try {
+                    val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
+                    appendLine("sherpa-onnx : ${vi.version} (${vi.gitSha1})")
+                } catch (_: Throwable) {}
+                try {
+                    val actMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                    val mi = android.app.ActivityManager.MemoryInfo()
+                    actMgr?.getMemoryInfo(mi)
+                    appendLine("Memory     : ${mi.availMem / 1024 / 1024}MB free / ${mi.totalMem / 1024 / 1024}MB total (low=${mi.lowMemory})")
+                } catch (_: Throwable) {}
                 appendLine()
                 if (stackTrace != null) {
                     appendLine("--- Stack Trace ---")
@@ -382,6 +392,13 @@ object SherpaEngine {
             statusMessage = "verifying model assets…"
             syncStatus()
             Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
+            // Log sherpa-onnx library version for diagnostics
+            try {
+                val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
+                Log.i(TAG, "│ sherpa-onnx: ${vi.version} (${vi.gitSha1}, ${vi.gitDate})")
+            } catch (_: Throwable) {
+                Log.i(TAG, "│ sherpa-onnx: version unavailable")
+            }
             Log.i(TAG, "│ Model dir: assets/$KOKORO_DIR")
 
             // ── Pre-flight: verify required assets exist BEFORE calling native code ──
@@ -481,6 +498,13 @@ object SherpaEngine {
                 else "loading native model (this may take 10-30s)…"
             statusMessage = providerLabel
             syncStatus()
+            // Log memory state for OOM diagnostics (311MB model needs headroom)
+            val runtime = Runtime.getRuntime()
+            val activityMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            val memInfo = android.app.ActivityManager.MemoryInfo()
+            activityMgr?.getMemoryInfo(memInfo)
+            Log.i(TAG, "│ Memory: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
+            Log.i(TAG, "│ JVM heap: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
             Log.i(TAG, "│ Provider: $provider, threads: $threads, SoC: $socVendor")
             Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
             Log.i(TAG, "│ Model: ${modelFile.absolutePath}")

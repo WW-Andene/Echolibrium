@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # Downloads all TTS dependencies needed to build Kyōkan.
-# Tries OUR OWN GitHub Release (tts-assets-v1) first, then falls back
-# to the original upstream sources (k2-fsa, HuggingFace).
+# Fetches from upstream sources (k2-fsa, HuggingFace) by default,
+# with our GitHub Release (tts-assets-v1) as fallback when available.
 #
 # Assets are uploaded by: .github/workflows/upload-voices.yml
 #
@@ -17,14 +17,14 @@ LIBS_DIR="libs"
 KOKORO_DIR="src/main/assets/kokoro-model"
 PIPER_DIR="src/main/assets/piper-models"
 
-# Primary: our own GitHub Release
-RELEASE_BASE="https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
-
-# Fallback: upstream sources
+# Primary: upstream sources
 SHERPA_VERSION="1.12.28"
 UPSTREAM_AAR="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar"
 UPSTREAM_KOKORO="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
 HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+
+# Fallback: our own GitHub Release (populated by upload-voices.yml)
+RELEASE_BASE="https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
 
 RETRY="--retry 3 --retry-delay 5"
 
@@ -55,7 +55,7 @@ download_with_fallback() {
     if curl -fL $RETRY "$primary" -o "$dest" 2>/dev/null; then
         return 0
     fi
-    echo "  ⚠ Release asset not found, trying upstream…"
+    echo "  ⚠ Primary source failed, trying fallback…"
     curl -fL $RETRY "$fallback" -o "$dest" || {
         echo "  ✗ FAILED: $(basename "$dest")"
         rm -f "$dest"
@@ -81,8 +81,8 @@ echo ""
 echo "═══ Step 1/3: sherpa-onnx AAR ═══"
 mkdir -p "$LIBS_DIR"
 download_with_fallback \
-    "$RELEASE_BASE/sherpa_onnx.aar" \
     "$UPSTREAM_AAR" \
+    "$RELEASE_BASE/sherpa_onnx.aar" \
     "$LIBS_DIR/sherpa_onnx.aar"
 
 # ── 2. Kokoro model ─────────────────────────────────────────────────────────
@@ -95,9 +95,9 @@ if [ -f "$KOKORO_DIR/model.onnx" ] && [ -f "$KOKORO_DIR/voices.bin" ] && [ -f "$
     echo "  ✓ Kokoro model already present — skipping"
 else
     echo "  ↓ Downloading Kokoro model (~120MB)…"
-    if ! curl -fL $RETRY "$RELEASE_BASE/kokoro-multi-lang-v1_0.tar.bz2" -o kokoro-model.tar.bz2 2>/dev/null; then
-        echo "  ⚠ Release asset not found, trying upstream…"
-        curl -fL $RETRY "$UPSTREAM_KOKORO" -o kokoro-model.tar.bz2
+    if ! curl -fL $RETRY "$UPSTREAM_KOKORO" -o kokoro-model.tar.bz2 2>/dev/null; then
+        echo "  ⚠ Upstream failed, trying GitHub release…"
+        curl -fL $RETRY "$RELEASE_BASE/kokoro-multi-lang-v1_0.tar.bz2" -o kokoro-model.tar.bz2
     fi
     echo "  ↓ Extracting…"
     tar -xjf kokoro-model.tar.bz2 -C "$KOKORO_DIR" --strip-components=1
@@ -114,17 +114,20 @@ echo ""
 echo "═══ Step 3/3: Core Piper voices (bundled in APK) ═══"
 mkdir -p "$PIPER_DIR"
 
-# Shared tokens.txt — fallback: extract from upstream lessac package
+# Shared tokens.txt — extract from upstream lessac package, fall back to release
 if [ ! -f "$PIPER_DIR/tokens.txt" ]; then
-    if ! download "$RELEASE_BASE/piper-tokens.txt" "$PIPER_DIR/tokens.txt" 2>/dev/null; then
-        echo "  ⚠ Release asset not found, extracting tokens.txt from upstream…"
-        curl -fL $RETRY \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
-            -o piper-pkg.tar.bz2
+    echo "  ↓ Extracting tokens.txt from upstream…"
+    if curl -fL $RETRY \
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
+        -o piper-pkg.tar.bz2 2>/dev/null; then
         mkdir -p tmp-piper
         tar -xjf piper-pkg.tar.bz2 -C tmp-piper
         find tmp-piper -name "tokens.txt" -exec cp {} "$PIPER_DIR/tokens.txt" \;
         rm -rf tmp-piper piper-pkg.tar.bz2
+    else
+        echo "  ⚠ Upstream failed, trying GitHub release…"
+        rm -f piper-pkg.tar.bz2
+        download "$RELEASE_BASE/piper-tokens.txt" "$PIPER_DIR/tokens.txt"
     fi
 else
     echo "  ✓ tokens.txt already exists — skipping"
@@ -150,8 +153,8 @@ FAILED=0
 
 for VOICE_ID in "${BUNDLED_VOICES[@]}"; do
     DEST="$PIPER_DIR/${VOICE_ID}.onnx"
-    FALLBACK_URL=$(piper_hf_url "$VOICE_ID")
-    if download_with_fallback "$RELEASE_BASE/${VOICE_ID}.onnx" "$FALLBACK_URL" "$DEST"; then
+    HF_URL=$(piper_hf_url "$VOICE_ID")
+    if download_with_fallback "$HF_URL" "$RELEASE_BASE/${VOICE_ID}.onnx" "$DEST"; then
         if [ -f "$DEST" ]; then
             DOWNLOADED=$((DOWNLOADED + 1))
         fi

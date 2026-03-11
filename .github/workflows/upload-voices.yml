@@ -1,4 +1,4 @@
-name: Upload Voice Models to Release
+name: Upload TTS Assets to Release
 on:
   workflow_dispatch:  # Manual trigger only
 
@@ -6,31 +6,50 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Needed to create releases and upload assets
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all 44 Piper voices from HuggingFace
+      - name: Download all external TTS dependencies
         run: |
-          cd app
-          PIPER_DIR="src/main/assets/piper-models"
-          HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+          set -euo pipefail
           RETRY="--retry 3 --retry-delay 5"
-          mkdir -p "$PIPER_DIR"
+          STAGING="staging"
+          mkdir -p "$STAGING"
 
-          # Shared tokens.txt
-          if [ ! -f "$PIPER_DIR/tokens.txt" ]; then
-            LESSAC_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"
-            curl -fL $RETRY "$LESSAC_URL" -o piper-pkg.tar.bz2
-            mkdir -p tmp-piper
-            tar -xjf piper-pkg.tar.bz2 -C tmp-piper
-            find tmp-piper -name "tokens.txt" -exec cp {} "$PIPER_DIR/tokens.txt" \;
-            find tmp-piper -name "en_US-lessac-medium.onnx" -exec cp {} "$PIPER_DIR/en_US-lessac-medium.onnx" \;
-            rm -rf tmp-piper piper-pkg.tar.bz2
-          fi
+          SHERPA_VERSION="1.12.28"
 
-          # All 44 voices
+          # ── sherpa-onnx AAR ──
+          echo "═══ sherpa-onnx AAR ═══"
+          curl -fL $RETRY \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar" \
+            -o "$STAGING/sherpa_onnx.aar"
+          echo "✓ sherpa_onnx.aar ($(du -h "$STAGING/sherpa_onnx.aar" | cut -f1))"
+
+          # ── Kokoro model ──
+          echo ""
+          echo "═══ Kokoro model ═══"
+          curl -fL $RETRY \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2" \
+            -o "$STAGING/kokoro-multi-lang-v1_0.tar.bz2"
+          echo "✓ kokoro-multi-lang-v1_0.tar.bz2 ($(du -h "$STAGING/kokoro-multi-lang-v1_0.tar.bz2" | cut -f1))"
+
+          # ── Piper tokens.txt + all 44 voices ──
+          echo ""
+          echo "═══ Piper tokens.txt ═══"
+          curl -fL $RETRY \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
+            -o piper-pkg.tar.bz2
+          mkdir -p tmp-piper
+          tar -xjf piper-pkg.tar.bz2 -C tmp-piper
+          find tmp-piper -name "tokens.txt" -exec cp {} "$STAGING/piper-tokens.txt" \;
+          rm -rf tmp-piper piper-pkg.tar.bz2
+          echo "✓ piper-tokens.txt"
+
+          echo ""
+          echo "═══ All 44 Piper voices ═══"
+          HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
           VOICES=(
             "en_US-amy-low" "en_US-amy-medium" "en_US-arctic-medium"
             "en_US-bryce-medium" "en_US-danny-low" "en_US-hfc_female-medium"
@@ -52,10 +71,6 @@ jobs:
           )
 
           for VOICE_ID in "${VOICES[@]}"; do
-            if [ -f "$PIPER_DIR/${VOICE_ID}.onnx" ]; then
-              echo "✓ $VOICE_ID already exists"
-              continue
-            fi
             LANG_CODE="${VOICE_ID%%_*}"
             COUNTRY=$(echo "$VOICE_ID" | sed 's/^[^_]*_//' | sed 's/-.*//')
             LOCALE="${LANG_CODE}_${COUNTRY}"
@@ -63,48 +78,31 @@ jobs:
             QUALITY="${REST##*-}"
             NAME="${REST%-*}"
             URL="${HF_BASE}/${LANG_CODE}/${LOCALE}/${NAME}/${QUALITY}/${VOICE_ID}.onnx?download=true"
-            echo "↓ Downloading $VOICE_ID…"
-            curl -fL $RETRY "$URL" -o "$PIPER_DIR/${VOICE_ID}.onnx" || echo "✗ FAILED: $VOICE_ID"
+            echo "↓ $VOICE_ID"
+            curl -fL $RETRY "$URL" -o "$STAGING/${VOICE_ID}.onnx" || echo "✗ FAILED: $VOICE_ID"
           done
 
           echo ""
-          echo "Downloaded $(ls -1 "$PIPER_DIR"/*.onnx | wc -l) voice models"
+          echo "Staging: $(ls -1 "$STAGING" | wc -l) files ($(du -sh "$STAGING" | cut -f1))"
 
-      - name: Create release and upload non-bundled voices
+      - name: Create release and upload all assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PIPER_DIR="app/src/main/assets/piper-models"
+          set -euo pipefail
+          STAGING="staging"
 
-          # Voices bundled in APK — do NOT upload these
-          BUNDLED="en_US-lessac-medium en_US-ryan-medium en_US-amy-medium en_US-joe-medium en_GB-alba-medium en_GB-alan-medium fr_FR-siwis-medium fr_FR-tom-medium"
+          # Create or reuse the release
+          gh release create tts-assets-v1 \
+            --title "TTS Assets v1" \
+            --notes "All TTS dependencies for building and running Kyōkan/Echolibrium. Eliminates external fetching from HuggingFace and k2-fsa." \
+            2>/dev/null || echo "Release tts-assets-v1 already exists"
 
-          # Create or update the release
-          gh release create voices-v1 \
-            --title "Piper Voice Models v1" \
-            --notes "Piper TTS voice models (.onnx) for on-demand download in Kyōkan/Echolibrium. These are automatically downloaded by the app when a user selects a non-bundled voice." \
-            2>/dev/null || echo "Release voices-v1 already exists — uploading to it"
-
-          # Upload non-bundled voices
-          UPLOADED=0
-          SKIPPED=0
-          for f in "$PIPER_DIR"/*.onnx; do
-            BASENAME=$(basename "$f" .onnx)
-            if echo "$BUNDLED" | grep -qw "$BASENAME"; then
-              echo "Skip (bundled): $BASENAME"
-              SKIPPED=$((SKIPPED + 1))
-              continue
-            fi
-            echo "Upload: $BASENAME.onnx ($(du -h "$f" | cut -f1))"
-            gh release upload voices-v1 "$f" --clobber || echo "✗ Failed to upload $BASENAME"
-            UPLOADED=$((UPLOADED + 1))
+          # Upload everything
+          for f in "$STAGING"/*; do
+            echo "Upload: $(basename "$f") ($(du -h "$f" | cut -f1))"
+            gh release upload tts-assets-v1 "$f" --clobber
           done
 
-          # Also upload tokens.txt (needed by downloaded voices)
-          if [ -f "$PIPER_DIR/tokens.txt" ]; then
-            gh release upload voices-v1 "$PIPER_DIR/tokens.txt" --clobber
-            echo "Uploaded tokens.txt"
-          fi
-
           echo ""
-          echo "Done: $UPLOADED uploaded, $SKIPPED skipped (bundled)"
+          echo "Done: $(ls -1 "$STAGING" | wc -l) assets uploaded to tts-assets-v1"

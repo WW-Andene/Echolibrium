@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Downloads all TTS dependencies needed to build Kyōkan:
-#   1. sherpa-onnx AAR (native TTS library)
-#   2. Kokoro multi-lang model (30 voices, ~120MB)
-#   3. Core Piper voices bundled in the APK (8 voices, ~480MB)
+# Downloads all TTS dependencies needed to build Kyōkan.
+# Everything is fetched from OUR OWN GitHub Release (tts-assets-v1) —
+# no external dependencies on HuggingFace, k2-fsa, or other repos.
 #
-# Non-bundled Piper voices are downloaded on-demand by the app from
-# GitHub Releases — see VoiceDownloadManager.kt and PiperVoiceCatalog.kt.
+# Assets are uploaded by: .github/workflows/upload-voices.yml
 #
 # This script is idempotent — it skips files that already exist.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -15,11 +13,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-SHERPA_VERSION="1.12.28"
 LIBS_DIR="libs"
 KOKORO_DIR="src/main/assets/kokoro-model"
 PIPER_DIR="src/main/assets/piper-models"
-HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+
+# All assets live in a single GitHub Release
+RELEASE_BASE="https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
 
 RETRY="--retry 3 --retry-delay 5"
 
@@ -42,10 +41,9 @@ download() {
 # ── 1. Sherpa-onnx AAR ──────────────────────────────────────────────────────
 
 echo ""
-echo "═══ Step 1/3: sherpa-onnx AAR (v${SHERPA_VERSION}) ═══"
+echo "═══ Step 1/3: sherpa-onnx AAR ═══"
 mkdir -p "$LIBS_DIR"
-AAR_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar"
-download "$AAR_URL" "$LIBS_DIR/sherpa_onnx.aar"
+download "$RELEASE_BASE/sherpa_onnx.aar" "$LIBS_DIR/sherpa_onnx.aar"
 
 # ── 2. Kokoro model ─────────────────────────────────────────────────────────
 
@@ -56,9 +54,8 @@ mkdir -p "$KOKORO_DIR"
 if [ -f "$KOKORO_DIR/model.onnx" ] && [ -f "$KOKORO_DIR/voices.bin" ] && [ -f "$KOKORO_DIR/tokens.txt" ] && [ -d "$KOKORO_DIR/espeak-ng-data" ]; then
     echo "  ✓ Kokoro model already present — skipping"
 else
-    MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
     echo "  ↓ Downloading Kokoro model (~120MB)…"
-    curl -fL $RETRY "$MODEL_URL" -o kokoro-model.tar.bz2
+    curl -fL $RETRY "$RELEASE_BASE/kokoro-multi-lang-v1_0.tar.bz2" -o kokoro-model.tar.bz2
     echo "  ↓ Extracting…"
     tar -xjf kokoro-model.tar.bz2 -C "$KOKORO_DIR" --strip-components=1
     rm -f kokoro-model.tar.bz2
@@ -74,21 +71,8 @@ echo ""
 echo "═══ Step 3/3: Core Piper voices (bundled in APK) ═══"
 mkdir -p "$PIPER_DIR"
 
-# Shared tokens.txt (from lessac package)
-if [ ! -f "$PIPER_DIR/tokens.txt" ]; then
-    LESSAC_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"
-    echo "  ↓ Downloading shared tokens.txt…"
-    curl -fL $RETRY "$LESSAC_URL" -o piper-pkg.tar.bz2
-    mkdir -p tmp-piper
-    tar -xjf piper-pkg.tar.bz2 -C tmp-piper
-    find tmp-piper -name "tokens.txt" -exec cp {} "$PIPER_DIR/tokens.txt" \;
-    # Also grab lessac model while we have it
-    find tmp-piper -name "en_US-lessac-medium.onnx" -exec cp {} "$PIPER_DIR/en_US-lessac-medium.onnx" \;
-    rm -rf tmp-piper piper-pkg.tar.bz2
-    echo "  ✓ tokens.txt ready"
-else
-    echo "  ✓ tokens.txt already present"
-fi
+# Shared tokens.txt
+download "$RELEASE_BASE/piper-tokens.txt" "$PIPER_DIR/tokens.txt"
 
 # ── Bundled voices ───────────────────────────────────────────────────────────
 # Keep in sync with PiperVoiceCatalog.kt BUNDLED_IDS
@@ -109,29 +93,18 @@ SKIPPED=0
 FAILED=0
 
 for VOICE_ID in "${BUNDLED_VOICES[@]}"; do
-    if [ -f "$PIPER_DIR/${VOICE_ID}.onnx" ]; then
-        SKIPPED=$((SKIPPED + 1))
-        continue
-    fi
-
-    # Parse: en_US-lessac-medium → lang=en, locale=en_US, name=lessac, quality=medium
-    LANG_CODE="${VOICE_ID%%_*}"
-    COUNTRY=$(echo "$VOICE_ID" | sed 's/^[^_]*_//' | sed 's/-.*//')
-    LOCALE="${LANG_CODE}_${COUNTRY}"
-    REST=$(echo "$VOICE_ID" | sed "s/^${LOCALE}-//")
-    QUALITY="${REST##*-}"
-    NAME="${REST%-*}"
-
-    URL="${HF_BASE}/${LANG_CODE}/${LOCALE}/${NAME}/${QUALITY}/${VOICE_ID}.onnx?download=true"
-    if download "$URL" "$PIPER_DIR/${VOICE_ID}.onnx"; then
-        DOWNLOADED=$((DOWNLOADED + 1))
+    if download "$RELEASE_BASE/${VOICE_ID}.onnx" "$PIPER_DIR/${VOICE_ID}.onnx"; then
+        if [ -f "$PIPER_DIR/${VOICE_ID}.onnx" ]; then
+            # Count new downloads vs skips based on download() output
+            DOWNLOADED=$((DOWNLOADED + 1))
+        fi
     else
         FAILED=$((FAILED + 1))
     fi
 done
 
 echo ""
-echo "  Bundled voices: $SKIPPED already present, $DOWNLOADED downloaded, $FAILED failed (of $TOTAL total)"
+echo "  Bundled voices: $TOTAL total, $FAILED failed"
 
 # ── 4. Optimize models (ORT format) ─────────────────────────────────────────
 
@@ -161,6 +134,7 @@ if [ "$ORT_COUNT" -gt 0 ]; then
     echo "  ORT:    ${ORT_COUNT} pre-optimized models (5-10x faster load)"
 fi
 echo ""
+echo "  All assets fetched from: $RELEASE_BASE"
 echo "  Non-bundled voices are downloaded by the app on demand."
 echo "  Ready to build: ./gradlew assembleRelease"
 echo "═══════════════════════════════════════════════"

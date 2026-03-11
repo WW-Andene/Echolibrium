@@ -188,7 +188,9 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════════"
-PIPER_COUNT=$(ls -1 "$PIPER_DIR"/*.onnx 2>/dev/null | wc -l)
+PIPER_ONNX=$(ls -1 "$PIPER_DIR"/*.onnx 2>/dev/null | wc -l)
+PIPER_ORT=$(ls -1 "$PIPER_DIR"/*.ort 2>/dev/null | wc -l)
+PIPER_COUNT=$((PIPER_ONNX + PIPER_ORT))
 ORT_COUNT=$(ls -1 "$KOKORO_DIR"/*.ort "$PIPER_DIR"/*.ort 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
 echo "  Kokoro: $(du -sh "$KOKORO_DIR" 2>/dev/null | cut -f1 || echo 'MISSING')"

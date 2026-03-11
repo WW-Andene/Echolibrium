@@ -75,15 +75,20 @@ class NotificationReaderService : NotificationListenerService() {
         try {
             instance = this
             AudioPipeline.start(this)
-            // TTS engine initializes lazily on first notification — do NOT call
-            // SherpaEngine.warmUp() here: the native OfflineTts JNI constructor
-            // can trigger a SIGSEGV that kills the entire process (uncatchable
-            // by Java try-catch). Lazy init avoids this startup crash.
-            // Load persisted mood state
             currentMood = MoodState.load(prefs)
-            // Start foreground notification to keep the service alive in background
             startForegroundNotification()
-            Log.d(TAG, "Service created, foreground notification started")
+
+            // Eager engine init — now safe with timeout + asset pre-flight checks.
+            // Updates the foreground notification to show loading progress,
+            // then switches to "Listening" when ready.
+            updateForegroundText("Loading TTS engine…")
+            SherpaEngine.onReadyCallback = {
+                updateForegroundText("Listening for notifications")
+                Log.d(TAG, "Engine ready — service fully operational")
+            }
+            SherpaEngine.warmUp(this)
+
+            Log.d(TAG, "Service created, engine warming up in background")
         } catch (e: Throwable) {
             Log.e(TAG, "Error during service creation — service may not function correctly", e)
         }
@@ -321,21 +326,7 @@ class NotificationReaderService : NotificationListenerService() {
             }
             nm.createNotificationChannel(channel)
 
-            val openIntent = PendingIntent.getActivity(
-                this, 0,
-                Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-                },
-                PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val notification = Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Kyōkan")
-                .setContentText("Listening for notifications")
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentIntent(openIntent)
-                .setOngoing(true)
-                .build()
+            val notification = buildForegroundNotification("Starting…")
 
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(FOREGROUND_ID, notification,
@@ -345,6 +336,36 @@ class NotificationReaderService : NotificationListenerService() {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to start foreground service", e)
+        }
+    }
+
+    private fun buildForegroundNotification(text: String): Notification {
+        val openIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Kyōkan")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(openIntent)
+            .setOngoing(true)
+            .build()
+    }
+
+    /**
+     * Updates the foreground notification text (e.g. "Loading TTS engine…" → "Listening").
+     * Safe to call from any thread.
+     */
+    private fun updateForegroundText(text: String) {
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            nm.notify(FOREGROUND_ID, buildForegroundNotification(text))
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to update foreground notification", e)
         }
     }
 }

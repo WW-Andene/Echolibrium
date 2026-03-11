@@ -123,6 +123,28 @@ object AudioPipeline {
         Log.d(TAG, "Pipeline loop ended")
     }
 
+    /**
+     * Waits for Kokoro engine to become ready (warm-up runs in background).
+     * Returns true if ready, false if init failed or timed out.
+     */
+    private fun ensureKokoroReady(ctx: Context): Boolean {
+        if (SherpaEngine.isReady) return true
+
+        // Engine is warming up in the background — wait for it instead of dropping
+        Log.d(TAG, "Engine not ready yet, waiting for warm-up…")
+        val deadline = System.currentTimeMillis() + 50_000L // 50s max wait
+        while (!SherpaEngine.isReady && SherpaEngine.errorMessage == null
+            && System.currentTimeMillis() < deadline && running) {
+            try { Thread.sleep(200) } catch (_: InterruptedException) { return false }
+        }
+
+        if (SherpaEngine.isReady) return true
+
+        // Warm-up didn't succeed — try one direct init as last resort
+        Log.w(TAG, "Warm-up didn't complete, attempting direct init")
+        return SherpaEngine.initializeKokoro(ctx)
+    }
+
     private fun processItem(ctx: Context, item: Item) {
         // ── Step 1: Transform text ─────────────────────────────────────────
         val processed = try {
@@ -148,8 +170,8 @@ object AudioPipeline {
         val result: Pair<FloatArray, Int>? = when {
             // Kokoro voice: use Kokoro engine with speaker ID
             kokoroVoice != null -> {
-                if (!SherpaEngine.initializeKokoro(ctx)) {
-                    Log.w(TAG, "Kokoro engine not ready")
+                if (!ensureKokoroReady(ctx)) {
+                    Log.w(TAG, "Kokoro engine not ready — dropping notification")
                     return
                 }
                 SherpaEngine.synthesize(
@@ -171,7 +193,7 @@ object AudioPipeline {
                 } catch (e: Throwable) {
                     // Catch native crashes from Piper engine and fall back to Kokoro
                     Log.e(TAG, "Piper synthesis crashed for $voiceId, falling back to Kokoro", e)
-                    if (!SherpaEngine.initializeKokoro(ctx)) return
+                    if (!ensureKokoroReady(ctx)) return
                     SherpaEngine.synthesize(
                         text  = processed,
                         sid   = KokoroVoices.default().sid,
@@ -182,8 +204,8 @@ object AudioPipeline {
 
             // Fallback: default Kokoro voice
             else -> {
-                if (!SherpaEngine.initializeKokoro(ctx)) {
-                    Log.w(TAG, "Kokoro engine not ready (fallback)")
+                if (!ensureKokoroReady(ctx)) {
+                    Log.w(TAG, "Kokoro engine not ready (fallback) — dropping notification")
                     return
                 }
                 Log.w(TAG, "Voice '$voiceId' not available, using default Kokoro")

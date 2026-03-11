@@ -16,6 +16,8 @@ import androidx.preference.PreferenceManager
 class HomeFragment : Fragment() {
 
     private lateinit var prefs: android.content.SharedPreferences
+    private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var engineRefreshRunnable: Runnable? = null
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
@@ -181,11 +183,47 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        startEngineStatusRefresh()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopEngineStatusRefresh()
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
-        if (!hidden) refreshStatus()
+        if (!hidden) {
+            refreshStatus()
+            startEngineStatusRefresh()
+        } else {
+            stopEngineStatusRefresh()
+        }
+    }
+
+    /** Polls engine status every second while loading, stops when ready or errored */
+    private fun startEngineStatusRefresh() {
+        stopEngineStatusRefresh()
+        if (SherpaEngine.isReady || SherpaEngine.errorMessage != null) return
+        engineRefreshRunnable = object : Runnable {
+            override fun run() {
+                if (!isAdded) return
+                view?.findViewById<TextView>(R.id.engine_status_text)?.let { updateEngineStatus(it) }
+                // Keep refreshing until engine is ready or failed
+                if (!SherpaEngine.isReady && SherpaEngine.errorMessage == null) {
+                    refreshHandler.postDelayed(this, 1000)
+                } else {
+                    // Final refresh of all status fields
+                    refreshStatus()
+                }
+            }
+        }
+        refreshHandler.postDelayed(engineRefreshRunnable!!, 1000)
+    }
+
+    private fun stopEngineStatusRefresh() {
+        engineRefreshRunnable?.let { refreshHandler.removeCallbacks(it) }
+        engineRefreshRunnable = null
     }
 
     private fun refreshStatus() {
@@ -207,6 +245,7 @@ class HomeFragment : Fragment() {
 
     override fun onDestroyView() {
         try {
+            stopEngineStatusRefresh()
             VoiceCommandListener.onStatusChanged = null
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "Error in onDestroyView", e)

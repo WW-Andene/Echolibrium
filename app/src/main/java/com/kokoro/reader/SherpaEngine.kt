@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicLong
  *   • Kokoro — 30 voices in a single model (multi-lang-v1_0), selected by speaker ID
  *   • Piper/VITS — one model per voice, loaded on demand
  *
- * Models are bundled in the APK's assets and loaded directly via AssetManager —
- * no extraction to internal storage is needed.
+ * Kokoro model is extracted from APK assets to the filesystem on first run,
+ * then loaded via file-based constructor to avoid SIGSEGV on some devices.
  *
  * Thread-safe: synthesize methods are called from the AudioPipeline background thread.
  */
@@ -33,7 +33,7 @@ object SherpaEngine {
     private const val PIPER_DIR  = "piper-models"
 
     /** Maximum time (ms) to wait for native OfflineTts constructor before giving up. */
-    private const val INIT_TIMEOUT_MS = 45_000L
+    private const val INIT_TIMEOUT_MS = 60_000L
 
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null
@@ -120,8 +120,8 @@ object SherpaEngine {
 
     /**
      * Initializes the Kokoro engine on a background thread.
-     * Models are read directly from APK assets — no extraction step.
-     * Guarded against duplicate concurrent calls and crash loops.
+     * Extracts model from APK assets to filesystem, then loads via file-based
+     * constructor. Guarded against duplicate concurrent calls and crash loops.
      *
      * If previous init attempts crashed the process (SIGSEGV), this method
      * tracks the failures and stops retrying after [MAX_INIT_CRASHES] to break
@@ -284,15 +284,41 @@ object SherpaEngine {
                 return false
             }
 
-            initProgress = 20
+            initProgress = 15
+            statusMessage = "extracting model to filesystem…"
+            syncStatus()
+
+            // ── Extract model from APK assets to filesystem ──────────────
+            // The AssetManager-based OfflineTts() constructor crashes with
+            // SIGSEGV on Xiaomi/MediaTek devices. Using filesystem paths
+            // with the file-based constructor avoids this entirely.
+            val extractedDir = extractKokoroModel(ctx)
+            if (extractedDir == null) {
+                Log.e(TAG, "│ Failed to extract Kokoro model to filesystem")
+                Log.e(TAG, "└── Kokoro init FAILED (extraction) ──────────")
+                statusMessage = "error: model extraction failed"
+                errorMessage = "Failed to extract model files to device storage. " +
+                    "Check available storage space."
+                isReady = false
+                syncStatus()
+                return false
+            }
+
+            initProgress = 30
             statusMessage = "preparing Kokoro config…"
             syncStatus()
-            val modelPath = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
+
+            // Resolve which model file was extracted (.ort or .onnx)
+            val modelFile = File(extractedDir, "model.ort").let {
+                if (it.exists()) it else File(extractedDir, "model.onnx")
+            }
+            val isOrt = modelFile.name.endsWith(".ort")
+
             val kokoroConfig = OfflineTtsKokoroModelConfig(
-                model   = modelPath,
-                voices  = "$KOKORO_DIR/voices.bin",
-                tokens  = "$KOKORO_DIR/tokens.txt",
-                dataDir = "$KOKORO_DIR/espeak-ng-data"
+                model   = modelFile.absolutePath,
+                voices  = File(extractedDir, "voices.bin").absolutePath,
+                tokens  = File(extractedDir, "tokens.txt").absolutePath,
+                dataDir = File(extractedDir, "espeak-ng-data").absolutePath
             )
 
             val modelConfig = OfflineTtsModelConfig(
@@ -305,9 +331,10 @@ object SherpaEngine {
             val config = OfflineTtsConfig(model = modelConfig)
 
             initProgress = 35
-            val isOrt = modelPath.endsWith(".ort")
             statusMessage = if (isOrt) "loading optimized model…" else "loading native model (this may take 10-30s)…"
             syncStatus()
+            Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
+            Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
             Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
             initStartTime.set(System.currentTimeMillis())
 
@@ -316,14 +343,15 @@ object SherpaEngine {
             // by config class constructors above) crashes the process.
 
             // Run the native constructor on a separate thread with a timeout.
-            // OfflineTts() can SIGSEGV or hang indefinitely on some devices.
+            // OfflineTts() can hang indefinitely on some devices.
             val resultHolder = arrayOfNulls<OfflineTts>(1)
             val errorHolder = arrayOfNulls<Throwable>(1)
             val latch = CountDownLatch(1)
 
             val initThread = Thread {
                 try {
-                    resultHolder[0] = OfflineTts(assetManager = ctx.assets, config = config)
+                    // File-based constructor — no AssetManager, no HWUI mutex corruption
+                    resultHolder[0] = OfflineTts(config = config)
                 } catch (e: Throwable) {
                     errorHolder[0] = e
                 } finally {
@@ -551,6 +579,87 @@ object SherpaEngine {
         espeakDir.mkdirs()
         copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
         return espeakDir
+    }
+
+    // ── Kokoro model extraction ────────────────────────────────────────────────
+
+    /**
+     * Extracts the Kokoro model from APK assets to the filesystem.
+     *
+     * The AssetManager-based OfflineTts constructor crashes with SIGSEGV on
+     * some devices (Xiaomi/MediaTek) due to HWUI mutex corruption when native
+     * code accesses the APK via AssetManager. By extracting model files to
+     * the filesystem first, we can use the file-based constructor which
+     * avoids this entirely.
+     *
+     * Files extracted:
+     *   - model.onnx (or model.ort)
+     *   - voices.bin
+     *   - tokens.txt
+     *   - espeak-ng-data/ (directory tree)
+     *
+     * Returns the extraction directory, or null on failure.
+     * Skips extraction if files already exist (idempotent).
+     */
+    private fun extractKokoroModel(ctx: Context): File? {
+        val destDir = File(ctx.filesDir, "kokoro-model")
+        destDir.mkdirs()
+
+        // Determine which model file to extract (.ort preferred over .onnx)
+        val modelAsset = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
+        val modelFileName = modelAsset.substringAfterLast("/")
+        val modelFile = File(destDir, modelFileName)
+
+        val voicesFile = File(destDir, "voices.bin")
+        val tokensFile = File(destDir, "tokens.txt")
+        val espeakDir = File(destDir, "espeak-ng-data")
+
+        // Check if already fully extracted
+        if (modelFile.exists() && modelFile.length() > 0 &&
+            voicesFile.exists() && voicesFile.length() > 0 &&
+            tokensFile.exists() && tokensFile.length() > 0 &&
+            espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
+        ) {
+            Log.d(TAG, "Kokoro model already extracted to ${destDir.absolutePath}")
+            return destDir
+        }
+
+        Log.i(TAG, "│ Extracting Kokoro model from assets to filesystem…")
+
+        // Extract model file
+        if (!modelFile.exists() || modelFile.length() == 0L) {
+            Log.i(TAG, "│   Extracting $modelFileName…")
+            ctx.assets.open(modelAsset).use { input ->
+                modelFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.i(TAG, "│   $modelFileName: ${modelFile.length() / 1024 / 1024}MB")
+        }
+
+        // Extract voices.bin
+        if (!voicesFile.exists() || voicesFile.length() == 0L) {
+            Log.i(TAG, "│   Extracting voices.bin…")
+            ctx.assets.open("$KOKORO_DIR/voices.bin").use { input ->
+                voicesFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+
+        // Extract tokens.txt
+        if (!tokensFile.exists() || tokensFile.length() == 0L) {
+            Log.i(TAG, "│   Extracting tokens.txt…")
+            ctx.assets.open("$KOKORO_DIR/tokens.txt").use { input ->
+                tokensFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+
+        // Extract espeak-ng-data directory tree
+        if (!espeakDir.exists() || (espeakDir.listFiles()?.size ?: 0) == 0) {
+            Log.i(TAG, "│   Extracting espeak-ng-data/…")
+            espeakDir.mkdirs()
+            copyAssetDir(ctx, "$KOKORO_DIR/espeak-ng-data", espeakDir)
+        }
+
+        Log.i(TAG, "│ Kokoro model extraction complete → ${destDir.absolutePath}")
+        return destDir
     }
 
     private fun copyAssetDir(ctx: Context, assetPath: String, destDir: File) {

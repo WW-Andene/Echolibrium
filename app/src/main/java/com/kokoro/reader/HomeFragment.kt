@@ -183,6 +183,34 @@ class HomeFragment : Fragment() {
         refreshStatus()
         startEngineStatusRefresh()
         startPermissionRefresh()
+        promptXiaomiProtections()
+    }
+
+    // ── Xiaomi MIUI/HyperOS: brute-force past aggressive process killing ──────
+
+    /**
+     * On Xiaomi devices, automatically requests battery optimization exemption
+     * and prompts for AutoStart permission (once). Without these, HyperOS/MIUI
+     * will kill the :tts process within minutes of the screen turning off.
+     */
+    private fun promptXiaomiProtections() {
+        if (!TtsBridge.isXiaomiDevice()) return
+        val ctx = context ?: return
+
+        // 1. Battery optimization exemption — request every time until granted
+        if (TtsBridge.isBatteryOptimized(ctx)) {
+            TtsBridge.requestBatteryExemption(ctx)
+            return  // Don't stack two system dialogs — do autostart next resume
+        }
+
+        // 2. AutoStart — prompt once (tracked by SharedPreferences)
+        if (!prefs.getBoolean("xiaomi_autostart_prompted", false)) {
+            prefs.edit().putBoolean("xiaomi_autostart_prompted", true).apply()
+            val opened = TtsBridge.requestAutoStart(ctx)
+            if (opened) {
+                Toast.makeText(ctx, "Enable AutoStart for Kyōkan to keep it running", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     override fun onPause() {

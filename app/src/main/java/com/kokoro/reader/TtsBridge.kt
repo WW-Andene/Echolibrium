@@ -154,7 +154,7 @@ object TtsBridge {
     /**
      * Checks if the TTS process is alive by comparing the status file timestamp
      * to the current time. If the timestamp is older than [STALENESS_THRESHOLD_MS],
-     * the process is likely dead or hung (killed by MIUI, OOM, etc.).
+     * the process is likely dead or hung (killed by MIUI/HyperOS, OOM, etc.).
      *
      * @return true if the TTS process appears healthy, false if stale/dead
      */
@@ -185,14 +185,14 @@ object TtsBridge {
         }
     }
 
-    // ── Battery optimization exemption (Xiaomi/MIUI) ─────────────────────────
+    // ── Battery optimization exemption (Xiaomi/MIUI/HyperOS) ──────────────────
 
     private const val TAG = "TtsBridge"
 
     /**
      * Checks if this app is exempt from battery optimizations.
-     * On Xiaomi/MIUI, battery optimization aggressively kills background processes
-     * including our :tts process. Requesting exemption tells the OS to not kill us.
+     * On Xiaomi MIUI/HyperOS, battery optimization aggressively kills background
+     * processes including our :tts process. Requesting exemption tells the OS to not kill us.
      */
     fun isBatteryOptimized(ctx: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
@@ -223,5 +223,62 @@ object TtsBridge {
         } catch (e: Throwable) {
             Log.w(TAG, "Failed to request battery exemption: ${e.message}")
         }
+    }
+
+    // ── Xiaomi AutoStart permission ─────────────────────────────────────────────
+
+    /**
+     * Checks if this is a Xiaomi device (Xiaomi, Redmi, POCO).
+     */
+    fun isXiaomiDevice(): Boolean {
+        val mfr = Build.MANUFACTURER.lowercase()
+        return mfr.contains("xiaomi") || mfr.contains("redmi") || mfr.contains("poco")
+    }
+
+    /**
+     * Attempts to open Xiaomi's AutoStart settings page so the user can allow
+     * our app to auto-start. Without this, MIUI/HyperOS will prevent the :tts
+     * process from restarting after being killed.
+     *
+     * Tries multiple known activity paths because Xiaomi changes these across
+     * MIUI versions and HyperOS.
+     *
+     * @return true if an AutoStart settings page was successfully launched
+     */
+    fun requestAutoStart(ctx: Context): Boolean {
+        if (!isXiaomiDevice()) return false
+
+        val intents = listOf(
+            // HyperOS / MIUI 14+
+            Intent().setClassName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            ),
+            // Older MIUI
+            Intent().setClassName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.permissions.PermissionsEditorActivity"
+            ),
+            // Fallback: open app info page where user can find AutoStart
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${ctx.packageName}")
+            }
+        )
+
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(ctx.packageManager) != null) {
+                    ctx.startActivity(intent)
+                    Log.i(TAG, "Opened Xiaomi AutoStart settings: ${intent.component ?: intent.action}")
+                    return true
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "AutoStart intent failed: ${e.message}")
+            }
+        }
+
+        Log.w(TAG, "Could not open any Xiaomi AutoStart settings page")
+        return false
     }
 }

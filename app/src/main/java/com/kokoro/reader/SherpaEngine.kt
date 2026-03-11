@@ -145,7 +145,8 @@ object SherpaEngine {
         val socVendor: SocVendor,
         val apiLevel: Int,
         val isXiaomi: Boolean,
-        val isMIUI: Boolean,
+        /** True if running MIUI or HyperOS (Xiaomi's custom Android ROMs). */
+        val isXiaomiRom: Boolean,
         val tier: DeviceTier,
         val manufacturer: String,
         val model: String
@@ -164,7 +165,7 @@ object SherpaEngine {
             append("${cpuCores} cores, $socVendor, API $apiLevel, ")
             append("tier=$tier")
             if (isXiaomi) append(", Xiaomi")
-            if (isMIUI) append(", MIUI")
+            if (isXiaomiRom) append(", MIUI/HyperOS")
             append(")")
         }
     }
@@ -179,13 +180,16 @@ object SherpaEngine {
         val cpuCores = Runtime.getRuntime().availableProcessors()
         val mfr = Build.MANUFACTURER.lowercase()
         val isXiaomi = mfr.contains("xiaomi") || mfr.contains("redmi") || mfr.contains("poco")
-        // MIUI detection: Xiaomi's custom ROM has unique system properties
-        val isMIUI = isXiaomi && try {
+        // Xiaomi ROM detection: MIUI uses "ro.miui.ui.version.name",
+        // HyperOS (MIUI 15+) uses "ro.mi.os.version.incremental".
+        // Both ROMs share the same aggressive background killing and CPU throttling.
+        val isXiaomiRom = isXiaomi && try {
             @Suppress("PrivateApi")
-            Class.forName("android.os.SystemProperties")
-                .getMethod("get", String::class.java)
-                .invoke(null, "ro.miui.ui.version.name")
-                ?.toString()?.isNotEmpty() == true
+            val sysPropClass = Class.forName("android.os.SystemProperties")
+            val getMethod = sysPropClass.getMethod("get", String::class.java)
+            val miui = getMethod.invoke(null, "ro.miui.ui.version.name")?.toString().orEmpty()
+            val hyperOs = getMethod.invoke(null, "ro.mi.os.version.incremental")?.toString().orEmpty()
+            miui.isNotEmpty() || hyperOs.isNotEmpty()
         } catch (_: Throwable) { false }
 
         val tier = when {
@@ -196,7 +200,7 @@ object SherpaEngine {
 
         return DeviceProfile(
             totalRamMB, availRamMB, cpuCores, socVendor,
-            Build.VERSION.SDK_INT, isXiaomi, isMIUI, tier,
+            Build.VERSION.SDK_INT, isXiaomi, isXiaomiRom, tier,
             Build.MANUFACTURER, Build.MODEL
         )
     }
@@ -284,7 +288,7 @@ object SherpaEngine {
     // Forces the JVM to expand its heap region BEFORE native code starts allocating.
     // Without this, the JVM may grow its heap DURING native model loading, causing
     // virtual memory region collisions that manifest as SIGSEGV on some Android ROMs
-    // (especially MIUI's modified ART runtime).
+    // (especially MIUI/HyperOS's modified ART runtime).
 
     private fun reserveAndReleaseHeap(): Long {
         val start = System.currentTimeMillis()
@@ -596,7 +600,8 @@ object SherpaEngine {
                     appendLine("CPU cores   : ${dp.cpuCores}")
                     appendLine("SoC         : ${dp.socVendor} (hw=${Build.HARDWARE})")
                     appendLine("Tier        : ${dp.tier}")
-                    appendLine("Xiaomi/MIUI : ${dp.isXiaomi} / ${dp.isMIUI}")
+                    appendLine("Xiaomi      : ${dp.isXiaomi}")
+                    appendLine("MIUI/HyperOS: ${dp.isXiaomiRom}")
                 } else {
                     appendLine("Device     : ${Build.MANUFACTURER} ${Build.MODEL}")
                     appendLine("SoC        : $socVendor (hw=${Build.HARDWARE})")
@@ -1242,8 +1247,8 @@ object SherpaEngine {
             Log.i(TAG, "│")
             Log.i(TAG, "│ ═══ Stage 2: Config Memory + Auto-Escalation ═══")
 
-            // ── WakeLock: prevent MIUI from throttling/killing during native load ──
-            // Xiaomi's MIUI aggressively throttles CPU and kills background processes.
+            // ── WakeLock: prevent MIUI/HyperOS from throttling/killing during native load ──
+            // Xiaomi's MIUI/HyperOS aggressively throttles CPU and kills background processes.
             // A PARTIAL_WAKE_LOCK keeps the CPU at full speed during model loading.
             val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
             initWakeLock = pm?.newWakeLock(

@@ -11,6 +11,8 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.SharedPreferences
 import android.os.PowerManager
 import java.io.PrintWriter
@@ -235,6 +237,75 @@ object SherpaEngine {
             .remove(KEY_LAST_GOOD_DEBUG)
             .remove(KEY_LAST_GOOD_VERSION)
             .apply()
+    }
+
+    /**
+     * Checks Android 11+ ApplicationExitInfo to determine if the last process
+     * death was a native crash (SIGSEGV) vs OS-initiated kill (HyperOS battery
+     * management, OOM killer, etc).
+     *
+     * Returns true if the last exit was definitely a native crash, or if we
+     * can't determine the reason (pre-Android 11 — assume crash for safety).
+     */
+    private fun wasLastExitNativeCrash(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            // Pre-Android 11: no exit info API, assume crash for safety
+            return true
+        }
+        return try {
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            // Get recent exit reasons for our package, limit to 5
+            val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5)
+            // Find the most recent exit for the :tts process
+            val ttsExit = exitInfos.firstOrNull { info ->
+                info.processName?.endsWith(":tts") == true
+            }
+            if (ttsExit == null) {
+                plog("wasLastExitNativeCrash: no exit info for :tts — assuming crash")
+                return true
+            }
+            val reason = ttsExit.reason
+            val desc = ttsExit.description ?: "none"
+            plog("wasLastExitNativeCrash: reason=$reason (${exitReasonName(reason)}), desc=$desc, " +
+                "importance=${ttsExit.importance}, status=${ttsExit.status}")
+            // REASON_CRASH_NATIVE (6) = SIGSEGV/SIGABRT/etc — definitely a native crash
+            // REASON_CRASH (4) = uncaught Java exception — treat as crash
+            // REASON_ANR (3) = ANR — treat as crash (init took too long)
+            // Everything else = OS killed it (not the native code's fault)
+            when (reason) {
+                ApplicationExitInfo.REASON_CRASH_NATIVE,
+                ApplicationExitInfo.REASON_CRASH,
+                ApplicationExitInfo.REASON_ANR -> {
+                    Log.w(TAG, "Last :tts exit was ${exitReasonName(reason)}: $desc")
+                    true
+                }
+                else -> {
+                    Log.i(TAG, "Last :tts exit was ${exitReasonName(reason)} (not native crash): $desc")
+                    false
+                }
+            }
+        } catch (e: Throwable) {
+            plog("wasLastExitNativeCrash: exception ${e.message} — assuming crash")
+            true  // Can't determine — assume crash for safety
+        }
+    }
+
+    private fun exitReasonName(reason: Int): String = when (reason) {
+        1 -> "EXIT_SELF"
+        2 -> "SIGNALED"
+        3 -> "ANR"
+        4 -> "CRASH"
+        5 -> "DEPENDENCY_DIED"
+        6 -> "CRASH_NATIVE"
+        7 -> "OTHER"
+        8 -> "LOW_MEMORY"
+        9 -> "EXCESSIVE_RESOURCE_USAGE"
+        10 -> "USER_REQUESTED"
+        11 -> "USER_STOPPED"
+        12 -> "DEPENDENCY_DIED"
+        13 -> "PACKAGE_STATE_CHANGE"
+        14 -> "PACKAGE_UPDATED"
+        else -> "UNKNOWN($reason)"
     }
 
     // ── Model pre-warming ────────────────────────────────────────────────────────
@@ -716,19 +787,28 @@ object SherpaEngine {
         var crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
         val lastCrashTime = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
 
-        // If the previous init was still "in progress" when the process died, it crashed.
-        // Clear config memory — the remembered config may be the one that crashed.
+        // If the previous init was still "in progress" when the process died, check WHY.
+        // On Android 11+, ApplicationExitInfo tells us if it was a native crash (SIGSEGV)
+        // or the OS killing the process (HyperOS aggressive battery management).
+        // Only count native crashes — OS kills are not the native code's fault.
         plog("warmUp: wasInProgress=$wasInProgress, crashCount=$crashCount, lastCrashTime=$lastCrashTime")
         if (wasInProgress) {
-            crashCount++
+            val wasNativeCrash = wasLastExitNativeCrash(ctx)
+            plog("warmUp: process died during init — wasNativeCrash=$wasNativeCrash")
+            if (wasNativeCrash) {
+                crashCount++
+                clearGoodConfig(initPrefs)
+                plog("warmUp: native crash confirmed — crash #$crashCount, cleared config memory")
+                Log.w(TAG, "Previous engine init: native crash #$crashCount — cleared config memory")
+            } else {
+                plog("warmUp: OS killed process (not native crash) — not incrementing crash counter")
+                Log.i(TAG, "Previous engine init: OS killed process (not native crash) — crashCount stays at $crashCount")
+            }
             initPrefs.edit()
                 .putInt(KEY_INIT_CRASH_COUNT, crashCount)
                 .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .apply()
-            clearGoodConfig(initPrefs)
-            plog("warmUp: previous init crashed — crash #$crashCount, cleared config memory")
-            Log.w(TAG, "Previous engine init crashed (crash #$crashCount) — cleared config memory")
         }
 
         // Reset crash counter if enough time has passed (device might have cooled down)

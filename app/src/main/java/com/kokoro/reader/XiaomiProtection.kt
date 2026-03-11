@@ -77,16 +77,36 @@ object XiaomiProtection {
         }
     }
 
+    // ── Shell command execution via Shizuku ──────────────────────────────────────
+    // Fallback for binder reflection when hidden API signatures change (common on
+    // HyperOS). Runs the equivalent `adb shell` command with Shizuku privileges.
+
+    private fun runShellCommand(vararg cmd: String): Pair<Boolean, String> {
+        return try {
+            val process = Shizuku.newProcess(cmd, null, null)
+            val stdout = process.inputStream.bufferedReader().readText().trim()
+            val stderr = process.errorStream.bufferedReader().readText().trim()
+            val exitCode = process.waitFor()
+            val output = if (stderr.isNotEmpty()) "$stdout\n$stderr" else stdout
+            Log.d(TAG, "Shell [${cmd.joinToString(" ")}] → exit=$exitCode out=$output")
+            Pair(exitCode == 0, output)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Shell [${cmd.joinToString(" ")}] failed: ${e.message}")
+            Pair(false, e.message ?: "unknown error")
+        }
+    }
+
     // ── Binder-based system service calls via Shizuku ────────────────────────────
     // Uses ShizukuBinderWrapper + reflection to call hidden system APIs directly.
-    // This is the recommended Shizuku approach (faster + more reliable than shell).
+    // Falls back to shell commands when binder reflection fails (HyperOS compat).
 
     /**
      * Calls IDeviceIdleController.addPowerSaveWhitelistApp(packageName) via binder.
-     * Equivalent to: `adb shell cmd deviceidle whitelist +<package>`
+     * Falls back to shell: `cmd deviceidle whitelist +<package>`
      */
     private fun addToDeviceIdleWhitelist(packageName: String): Boolean {
-        return try {
+        // Try binder first (faster, no process spawn)
+        try {
             val binder = ShizukuBinderWrapper(
                 SystemServiceHelper.getSystemService("deviceidle")
             )
@@ -98,19 +118,23 @@ object XiaomiProtection {
             )
             addMethod.invoke(controller, packageName)
             Log.d(TAG, "Added $packageName to device idle whitelist via binder")
-            true
+            return true
         } catch (e: Throwable) {
-            Log.w(TAG, "deviceidle whitelist failed: ${e.message}")
-            false
+            Log.w(TAG, "deviceidle binder failed, trying shell: ${e.message}")
         }
+        // Shell fallback — works on all Android versions with Shizuku
+        val (ok, _) = runShellCommand("cmd", "deviceidle", "whitelist", "+$packageName")
+        if (ok) Log.d(TAG, "Added $packageName to device idle whitelist via shell")
+        return ok
     }
 
     /**
      * Calls IAppOpsService.setMode(op, uid, packageName, MODE_ALLOWED) via binder.
-     * Equivalent to: `adb shell appops set <package> <op> allow`
+     * Falls back to shell: `appops set <package> <op> allow`
      */
     private fun setAppOpsMode(op: Int, uid: Int, packageName: String): Boolean {
-        return try {
+        // Try binder first
+        try {
             val binder = ShizukuBinderWrapper(
                 SystemServiceHelper.getSystemService("appops")
             )
@@ -126,11 +150,14 @@ object XiaomiProtection {
             )
             setMode.invoke(service, op, uid, packageName, MODE_ALLOWED)
             Log.d(TAG, "Set appops $op → allow for $packageName (uid=$uid)")
-            true
+            return true
         } catch (e: Throwable) {
-            Log.w(TAG, "appops set $op failed: ${e.message}")
-            false
+            Log.w(TAG, "appops binder $op failed, trying shell: ${e.message}")
         }
+        // Shell fallback
+        val (ok, _) = runShellCommand("appops", "set", packageName, op.toString(), "allow")
+        if (ok) Log.d(TAG, "Set appops $op → allow for $packageName via shell")
+        return ok
     }
 
     // ── Protection commands ──────────────────────────────────────────────────────
@@ -202,10 +229,11 @@ object XiaomiProtection {
 
     /**
      * Sets app standby bucket to ACTIVE via IUsageStatsManager binder.
-     * Equivalent to: `adb shell am set-standby-bucket <package> active`
+     * Falls back to shell: `am set-standby-bucket <package> active`
      */
     private fun setStandbyBucketActive(packageName: String): Boolean {
-        return try {
+        // Try binder first
+        try {
             val binder = ShizukuBinderWrapper(
                 SystemServiceHelper.getSystemService("usagestats")
             )
@@ -222,11 +250,14 @@ object XiaomiProtection {
             )
             setMethod.invoke(manager, packageName, 10, "com.android.shell")
             Log.d(TAG, "Set standby bucket to ACTIVE for $packageName")
-            true
+            return true
         } catch (e: Throwable) {
-            Log.w(TAG, "setStandbyBucket failed: ${e.message}")
-            false
+            Log.w(TAG, "setStandbyBucket binder failed, trying shell: ${e.message}")
         }
+        // Shell fallback
+        val (ok, _) = runShellCommand("am", "set-standby-bucket", packageName, "active")
+        if (ok) Log.d(TAG, "Set standby bucket to ACTIVE for $packageName via shell")
+        return ok
     }
 
     // ── Manual ADB fallback ─────────────────────────────────────────────────────

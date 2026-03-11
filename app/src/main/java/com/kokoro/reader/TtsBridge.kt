@@ -19,6 +19,7 @@ object TtsBridge {
     const val ACTION_PRELOAD_VOICE  = "com.kokoro.reader.action.PRELOAD_VOICE"
     const val ACTION_VOICE_CMD_START = "com.kokoro.reader.action.VOICE_CMD_START"
     const val ACTION_VOICE_CMD_STOP  = "com.kokoro.reader.action.VOICE_CMD_STOP"
+    const val ACTION_RETRY_INIT      = "com.kokoro.reader.action.RETRY_INIT"
 
     private const val STATUS_FILE = "tts_status.json"
 
@@ -53,6 +54,12 @@ object TtsBridge {
 
     fun stopVoiceCommands(ctx: Context) {
         val intent = Intent(ACTION_VOICE_CMD_STOP)
+        intent.setPackage(ctx.packageName)
+        ctx.sendBroadcast(intent)
+    }
+
+    fun retryEngineInit(ctx: Context) {
+        val intent = Intent(ACTION_RETRY_INIT)
         intent.setPackage(ctx.packageName)
         ctx.sendBroadcast(intent)
     }

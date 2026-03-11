@@ -24,6 +24,10 @@ class TtsCommandReceiver : BroadcastReceiver() {
                 TtsBridge.ACTION_PRELOAD_VOICE -> handlePreload(context, intent)
                 TtsBridge.ACTION_VOICE_CMD_START -> VoiceCommandListener.start(context.applicationContext)
                 TtsBridge.ACTION_VOICE_CMD_STOP -> VoiceCommandListener.stop()
+                TtsBridge.ACTION_RETRY_INIT -> {
+                    Log.d(TAG, "Retry engine init requested from UI")
+                    SherpaEngine.forceRetry(context.applicationContext)
+                }
                 else -> Log.w(TAG, "Unknown action: ${intent.action}")
             }
         } catch (e: Throwable) {

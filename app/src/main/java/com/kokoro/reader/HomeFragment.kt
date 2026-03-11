@@ -374,6 +374,23 @@ class HomeFragment : Fragment() {
             s.error != null -> R.color.status_error
             else -> R.color.status_warning
         }))
+
+        // Show/hide retry button when engine is in error state
+        val retryBtn = view?.findViewById<Button>(R.id.btn_retry_engine)
+        if (retryBtn != null) {
+            if (s.error != null && !s.ready) {
+                retryBtn.visibility = View.VISIBLE
+                retryBtn.setOnClickListener {
+                    retryBtn.visibility = View.GONE
+                    tv.text = "◯ TTS engine: retrying…"
+                    tv.setTextColor(ctx.getColor(R.color.status_warning))
+                    TtsBridge.retryEngineInit(ctx)
+                    startEngineStatusRefresh()
+                }
+            } else {
+                retryBtn.visibility = View.GONE
+            }
+        }
     }
 
     private fun updateLogPath(tv: TextView) {

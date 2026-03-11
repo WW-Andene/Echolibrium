@@ -108,10 +108,24 @@ object SherpaEngine {
 
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
+    /** SharedPreferences name for tracking init crashes across process restarts. */
+    private const val INIT_PREFS = "sherpa_init_tracker"
+    private const val KEY_INIT_CRASH_COUNT = "init_crash_count"
+    private const val KEY_INIT_IN_PROGRESS = "init_in_progress"
+    private const val KEY_INIT_LAST_CRASH_TIME = "init_last_crash_time"
+    /** Stop attempting init after this many consecutive crashes. */
+    private const val MAX_INIT_CRASHES = 3
+    /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
+    private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
+
     /**
      * Initializes the Kokoro engine on a background thread.
      * Models are read directly from APK assets — no extraction step.
-     * Guarded against duplicate concurrent calls.
+     * Guarded against duplicate concurrent calls and crash loops.
+     *
+     * If previous init attempts crashed the process (SIGSEGV), this method
+     * tracks the failures and stops retrying after [MAX_INIT_CRASHES] to break
+     * the crash loop. The user can force a retry from the UI.
      */
     fun warmUp(ctx: Context) {
         statusContext = ctx.applicationContext
@@ -120,6 +134,47 @@ object SherpaEngine {
             if (isWarmingUp) return
             isWarmingUp = true
         }
+
+        // ── Crash-loop detection ─────────────────────────────────────────
+        // Before calling native code that can SIGSEGV, check if previous
+        // attempts crashed. We use SharedPreferences because they survive
+        // process restarts (the :tts process gets killed and restarted by Android).
+        val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+        val wasInProgress = initPrefs.getBoolean(KEY_INIT_IN_PROGRESS, false)
+        var crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
+        val lastCrashTime = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
+
+        // If the previous init was still "in progress" when the process died, it crashed.
+        if (wasInProgress) {
+            crashCount++
+            initPrefs.edit()
+                .putInt(KEY_INIT_CRASH_COUNT, crashCount)
+                .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
+                .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                .apply()
+            Log.w(TAG, "Previous engine init crashed (crash #$crashCount)")
+        }
+
+        // Reset crash counter if enough time has passed (device might have cooled down)
+        if (crashCount > 0 && System.currentTimeMillis() - lastCrashTime > CRASH_RESET_WINDOW_MS) {
+            crashCount = 0
+            initPrefs.edit().putInt(KEY_INIT_CRASH_COUNT, 0).apply()
+            Log.d(TAG, "Init crash counter reset (>5min since last crash)")
+        }
+
+        // If we've crashed too many times, don't attempt init — report error instead.
+        if (crashCount >= MAX_INIT_CRASHES) {
+            Log.e(TAG, "Engine init disabled after $crashCount consecutive crashes")
+            errorMessage = "Engine crashed $crashCount times during initialization. " +
+                "The model may be incompatible with this device. " +
+                "Tap \"Retry engine init\" to try again, or restart the app after 5 minutes."
+            statusMessage = "error: repeated native crashes"
+            isReady = false
+            synchronized(warmUpLock) { isWarmingUp = false }
+            syncStatus()
+            return
+        }
+
         Thread {
             try {
                 if (initializeKokoro(ctx)) {
@@ -133,6 +188,23 @@ object SherpaEngine {
                 synchronized(warmUpLock) { isWarmingUp = false }
             }
         }.apply { name = "SherpaEngine-warmup"; isDaemon = true; start() }
+    }
+
+    /**
+     * Force retry of engine initialization, resetting the crash counter.
+     * Called from the UI when the user taps a retry button.
+     */
+    fun forceRetry(ctx: Context) {
+        val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+        initPrefs.edit()
+            .putInt(KEY_INIT_CRASH_COUNT, 0)
+            .putBoolean(KEY_INIT_IN_PROGRESS, false)
+            .apply()
+        errorMessage = null
+        statusMessage = "retrying…"
+        isReady = false
+        syncStatus()
+        warmUp(ctx)
     }
 
     // ── Kokoro initialization ─────────────────────────────────────────────────
@@ -216,6 +288,11 @@ object SherpaEngine {
             Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
             initStartTime.set(System.currentTimeMillis())
 
+            // Mark init as in-progress BEFORE calling native code.
+            // If the process dies (SIGSEGV), this flag stays set → detected on next startup.
+            val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+
             // Run the native constructor on a separate thread with a timeout.
             // OfflineTts() can SIGSEGV or hang indefinitely on some devices.
             val resultHolder = arrayOfNulls<OfflineTts>(1)
@@ -252,6 +329,7 @@ object SherpaEngine {
 
             if (!completed) {
                 // Native init hung — don't crash, but report clearly
+                initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
                 Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms")
                 Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
                 statusMessage = "error: init timed out after ${elapsed / 1000}s"
@@ -277,6 +355,12 @@ object SherpaEngine {
                 return false
             }
 
+            // Native init succeeded — clear crash tracking flags
+            initPrefs.edit()
+                .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .apply()
+
             initProgress = 100
             isReady = true
             errorMessage = null
@@ -288,6 +372,11 @@ object SherpaEngine {
 
         } catch (e: Throwable) {
             val elapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
+            // Clear in-progress flag — this was a Java exception, not a native crash
+            try {
+                ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+                    .edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+            } catch (_: Throwable) {}
             Log.e(TAG, "│ Exception after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}")
             Log.e(TAG, "└── Kokoro init FAILED ────────────────────────", e)
             kokoroTts = null

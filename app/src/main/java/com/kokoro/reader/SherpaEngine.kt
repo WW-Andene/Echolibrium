@@ -508,8 +508,6 @@ object SherpaEngine {
     private const val CRASH_BACKOFF_BASE_MS = 5_000L   // 5s, 10s, 20s, 40s, 80s…
     /** Max backoff delay (ms) — caps at ~2.5 minutes, then retries forever at this interval. */
     private const val CRASH_BACKOFF_MAX_MS = 150_000L  // 2.5 minutes
-    /** After this many crashes, try Piper first but still attempt Kokoro after backoff. */
-    private const val CRASH_PIPER_FIRST_THRESHOLD = 3
     /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
     private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
 
@@ -520,8 +518,8 @@ object SherpaEngine {
      *
      * If previous init attempts crashed the process (SIGSEGV), this method
      * tracks the failures and backs off exponentially with increasing delays.
-     * After [CRASH_PIPER_FIRST_THRESHOLD] crashes, Piper fallback activates
-     * immediately while Kokoro retries continue in the background.
+     * On the very first detected crash, Piper fallback activates immediately
+     * while Kokoro retries continue in the background with exponential backoff.
      */
     fun warmUp(ctx: Context) {
         statusContext = ctx.applicationContext
@@ -561,17 +559,17 @@ object SherpaEngine {
             Log.d(TAG, "Init crash counter reset (>5min since last crash)")
         }
 
-        // ── Exponential backoff after crashes (never give up) ────────
-        // Instead of permanently disabling after N crashes, we back off
-        // exponentially and keep retrying. Xiaomi's MIUI kills processes
-        // aggressively but conditions change (user closes apps, device
-        // cools down, memory frees up). We WILL eventually succeed.
-        if (crashCount >= CRASH_PIPER_FIRST_THRESHOLD) {
-            Log.w(TAG, "Kokoro crashed $crashCount times — activating Piper first, then backing off for Kokoro retry")
+        // ── Crash recovery: Piper first, then backoff retry for Kokoro ────────
+        // Even a SINGLE native crash means Kokoro is unsafe to load right now.
+        // Activate Piper IMMEDIATELY so the user has working TTS, then back off
+        // exponentially before retrying Kokoro. Conditions change (user closes
+        // apps, device cools down, memory frees up) — we WILL eventually succeed.
+        if (crashCount > 0) {
+            Log.w(TAG, "Kokoro crashed $crashCount time(s) — activating Piper first, then backing off for Kokoro retry")
 
             // Activate Piper immediately so the user has TTS while we wait
             if (initPiperFallback(ctx)) {
-                Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crashes")
+                Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crash(es)")
                 onReadyCallback?.invoke()
             }
 
@@ -579,7 +577,7 @@ object SherpaEngine {
             val backoffMs = (CRASH_BACKOFF_BASE_MS * (1L shl (crashCount - 1).coerceAtMost(10)))
                 .coerceAtMost(CRASH_BACKOFF_MAX_MS)
             Log.i(TAG, "Backing off ${backoffMs}ms before Kokoro retry (crash #$crashCount)")
-            statusMessage = "waiting ${backoffMs / 1000}s before retry (crash #$crashCount)…"
+            statusMessage = "Piper active — retrying Kokoro in ${backoffMs / 1000}s (crash #$crashCount)…"
             syncStatus()
 
             Thread {
@@ -671,8 +669,8 @@ object SherpaEngine {
         // bypassing the crash-loop breaker by calling initializeKokoro() directly.
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
         val crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
-        if (crashCount >= CRASH_PIPER_FIRST_THRESHOLD) {
-            Log.w(TAG, "initializeKokoro: $crashCount crashes — warmUp() handles backoff, skipping direct call")
+        if (crashCount > 0) {
+            Log.w(TAG, "initializeKokoro: $crashCount crash(es) — warmUp() handles backoff, skipping direct call")
             return false
         }
 

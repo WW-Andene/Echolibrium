@@ -10,6 +10,11 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -129,6 +134,48 @@ object SherpaEngine {
         )
     }
 
+    /**
+     * Writes an engine init failure log file so the user can copy it from the UI.
+     * Mirrors [ReaderApplication.writeCrashLog] but for non-fatal init failures.
+     */
+    private fun writeInitLog(ctx: Context, reason: String, throwable: Throwable? = null) {
+        try {
+            val dir = ReaderApplication.resolvedLogDir ?: return
+            if (!dir.exists()) dir.mkdirs()
+
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
+            val file = File(dir, "engine_init_$timestamp.log")
+
+            val stackTrace = if (throwable != null) {
+                StringWriter().also { sw -> PrintWriter(sw).use { throwable.printStackTrace(it) } }.toString()
+            } else null
+
+            file.writeText(buildString {
+                appendLine("=== Kyōkan Engine Init Failure ===")
+                appendLine("Time       : ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+                appendLine("Reason     : $reason")
+                appendLine("Device     : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                appendLine("Android    : ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+                appendLine("SoC        : $socVendor (hw=${android.os.Build.HARDWARE})")
+                appendLine("Threads    : ${optimalThreadCount()}, Provider: ${optimalProvider()}")
+                appendLine("App version: ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Exception) { "?" }}")
+                appendLine()
+                if (stackTrace != null) {
+                    appendLine("--- Stack Trace ---")
+                    appendLine(stackTrace)
+                }
+                appendLine("--- Status ---")
+                appendLine("statusMessage: $statusMessage")
+                appendLine("errorMessage : $errorMessage")
+                appendLine("isReady      : $isReady")
+                appendLine("initProgress : $initProgress")
+            })
+            Log.i(TAG, "Engine init log written to ${file.absolutePath}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write engine init log", e)
+        }
+    }
+
     /** Timestamp (ms) when initialization started, 0 if not initializing */
     private val initStartTime = AtomicLong(0)
 
@@ -225,6 +272,7 @@ object SherpaEngine {
                 "Tap \"Retry engine init\" to try again, or restart the app after 5 minutes."
             statusMessage = "error: repeated native crashes"
             isReady = false
+            writeInitLog(ctx, "Crash loop: $crashCount consecutive native crashes during init")
             synchronized(warmUpLock) { isWarmingUp = false }
             syncStatus()
             return
@@ -246,6 +294,7 @@ object SherpaEngine {
                 Log.e(TAG, "Warm-up failed", e)
                 errorMessage = e.message ?: "Unknown error during warm-up"
                 statusMessage = "error: ${errorMessage}"
+                writeInitLog(ctx, "Warm-up exception: ${e.message}", e)
                 syncStatus()
             } finally {
                 // Clear init_in_progress — if we reached this point, the process survived.
@@ -335,6 +384,7 @@ object SherpaEngine {
                 statusMessage = "error: model files missing from APK"
                 errorMessage = msg
                 isReady = false
+                writeInitLog(ctx, msg)
                 syncStatus()
                 return false
             }
@@ -355,6 +405,7 @@ object SherpaEngine {
                 errorMessage = "Failed to extract model files to device storage. " +
                     "Check available storage space."
                 isReady = false
+                writeInitLog(ctx, "Model extraction to filesystem failed")
                 syncStatus()
                 return false
             }
@@ -452,6 +503,7 @@ object SherpaEngine {
                 errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
                     "The model may be too large for this device's memory."
                 isReady = false
+                writeInitLog(ctx, "OfflineTts() timed out after ${elapsed}ms (failure #${prevCrashCount + 1})")
                 syncStatus()
                 // Interrupt the hung thread (best effort — native code may ignore this)
                 try { initThread.interrupt() } catch (_: Throwable) {}
@@ -483,6 +535,7 @@ object SherpaEngine {
                 statusMessage = "error: engine returned null"
                 errorMessage = "Engine constructor returned null"
                 isReady = false
+                writeInitLog(ctx, "OfflineTts() constructor returned null")
                 return false
             }
 
@@ -514,6 +567,7 @@ object SherpaEngine {
             isReady = false
             errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             statusMessage = "error: ${errorMessage}"
+            writeInitLog(ctx, "Exception after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}", e)
             syncStatus()
             false
         }

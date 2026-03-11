@@ -395,19 +395,34 @@ class HomeFragment : Fragment() {
 
     private fun updateLogPath(tv: TextView) {
         val logDir = ReaderApplication.resolvedLogDir
-        val logCount = try { logDir?.listFiles { f -> f.name.endsWith(".log") }?.size ?: 0 } catch (_: Exception) { 0 }
+        val logFiles = try { logDir?.listFiles { f -> f.name.endsWith(".log") } } catch (_: Exception) { null }
+        val logCount = logFiles?.size ?: 0
         val path = ReaderApplication.logLocationDescription
         tv.text = "logs ($logCount): $path"
 
-        // Tap to copy path to clipboard
+        // Tap to copy the most recent log file content to clipboard
         tv.setOnClickListener {
             try {
                 val ctx = context ?: return@setOnClickListener
                 val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Log path", logDir?.absolutePath ?: path))
-                Toast.makeText(ctx, "Log path copied", Toast.LENGTH_SHORT).show()
+
+                // Find the most recent log file
+                val latestLog = try {
+                    logDir?.listFiles { f -> f.name.endsWith(".log") }
+                        ?.maxByOrNull { it.lastModified() }
+                } catch (_: Exception) { null }
+
+                if (latestLog != null && latestLog.exists()) {
+                    val content = latestLog.readText()
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Last log", content))
+                    Toast.makeText(ctx, "Last log copied (${latestLog.name})", Toast.LENGTH_SHORT).show()
+                } else {
+                    // No log files — fall back to copying the path
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Log path", logDir?.absolutePath ?: path))
+                    Toast.makeText(ctx, "No logs yet — path copied", Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
-                android.util.Log.e("HomeFragment", "Error copying log path", e)
+                android.util.Log.e("HomeFragment", "Error copying log", e)
             }
         }
     }

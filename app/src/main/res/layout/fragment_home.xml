@@ -23,16 +23,6 @@
             android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/text_dim"
             android:layout_marginBottom="0dp"/>
 
-        <ProgressBar android:id="@+id/engine_progress_bar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent" android:layout_height="6dp"
-            android:max="100" android:progress="0"
-            android:progressTint="@color/green" android:progressBackgroundTint="#222222"
-            android:background="@color/surface"
-            android:paddingStart="12dp" android:paddingEnd="12dp"
-            android:layout_marginBottom="2dp"
-            android:visibility="gone"/>
-
         <TextView android:id="@+id/log_path_text" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
             android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/text_hint"

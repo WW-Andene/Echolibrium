@@ -112,23 +112,7 @@ class ProfilesFragment : Fragment() {
                 }
             }
         }
-        // Poll engine status from :tts process via status file
-        val ctx = context ?: return
-        val s = TtsBridge.readStatus(ctx)
-        if (!s.ready && s.error == null) {
-            enginePollRunnable = object : Runnable {
-                override fun run() {
-                    if (!isAdded || view == null) return
-                    updateEngineStatusUI()
-                    val c = context ?: return
-                    val st = TtsBridge.readStatus(c)
-                    if (!st.ready && st.error == null) {
-                        mainHandler.postDelayed(this, 1000)
-                    }
-                }
-            }
-            mainHandler.postDelayed(enginePollRunnable!!, 1000)
-        }
+        // Engine polling is handled by restartEnginePolling() in onResume/onHiddenChanged
     }
 
     private fun updateEngineStatusUI() {
@@ -147,13 +131,16 @@ class ProfilesFragment : Fragment() {
                 tvEngineStatus?.setTextColor(0xFFff4444.toInt())
                 progressBar?.visibility = View.GONE
             }
-            else -> {
-                tvEngineStatus?.text = if (s.initProgress > 0) "⏳ ${s.status} (${s.initProgress}%)" else "⏳ Initializing voice engine…"
+            s.alive -> {
+                tvEngineStatus?.text = if (s.initProgress > 0) "⏳ ${s.status} (${s.initProgress}%)" else "⏳ ${s.status}…"
                 tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
-                if (s.initProgress > 0) {
-                    progressBar?.visibility = View.VISIBLE
-                    progressBar?.progress = s.initProgress
-                }
+                progressBar?.visibility = View.VISIBLE
+                progressBar?.progress = s.initProgress.coerceAtLeast(2) // show a sliver even at 0%
+            }
+            else -> {
+                tvEngineStatus?.text = "◯ Waiting for service…"
+                tvEngineStatus?.setTextColor(0xFF888888.toInt())
+                progressBar?.visibility = View.GONE
             }
         }
     }
@@ -970,6 +957,49 @@ class ProfilesFragment : Fragment() {
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        restartEnginePolling()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopEnginePolling()
+    }
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (!hidden) restartEnginePolling() else stopEnginePolling()
+    }
+
+    private fun stopEnginePolling() {
+        enginePollRunnable?.let { mainHandler.removeCallbacks(it) }
+        enginePollRunnable = null
+    }
+
+    /** (Re-)starts engine status polling. Safe to call multiple times. */
+    private fun restartEnginePolling() {
+        stopEnginePolling()
+        if (!viewsBound || !isAdded || view == null) return
+        updateEngineStatusUI()
+        val ctx = context ?: return
+        val s = TtsBridge.readStatus(ctx)
+        if (!s.ready && s.error == null) {
+            enginePollRunnable = object : Runnable {
+                override fun run() {
+                    if (!isAdded || view == null) return
+                    updateEngineStatusUI()
+                    val c = context ?: return
+                    val st = TtsBridge.readStatus(c)
+                    if (!st.ready && st.error == null) {
+                        mainHandler.postDelayed(this, 1000)
+                    }
+                }
+            }
+            mainHandler.postDelayed(enginePollRunnable!!, 1000)
+        }
     }
 
     override fun onDestroyView() {

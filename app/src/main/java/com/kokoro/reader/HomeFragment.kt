@@ -194,9 +194,6 @@ class HomeFragment : Fragment() {
     /** Polls engine status every second while loading, stops when ready or errored */
     private fun startEngineStatusRefresh() {
         stopEngineStatusRefresh()
-        val ctx = context ?: return
-        val status = TtsBridge.readStatus(ctx)
-        if (status.ready || status.error != null) return
         engineRefreshRunnable = object : Runnable {
             override fun run() {
                 if (!isAdded) return
@@ -218,21 +215,22 @@ class HomeFragment : Fragment() {
         engineRefreshRunnable = null
     }
 
-    /** Polls permission status every 2s for up to 30s after returning from settings. */
+    /** Polls permission + service status every 2s for up to 30s after returning from settings. */
     private fun startPermissionRefresh() {
         stopPermissionRefresh()
-        val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-        if (granted) return  // Already granted, no need to poll
         var attempts = 0
         permissionRefreshRunnable = object : Runnable {
             override fun run() {
                 if (!isAdded) return
+                refreshStatus()
                 val nowGranted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-                if (nowGranted || ++attempts > 15) {
-                    if (nowGranted) refreshStatus()
+                val serviceAlive = context?.let { TtsBridge.readStatus(it).alive } == true
+                // Stop polling once permission granted AND service is alive, or after 30s
+                if ((nowGranted && serviceAlive) || ++attempts > 15) {
+                    // Also kick off engine status polling since service just came alive
+                    if (nowGranted) startEngineStatusRefresh()
                     return
                 }
-                refreshStatus()
                 refreshHandler.postDelayed(this, 2000)
             }
         }
@@ -297,7 +295,17 @@ class HomeFragment : Fragment() {
         tv.text = if (granted) "✓ Active — reading notifications"
                   else "✗ Notification access required"
         tv.setTextColor(ctx.getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
-        btn.text = if (granted) "Notification Settings" else "Grant Permission"
+
+        // Change button appearance based on permission state
+        if (granted) {
+            btn.text = "Notification Settings"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.surface))
+            btn.setTextColor(ctx.getColor(R.color.text_dim))
+        } else {
+            btn.text = "Grant Permission"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.green))
+            btn.setTextColor(0xFF000000.toInt())
+        }
 
         // Update contextual permission instructions
         val instructionsTv = view?.findViewById<TextView>(R.id.permission_instructions)
@@ -337,26 +345,18 @@ class HomeFragment : Fragment() {
     private fun updateEngineStatus(tv: TextView) {
         val ctx = context ?: return
         val s = TtsBridge.readStatus(ctx)
-        val progressBar = view?.findViewById<android.widget.ProgressBar>(R.id.engine_progress_bar)
 
         tv.text = when {
             s.ready -> "⬤ TTS engine: ready"
             s.error != null -> "✗ TTS engine: ${s.error}"
-            else -> "◯ TTS engine: ${s.status} (${s.initProgress}%)"
+            s.initProgress > 0 -> "◯ TTS engine: ${s.status} (${s.initProgress}%)"
+            else -> "◯ TTS engine: ${s.status}"
         }
         tv.setTextColor(ctx.getColor(when {
             s.ready -> R.color.status_active
             s.error != null -> R.color.status_error
             else -> R.color.status_warning
         }))
-
-        // Show/hide progress bar during initialization
-        if (!s.ready && s.error == null && s.initProgress > 0) {
-            progressBar?.visibility = android.view.View.VISIBLE
-            progressBar?.progress = s.initProgress
-        } else {
-            progressBar?.visibility = android.view.View.GONE
-        }
     }
 
     private fun updateLogPath(tv: TextView) {

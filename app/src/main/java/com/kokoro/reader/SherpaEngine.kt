@@ -926,6 +926,10 @@ object SherpaEngine {
     private const val KEY_INIT_CRASH_COUNT = "init_crash_count"
     private const val KEY_INIT_IN_PROGRESS = "init_in_progress"
     private const val KEY_INIT_LAST_CRASH_TIME = "init_last_crash_time"
+    /** Which model format was being loaded when a crash happened ("ort" or "onnx"). */
+    private const val KEY_INIT_FORMAT = "init_format"
+    /** If true, skip .ort and go straight to .onnx (set after a crash during .ort loading). */
+    private const val KEY_SKIP_ORT = "skip_ort"
     /** Base delay (ms) for exponential backoff after crashes. Delay = base * 2^(n-1). */
     private const val CRASH_BACKOFF_BASE_MS = 5_000L   // 5s, 10s, 20s, 40s, 80s…
     /** Max backoff delay (ms) — caps at ~2.5 minutes, then retries forever at this interval. */
@@ -973,10 +977,17 @@ object SherpaEngine {
         plog("warmUp: wasInProgress=$wasInProgress, crashCount=$crashCount, lastCrashTime=$lastCrashTime")
         if (wasInProgress) {
             val wasNativeCrash = wasLastExitNativeCrash(ctx)
-            plog("warmUp: process died during init — wasNativeCrash=$wasNativeCrash")
+            val crashedFormat = initPrefs.getString(KEY_INIT_FORMAT, "unknown")
+            plog("warmUp: process died during init — wasNativeCrash=$wasNativeCrash, format=$crashedFormat")
             if (wasNativeCrash) {
                 crashCount++
                 clearGoodConfig(initPrefs)
+                // If .ort caused the crash, skip it next time and go straight to .onnx
+                if (crashedFormat == "ort") {
+                    initPrefs.edit().putBoolean(KEY_SKIP_ORT, true).apply()
+                    plog("warmUp: .ort crashed — will skip .ort and use .onnx on next attempt")
+                    Log.w(TAG, "Previous init crashed during .ort loading — will use .onnx instead")
+                }
                 plog("warmUp: native crash confirmed — crash #$crashCount, cleared config memory")
                 Log.w(TAG, "Previous engine init: native crash #$crashCount — cleared config memory")
             } else {
@@ -1177,6 +1188,8 @@ object SherpaEngine {
         initPrefs.edit()
             .putInt(KEY_INIT_CRASH_COUNT, 0)
             .putBoolean(KEY_INIT_IN_PROGRESS, false)
+            .putBoolean(KEY_SKIP_ORT, false)
+            .remove(KEY_INIT_FORMAT)
             .apply()
         errorMessage = null
         statusMessage = "retrying…"
@@ -1483,11 +1496,18 @@ object SherpaEngine {
             // ── 1d. Model file resolution ───────────────────────────────
             // Build list of model files to try: .ort first (fast), .onnx fallback (compatible).
             // If .ort fails at all escalation levels, we retry everything with .onnx.
+            // CRITICAL: If .ort previously caused a SIGSEGV, skip it entirely.
             initProgress = 28
             val ortFile = File(extractedDir, "model.ort")
             val onnxFile = File(extractedDir, "model.onnx")
+            val skipOrt = initPrefs.getBoolean(KEY_SKIP_ORT, false)
             val modelFilesToTry = mutableListOf<File>()
-            if (ortFile.exists() && ortFile.length() > MIN_MODEL_FILE_SIZE) modelFilesToTry.add(ortFile)
+            if (!skipOrt && ortFile.exists() && ortFile.length() > MIN_MODEL_FILE_SIZE) {
+                modelFilesToTry.add(ortFile)
+            } else if (skipOrt) {
+                plog("initKokoro: skipping .ort (previously caused crash)")
+                Log.i(TAG, "│ Skipping model.ort (previously caused SIGSEGV — using .onnx instead)")
+            }
             if (onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE) modelFilesToTry.add(onnxFile)
             if (modelFilesToTry.isEmpty()) {
                 // Neither format available — use whichever exists (will fail at integrity check)
@@ -1599,6 +1619,9 @@ object SherpaEngine {
 
                 Log.i(TAG, "│ Format: $formatLabel (${currentModelFile.name}, ${currentModelFile.length() / 1024 / 1024}MB)")
                 Log.i(TAG, "│ Adaptive timeout: ${timeoutMs}ms (ort=$currentIsOrt, tier=${profile.tier})")
+
+                // Track which format we're about to load so crash recovery knows what failed
+                initPrefs.edit().putString(KEY_INIT_FORMAT, if (currentIsOrt) "ort" else "onnx").commit()
 
                 val kokoroConfig = OfflineTtsKokoroModelConfig(
                     model   = currentModelFile.absolutePath,

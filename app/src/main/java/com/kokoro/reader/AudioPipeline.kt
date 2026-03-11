@@ -130,6 +130,9 @@ object AudioPipeline {
     private fun ensureKokoroReady(ctx: Context): Boolean {
         if (SherpaEngine.isReady) return true
 
+        // Piper fallback is running — Kokoro isn't ready but we can still synthesize
+        if (SherpaEngine.isPiperFallbackReady) return false
+
         // If the engine already has an error (crash loop, timeout, etc.), don't retry
         if (SherpaEngine.errorMessage != null) return false
 
@@ -226,15 +229,17 @@ object AudioPipeline {
         val result: Pair<FloatArray, Int>? = when {
             // Kokoro voice: use Kokoro engine with speaker ID
             kokoroVoice != null -> {
-                if (!ensureKokoroReady(ctx)) {
-                    Log.w(TAG, "Kokoro engine not ready — dropping notification")
-                    return
+                if (ensureKokoroReady(ctx)) {
+                    SherpaEngine.synthesize(
+                        text  = text,
+                        sid   = kokoroVoice.sid,
+                        speed = item.modulated.speed
+                    )
+                } else {
+                    // Kokoro unavailable — try Piper fallback instead of dropping
+                    Log.w(TAG, "Kokoro engine not ready — attempting Piper fallback")
+                    SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
                 }
-                SherpaEngine.synthesize(
-                    text  = text,
-                    sid   = kokoroVoice.sid,
-                    speed = item.modulated.speed
-                )
             }
 
             // Piper voice: loaded directly from assets by SherpaEngine
@@ -247,29 +252,16 @@ object AudioPipeline {
                         speed   = item.modulated.speed
                     )
                 } catch (e: Throwable) {
-                    // Catch native crashes from Piper engine and fall back to Kokoro
-                    Log.e(TAG, "Piper synthesis crashed for $voiceId, falling back to Kokoro", e)
-                    if (!ensureKokoroReady(ctx)) return
-                    SherpaEngine.synthesize(
-                        text  = text,
-                        sid   = KokoroVoices.default().sid,
-                        speed = item.modulated.speed
-                    )
+                    // Catch native crashes from Piper engine and fall back
+                    Log.e(TAG, "Piper synthesis crashed for $voiceId, trying fallback", e)
+                    SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
                 }
             }
 
-            // Fallback: default Kokoro voice
+            // Fallback: try whatever engine is available
             else -> {
-                if (!ensureKokoroReady(ctx)) {
-                    Log.w(TAG, "Kokoro engine not ready (fallback) — dropping notification")
-                    return
-                }
-                Log.w(TAG, "Voice '$voiceId' not available, using default Kokoro")
-                SherpaEngine.synthesize(
-                    text  = text,
-                    sid   = KokoroVoices.default().sid,
-                    speed = item.modulated.speed
-                )
+                Log.w(TAG, "Voice '$voiceId' not recognized, using best available engine")
+                SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
             }
         }
 

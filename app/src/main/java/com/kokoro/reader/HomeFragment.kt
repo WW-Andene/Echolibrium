@@ -363,13 +363,16 @@ class HomeFragment : Fragment() {
         val ctx = context ?: return
         val s = TtsBridge.readStatus(ctx)
 
+        val isFallback = s.ready && s.status.contains("fallback", ignoreCase = true)
         tv.text = when {
+            isFallback -> "⬤ TTS engine: ready (Piper fallback)"
             s.ready -> "⬤ TTS engine: ready"
             s.error != null -> "✗ TTS engine: ${s.error}"
             s.initProgress > 0 -> "◯ TTS engine: ${s.status} (${s.initProgress}%)"
             else -> "◯ TTS engine: ${s.status}"
         }
         tv.setTextColor(ctx.getColor(when {
+            isFallback -> R.color.status_warning
             s.ready -> R.color.status_active
             s.error != null -> R.color.status_error
             else -> R.color.status_warning

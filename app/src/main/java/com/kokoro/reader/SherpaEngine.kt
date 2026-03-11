@@ -102,6 +102,14 @@ object SherpaEngine {
     private var piperTts: OfflineTts? = null
     private var piperLoadedVoiceId: String? = null
 
+    // ── Piper fallback (used when Kokoro init fails) ────────────────────────
+    /** Default bundled Piper voice to use when Kokoro is unavailable. */
+    private const val PIPER_FALLBACK_VOICE = "en_US-lessac-medium"
+
+    /** True when the Piper fallback engine is initialized and ready to synthesize. */
+    @Volatile var isPiperFallbackReady = false
+        private set
+
     /** Context for writing cross-process status file. Set by warmUp(). */
     @Volatile private var statusContext: Context? = null
 
@@ -266,13 +274,23 @@ object SherpaEngine {
 
         // If we've crashed too many times, don't attempt init — report error instead.
         if (crashCount >= MAX_INIT_CRASHES) {
-            Log.e(TAG, "Engine init disabled after $crashCount consecutive crashes")
+            Log.e(TAG, "Kokoro init disabled after $crashCount consecutive crashes — trying Piper fallback")
+            writeInitLog(ctx, "Crash loop: $crashCount consecutive native crashes during Kokoro init, attempting Piper fallback")
+
+            // Don't give up — try Piper as a fallback engine
+            if (initPiperFallback(ctx)) {
+                Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crashes")
+                synchronized(warmUpLock) { isWarmingUp = false }
+                onReadyCallback?.invoke()
+                return
+            }
+
+            // Both engines failed
             errorMessage = "Engine crashed $crashCount times during initialization. " +
-                "The model may be incompatible with this device. " +
+                "Piper fallback also failed. " +
                 "Tap \"Retry engine init\" to try again, or restart the app after 5 minutes."
             statusMessage = "error: repeated native crashes"
             isReady = false
-            writeInitLog(ctx, "Crash loop: $crashCount consecutive native crashes during init")
             synchronized(warmUpLock) { isWarmingUp = false }
             syncStatus()
             return
@@ -289,6 +307,15 @@ object SherpaEngine {
             try {
                 if (initializeKokoro(ctx)) {
                     onReadyCallback?.invoke()
+                } else {
+                    // Kokoro failed — try Piper fallback automatically
+                    Log.w(TAG, "Kokoro init failed, attempting Piper fallback…")
+                    if (initPiperFallback(ctx)) {
+                        Log.i(TAG, "Piper fallback activated — speech will continue with Piper voice")
+                        onReadyCallback?.invoke()
+                    } else {
+                        Log.e(TAG, "Both Kokoro and Piper fallback failed — no TTS available")
+                    }
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "Warm-up failed", e)
@@ -296,6 +323,15 @@ object SherpaEngine {
                 statusMessage = "error: ${errorMessage}"
                 writeInitLog(ctx, "Warm-up exception: ${e.message}", e)
                 syncStatus()
+                // Even on exception, try Piper fallback
+                try {
+                    if (initPiperFallback(ctx)) {
+                        Log.i(TAG, "Piper fallback activated after warm-up exception")
+                        onReadyCallback?.invoke()
+                    }
+                } catch (e2: Throwable) {
+                    Log.e(TAG, "Piper fallback also failed after warm-up exception", e2)
+                }
             } finally {
                 // Clear init_in_progress — if we reached this point, the process survived.
                 // Only a SIGSEGV (which kills the process) will leave the flag set.
@@ -321,6 +357,7 @@ object SherpaEngine {
         errorMessage = null
         statusMessage = "retrying…"
         isReady = false
+        isPiperFallbackReady = false  // Reset fallback so Kokoro gets a fresh try
         syncStatus()
         warmUp(ctx)
     }
@@ -592,6 +629,76 @@ object SherpaEngine {
             Pair(audio.samples, audio.sampleRate)
         } catch (e: Throwable) {
             Log.e(TAG, "Kokoro synthesis failed", e)
+            null
+        }
+    }
+
+    // ── Piper fallback (when Kokoro init fails) ─────────────────────────────
+
+    /**
+     * Initializes a bundled Piper voice as fallback when Kokoro fails to init.
+     * Uses a small, battle-tested VITS model (~60MB) that rarely crashes.
+     * Called automatically when Kokoro init fails.
+     */
+    @Synchronized
+    fun initPiperFallback(ctx: Context): Boolean {
+        if (isPiperFallbackReady && piperTts != null && piperLoadedVoiceId == PIPER_FALLBACK_VOICE) {
+            return true
+        }
+
+        Log.i(TAG, "┌── Piper fallback init START ─────────────────")
+        Log.i(TAG, "│ Kokoro unavailable, initializing Piper fallback: $PIPER_FALLBACK_VOICE")
+
+        return try {
+            if (loadPiperVoice(ctx, PIPER_FALLBACK_VOICE)) {
+                isPiperFallbackReady = true
+                // Update status to reflect we're running with fallback
+                statusMessage = "ready (Piper fallback)"
+                errorMessage = null
+                isReady = true
+                syncStatus()
+                Log.i(TAG, "│ Piper fallback engine ready")
+                Log.i(TAG, "└── Piper fallback init SUCCESS ──────────────")
+                true
+            } else {
+                Log.e(TAG, "│ loadPiperVoice returned false")
+                Log.e(TAG, "└── Piper fallback init FAILED ───────────────")
+                writeInitLog(ctx, "Piper fallback init failed: loadPiperVoice returned false")
+                false
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "│ Piper fallback init exception", e)
+            Log.e(TAG, "└── Piper fallback init FAILED ───────────────")
+            writeInitLog(ctx, "Piper fallback init exception: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Synthesize using whatever engine is available.
+     * Tries Kokoro first (with speaker ID), falls back to Piper if Kokoro is down.
+     * Returns null only if no engine is available at all.
+     */
+    @Synchronized
+    fun synthesizeWithFallback(ctx: Context, text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        // Try Kokoro first
+        if (kokoroTts != null) {
+            val result = synthesize(text, sid, speed)
+            if (result != null) return result
+        }
+
+        // Kokoro unavailable or failed — use Piper fallback
+        if (!isPiperFallbackReady) {
+            if (!initPiperFallback(ctx)) return null
+        }
+
+        return try {
+            val engine = piperTts ?: return null
+            val audio = engine.generate(text = text, sid = 0, speed = speed)
+            lastSampleRate = audio.sampleRate
+            Pair(audio.samples, audio.sampleRate)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Piper fallback synthesis failed", e)
             null
         }
     }

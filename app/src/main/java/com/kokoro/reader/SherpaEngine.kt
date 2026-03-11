@@ -14,7 +14,10 @@ import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.SharedPreferences
+import android.os.Bundle
 import android.os.PowerManager
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.io.PrintWriter
 import java.io.RandomAccessFile
 import java.io.StringWriter
@@ -308,6 +311,170 @@ object SherpaEngine {
         else -> "UNKNOWN($reason)"
     }
 
+    // ── Diagnostics (shown in error UI when native code is broken) ──────────────
+
+    private fun buildDiagnostics(ctx: Context): String {
+        return buildString {
+            append("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            append(" | SoC: $socVendor (${Build.HARDWARE})")
+            append(" | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 3)
+                    val ttsExit = exitInfos.firstOrNull { it.processName?.endsWith(":tts") == true }
+                    if (ttsExit != null) {
+                        append(" | Last exit: ${exitReasonName(ttsExit.reason)}")
+                        ttsExit.description?.let { append(" ($it)") }
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    // ── Android system TTS fallback ──────────────────────────────────────────────
+    // When sherpa-onnx native code is broken on the device, fall back to the
+    // Android system TTS (e.g. Google TTS). Returns PCM audio through the normal
+    // pipeline so DSP effects still work.
+
+    private fun initSystemTtsFallback(ctx: Context): Boolean {
+        plog("initSystemTtsFallback: initializing Android system TTS")
+        val latch = CountDownLatch(1)
+        var initStatus = TextToSpeech.ERROR
+        try {
+            val tts = TextToSpeech(ctx.applicationContext) { status ->
+                initStatus = status
+                latch.countDown()
+            }
+            // Wait up to 5 seconds for system TTS to init
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                plog("initSystemTtsFallback: timeout waiting for system TTS init")
+                tts.shutdown()
+                return false
+            }
+            if (initStatus != TextToSpeech.SUCCESS) {
+                plog("initSystemTtsFallback: system TTS init failed (status=$initStatus)")
+                tts.shutdown()
+                return false
+            }
+            // Set language to English (fallback)
+            val langResult = tts.setLanguage(java.util.Locale.US)
+            if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                plog("initSystemTtsFallback: English not available, trying default locale")
+                tts.setLanguage(java.util.Locale.getDefault())
+            }
+            systemTts = tts
+            plog("initSystemTtsFallback: system TTS ready (engine=${tts.defaultEngine})")
+            Log.i(TAG, "Android system TTS ready: ${tts.defaultEngine}")
+            return true
+        } catch (e: Throwable) {
+            plog("initSystemTtsFallback: exception: ${e.message}")
+            Log.e(TAG, "System TTS init failed", e)
+            return false
+        }
+    }
+
+    /**
+     * Synthesize text using Android system TTS → WAV file → read PCM.
+     * Returns the same Pair<FloatArray, Int> as the sherpa-onnx methods.
+     */
+    fun synthesizeSystemTts(text: String, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        val tts = systemTts ?: return null
+        if (text.isBlank()) return null
+        try {
+            tts.setSpeechRate(speed)
+            val tmpFile = File.createTempFile("sys_tts_", ".wav", statusContext?.cacheDir)
+            val utteranceId = "synth_${System.nanoTime()}"
+            val latch = CountDownLatch(1)
+            var synthOk = false
+
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(id: String?) {}
+                override fun onDone(id: String?) { synthOk = true; latch.countDown() }
+                @Deprecated("Deprecated") override fun onError(id: String?) { latch.countDown() }
+                override fun onError(id: String?, errorCode: Int) { latch.countDown() }
+            })
+
+            val params = Bundle().apply {
+                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            }
+            val result = tts.synthesizeToFile(text, params, tmpFile, utteranceId)
+            if (result != TextToSpeech.SUCCESS) {
+                tmpFile.delete()
+                return null
+            }
+
+            // Wait up to 30 seconds for synthesis
+            if (!latch.await(30, TimeUnit.SECONDS) || !synthOk) {
+                tmpFile.delete()
+                return null
+            }
+
+            // Read WAV file → extract PCM float samples
+            val pcmResult = readWavAsPcmFloat(tmpFile)
+            tmpFile.delete()
+            if (pcmResult != null) lastSampleRate = pcmResult.second
+            return pcmResult
+        } catch (e: Throwable) {
+            Log.e(TAG, "System TTS synthesis failed", e)
+            return null
+        }
+    }
+
+    /** Read a WAV file and return PCM data as FloatArray + sample rate. */
+    private fun readWavAsPcmFloat(wavFile: File): Pair<FloatArray, Int>? {
+        try {
+            val bytes = wavFile.readBytes()
+            if (bytes.size < 44) return null  // WAV header is 44 bytes minimum
+            // Parse WAV header
+            // Bytes 24-27: sample rate (little-endian)
+            val sampleRate = (bytes[24].toInt() and 0xFF) or
+                ((bytes[25].toInt() and 0xFF) shl 8) or
+                ((bytes[26].toInt() and 0xFF) shl 16) or
+                ((bytes[27].toInt() and 0xFF) shl 24)
+            // Bytes 34-35: bits per sample
+            val bitsPerSample = (bytes[34].toInt() and 0xFF) or ((bytes[35].toInt() and 0xFF) shl 8)
+            // Find "data" chunk
+            var dataOffset = 12
+            var dataSize = 0
+            while (dataOffset < bytes.size - 8) {
+                val chunkId = String(bytes, dataOffset, 4)
+                val chunkSize = (bytes[dataOffset + 4].toInt() and 0xFF) or
+                    ((bytes[dataOffset + 5].toInt() and 0xFF) shl 8) or
+                    ((bytes[dataOffset + 6].toInt() and 0xFF) shl 16) or
+                    ((bytes[dataOffset + 7].toInt() and 0xFF) shl 24)
+                if (chunkId == "data") {
+                    dataOffset += 8
+                    dataSize = chunkSize
+                    break
+                }
+                dataOffset += 8 + chunkSize
+            }
+            if (dataSize == 0) return null
+            // Convert to float samples
+            val samples = when (bitsPerSample) {
+                16 -> {
+                    val numSamples = dataSize / 2
+                    FloatArray(numSamples) { i ->
+                        val lo = bytes[dataOffset + i * 2].toInt() and 0xFF
+                        val hi = bytes[dataOffset + i * 2 + 1].toInt()
+                        ((hi shl 8) or lo).toShort().toFloat() / 32768f
+                    }
+                }
+                8 -> {
+                    FloatArray(dataSize) { i ->
+                        (bytes[dataOffset + i].toInt() and 0xFF).toFloat() / 128f - 1f
+                    }
+                }
+                else -> return null
+            }
+            return Pair(samples, sampleRate)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to read WAV file", e)
+            return null
+        }
+    }
+
     // ── Model pre-warming ────────────────────────────────────────────────────────
     // Sequentially reads the entire model file to populate the OS page cache.
     // When ORT opens the file via mmap, ALL pages are already in RAM — no random
@@ -435,6 +602,13 @@ object SherpaEngine {
     /** True when the Piper fallback engine is initialized and ready to synthesize. */
     @Volatile var isPiperFallbackReady = false
         private set
+
+    /** True when Android system TTS is active as ultimate fallback (native code broken). */
+    @Volatile var isSystemTtsFallbackActive = false
+        private set
+
+    /** Android system TTS engine — used when native sherpa-onnx crashes on the device. */
+    private var systemTts: android.speech.tts.TextToSpeech? = null
 
     /** Context for writing cross-process status file. Set by warmUp(). */
     @Volatile private var statusContext: Context? = null
@@ -647,7 +821,9 @@ object SherpaEngine {
         telemetry: InitTelemetry? = lastTelemetry
     ) {
         try {
-            val dir = ReaderApplication.resolvedLogDir ?: return
+            // Use resolved log dir, fall back to app filesDir if null (e.g. in :tts process)
+            val dir = ReaderApplication.resolvedLogDir
+                ?: File(ctx.applicationContext.filesDir, "logs").also { it.mkdirs() }
             if (!dir.exists()) dir.mkdirs()
 
             val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
@@ -835,17 +1011,39 @@ object SherpaEngine {
             Log.w(TAG, "Native code crashed $crashCount time(s)")
 
             if (crashCount >= NATIVE_BROKEN_THRESHOLD) {
-                plog("warmUp: NATIVE_BROKEN_THRESHOLD reached ($crashCount >= $NATIVE_BROKEN_THRESHOLD) — disabling all TTS")
-                Log.e(TAG, "Native stack appears broken ($crashCount crashes) — disabling all TTS")
-                errorMessage = "TTS engine crashed $crashCount times — native code incompatible with this device"
-                statusMessage = "error: native engine incompatible"
-                isReady = false
-                syncStatus()
-                synchronized(warmUpLock) { isWarmingUp = false }
+                plog("warmUp: NATIVE_BROKEN_THRESHOLD reached ($crashCount >= $NATIVE_BROKEN_THRESHOLD) — trying Android TTS fallback")
+                Log.e(TAG, "Native stack appears broken ($crashCount crashes) — trying Android TTS")
 
-                // Schedule one more retry after a long backoff (conditions might change)
+                // Build diagnostic info visible in the UI
+                val diag = buildDiagnostics(ctx)
+                writeInitLog(ctx, "Native stack broken ($crashCount crashes), falling back to Android TTS\n$diag")
+
+                // Try Android system TTS as ultimate fallback
+                statusMessage = "native engine broken — trying Android TTS…"
+                syncStatus()
+                val systemTtsOk = initSystemTtsFallback(ctx)
+                if (systemTtsOk) {
+                    plog("warmUp: Android system TTS fallback ready")
+                    Log.i(TAG, "Android system TTS fallback activated")
+                    errorMessage = null
+                    statusMessage = "ready (Android TTS fallback)"
+                    isReady = true
+                    isSystemTtsFallbackActive = true
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    onReadyCallback?.invoke()
+                } else {
+                    plog("warmUp: Android system TTS also failed")
+                    errorMessage = "TTS engine crashed $crashCount times.\n$diag"
+                    statusMessage = "error: all TTS engines failed"
+                    isReady = false
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+
+                // Schedule native retry after long backoff (conditions might change)
                 val backoffMs = CRASH_BACKOFF_MAX_MS
-                Log.i(TAG, "Will retry in ${backoffMs / 1000}s in case conditions change")
+                Log.i(TAG, "Will retry native in ${backoffMs / 1000}s")
                 Thread {
                     try {
                         Thread.sleep(backoffMs)
@@ -981,6 +1179,9 @@ object SherpaEngine {
         statusMessage = "retrying…"
         isReady = false
         isPiperFallbackReady = false  // Reset fallback so Kokoro gets a fresh try
+        isSystemTtsFallbackActive = false
+        systemTts?.shutdown()
+        systemTts = null
         syncStatus()
         warmUp(ctx)
     }
@@ -1696,18 +1897,33 @@ object SherpaEngine {
 
         // Kokoro unavailable or failed — use Piper fallback
         if (!isPiperFallbackReady) {
-            if (!initPiperFallback(ctx)) return null
+            initPiperFallback(ctx)
+        }
+        if (isPiperFallbackReady) {
+            try {
+                val engine = piperTts
+                if (engine != null) {
+                    val audio = engine.generate(text = text, sid = 0, speed = speed)
+                    lastSampleRate = audio.sampleRate
+                    return Pair(audio.samples, audio.sampleRate)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Piper fallback synthesis failed", e)
+            }
         }
 
-        return try {
-            val engine = piperTts ?: return null
-            val audio = engine.generate(text = text, sid = 0, speed = speed)
-            lastSampleRate = audio.sampleRate
-            Pair(audio.samples, audio.sampleRate)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Piper fallback synthesis failed", e)
-            null
+        // Both native engines failed — try Android system TTS
+        if (isSystemTtsFallbackActive) {
+            return synthesizeSystemTts(text, speed)
         }
+
+        // Last resort: try to init system TTS now
+        if (initSystemTtsFallback(ctx)) {
+            isSystemTtsFallbackActive = true
+            return synthesizeSystemTts(text, speed)
+        }
+
+        return null
     }
 
     // ── Piper/VITS synthesis ──────────────────────────────────────────────────

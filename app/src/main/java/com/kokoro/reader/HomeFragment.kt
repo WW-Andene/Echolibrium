@@ -55,6 +55,8 @@ class HomeFragment : Fragment() {
         prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val statusText       = v.findViewById<TextView>(R.id.status_text)
         val serviceStatusText = v.findViewById<TextView>(R.id.service_status_text)
+        val engineStatusText = v.findViewById<TextView>(R.id.engine_status_text)
+        val logPathText      = v.findViewById<TextView>(R.id.log_path_text)
         val btnPermission    = v.findViewById<Button>(R.id.btn_permission)
         val switchEnabled    = v.findViewById<SwitchCompat>(R.id.switch_enabled)
         val switchVoiceCmd   = v.findViewById<SwitchCompat>(R.id.switch_voice_commands)
@@ -70,6 +72,8 @@ class HomeFragment : Fragment() {
         val btnStop          = v.findViewById<Button>(R.id.btn_stop)
 
         updateStatus(statusText, serviceStatusText, btnPermission)
+        updateEngineStatus(engineStatusText)
+        updateLogPath(logPathText)
         btnPermission.setOnClickListener {
             val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
             if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -192,6 +196,8 @@ class HomeFragment : Fragment() {
                     it.findViewById(R.id.service_status_text),
                     it.findViewById(R.id.btn_permission)
                 )
+                updateEngineStatus(it.findViewById(R.id.engine_status_text))
+                updateLogPath(it.findViewById(R.id.log_path_text))
                 updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status))
             }
         } catch (e: Exception) {
@@ -248,6 +254,43 @@ class HomeFragment : Fragment() {
             granted -> R.color.status_warning
             else -> R.color.status_inactive
         }))
+    }
+
+    private fun updateEngineStatus(tv: TextView) {
+        val ctx = context ?: return
+        val status = SherpaEngine.statusMessage
+        val error = SherpaEngine.errorMessage
+        val ready = SherpaEngine.isReady
+
+        tv.text = when {
+            ready -> "⬤ TTS engine: ready"
+            error != null -> "✗ TTS engine: $error"
+            else -> "◯ TTS engine: $status"
+        }
+        tv.setTextColor(ctx.getColor(when {
+            ready -> R.color.status_active
+            error != null -> R.color.status_error
+            else -> R.color.status_warning
+        }))
+    }
+
+    private fun updateLogPath(tv: TextView) {
+        val logDir = ReaderApplication.resolvedLogDir
+        val logCount = try { logDir?.listFiles { f -> f.name.endsWith(".log") }?.size ?: 0 } catch (_: Exception) { 0 }
+        val path = ReaderApplication.logLocationDescription
+        tv.text = "logs ($logCount): $path"
+
+        // Tap to copy path to clipboard
+        tv.setOnClickListener {
+            try {
+                val ctx = context ?: return@setOnClickListener
+                val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Log path", logDir?.absolutePath ?: path))
+                Toast.makeText(ctx, "Log path copied", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                android.util.Log.e("HomeFragment", "Error copying log path", e)
+            }
+        }
     }
 
     private fun updateVoiceCommandStatus(tv: TextView) {

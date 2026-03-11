@@ -25,6 +25,10 @@
         android:usesCleartextTraffic="false"
         android:requestLegacyExternalStorage="true">
 
+        <activity android:name=".CrashReportActivity"
+            android:theme="@style/AppTheme"
+            android:exported="false"/>
+
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

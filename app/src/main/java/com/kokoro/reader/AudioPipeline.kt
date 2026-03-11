@@ -159,8 +159,8 @@ object AudioPipeline {
                 )
             }
 
-            // Piper voice: use Piper/VITS engine
-            piperVoice != null && PiperVoiceManager.isVoiceReady(ctx, voiceId) -> {
+            // Piper voice: loaded directly from assets by SherpaEngine
+            piperVoice != null -> {
                 try {
                     SherpaEngine.synthesizePiper(
                         ctx     = ctx,

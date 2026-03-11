@@ -7,7 +7,6 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
-import java.io.File
 
 /**
  * Singleton wrapper around sherpa-onnx OfflineTts.
@@ -16,15 +15,18 @@ import java.io.File
  *   • Kokoro — 30 voices in a single model (multi-lang-v1_0), selected by speaker ID
  *   • Piper/VITS — one model per voice, loaded on demand
  *
- * Models are bundled in the APK's assets and extracted on first launch.
- * Use [warmUp] to eagerly initialize on a background thread so the first
- * synthesis call has no perceivable lag.
+ * Models are bundled in the APK's assets and loaded directly via AssetManager —
+ * no extraction to internal storage is needed.
  *
  * Thread-safe: synthesize methods are called from the AudioPipeline background thread.
  */
 object SherpaEngine {
 
     private const val TAG = "SherpaEngine"
+
+    // Asset paths (relative to assets/)
+    private const val KOKORO_DIR = "kokoro-model"
+    private const val PIPER_DIR  = "piper-models"
 
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
     private var kokoroTts: OfflineTts? = null
@@ -55,8 +57,8 @@ object SherpaEngine {
     // ── Eager warm-up ─────────────────────────────────────────────────────────
 
     /**
-     * Extracts models from assets (if needed) and initializes the Kokoro engine
-     * on a background thread. Also extracts bundled Piper voices.
+     * Initializes the Kokoro engine on a background thread.
+     * Models are read directly from APK assets — no extraction step.
      * Guarded against duplicate concurrent calls.
      */
     fun warmUp(ctx: Context) {
@@ -67,11 +69,6 @@ object SherpaEngine {
         }
         Thread {
             try {
-                // Step 1: extract Kokoro model from assets
-                VoiceDownloadManager.ensureModelSync(ctx)
-                // Step 2: extract bundled Piper voices from assets
-                PiperVoiceManager.extractBundledVoicesSync(ctx)
-                // Step 3: load the Kokoro engine
                 if (initializeKokoro(ctx)) {
                     onReadyCallback?.invoke()
                 }
@@ -90,45 +87,14 @@ object SherpaEngine {
     fun initializeKokoro(ctx: Context): Boolean {
         if (isReady && kokoroTts != null) return true
 
-        // Lazy extraction: extract assets on first use if not already done
-        if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.d(TAG, "Model not extracted yet — extracting now")
-            VoiceDownloadManager.ensureModelSync(ctx)
-            PiperVoiceManager.extractBundledVoicesSync(ctx)
-        }
-        if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.w(TAG, "Kokoro model extraction failed")
-            return false
-        }
-
         return try {
-            val modelDir = VoiceDownloadManager.getModelDir(ctx)
-            Log.d(TAG, "Loading Kokoro model from $modelDir")
-
-            // Validate model files exist and are non-empty before passing to native code
-            val modelFile  = File(modelDir, "model.onnx")
-            val voicesFile = File(modelDir, "voices.bin")
-            val tokensFile = File(modelDir, "tokens.txt")
-            val dataDir    = File(modelDir, "espeak-ng-data")
-
-            for (f in listOf(modelFile, voicesFile, tokensFile)) {
-                if (!f.exists() || f.length() == 0L) {
-                    Log.e(TAG, "Model file missing or empty: ${f.absolutePath} (size=${if (f.exists()) f.length() else "N/A"})")
-                    errorMessage = "Model file missing or corrupted: ${f.name}"
-                    return false
-                }
-            }
-            if (!dataDir.exists() || !dataDir.isDirectory) {
-                Log.e(TAG, "espeak-ng-data directory missing: ${dataDir.absolutePath}")
-                errorMessage = "espeak-ng-data directory missing"
-                return false
-            }
+            Log.d(TAG, "Loading Kokoro model from assets/$KOKORO_DIR")
 
             val kokoroConfig = OfflineTtsKokoroModelConfig(
-                model  = modelFile.absolutePath,
-                voices = voicesFile.absolutePath,
-                tokens = tokensFile.absolutePath,
-                dataDir = dataDir.absolutePath
+                model   = "$KOKORO_DIR/model.onnx",
+                voices  = "$KOKORO_DIR/voices.bin",
+                tokens  = "$KOKORO_DIR/tokens.txt",
+                dataDir = "$KOKORO_DIR/espeak-ng-data"
             )
 
             val modelConfig = OfflineTtsModelConfig(
@@ -139,10 +105,10 @@ object SherpaEngine {
             )
 
             val config = OfflineTtsConfig(model = modelConfig)
-            kokoroTts = OfflineTts(config = config)
+            kokoroTts = OfflineTts(assetManager = ctx.assets, config = config)
             isReady = true
             errorMessage = null
-            Log.d(TAG, "Kokoro engine ready")
+            Log.d(TAG, "Kokoro engine ready (loaded from assets)")
             true
 
         } catch (e: Throwable) {
@@ -210,29 +176,12 @@ object SherpaEngine {
             piperTts = null
             piperLoadedVoiceId = null
 
-            val modelPath = PiperVoiceManager.getModelPath(ctx, voiceId)
-            val tokensPath = PiperVoiceManager.getTokensPath(ctx)
-            val dataDir = PiperVoiceManager.getEspeakDataDir(ctx)
-
-            if (!File(modelPath).exists()) {
-                Log.w(TAG, "Piper model not found: $modelPath")
-                return false
-            }
-            if (!File(tokensPath).exists()) {
-                Log.w(TAG, "Piper tokens.txt not found: $tokensPath")
-                return false
-            }
-            if (!File(dataDir).exists()) {
-                Log.w(TAG, "Piper espeak-ng-data not found: $dataDir")
-                return false
-            }
-
-            Log.d(TAG, "Loading Piper voice: $voiceId")
+            Log.d(TAG, "Loading Piper voice from assets: $voiceId")
 
             val vitsConfig = OfflineTtsVitsModelConfig(
-                model   = modelPath,
-                tokens  = tokensPath,
-                dataDir = dataDir
+                model   = "$PIPER_DIR/$voiceId.onnx",
+                tokens  = "$PIPER_DIR/tokens.txt",
+                dataDir = "$KOKORO_DIR/espeak-ng-data"
             )
 
             val modelConfig = OfflineTtsModelConfig(
@@ -243,9 +192,9 @@ object SherpaEngine {
             )
 
             val config = OfflineTtsConfig(model = modelConfig)
-            piperTts = OfflineTts(config = config)
+            piperTts = OfflineTts(assetManager = ctx.assets, config = config)
             piperLoadedVoiceId = voiceId
-            Log.d(TAG, "Piper voice loaded: $voiceId")
+            Log.d(TAG, "Piper voice loaded from assets: $voiceId")
             return true
 
         } catch (e: Throwable) {

@@ -105,7 +105,7 @@ class NotificationReaderService : NotificationListenerService() {
                 OemProtection.requestBatteryExemption(this)
             }
 
-            // Eager engine init on service start.
+            // Eager engine init in the :tts process.
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {
                 updateForegroundText("Listening for notifications")

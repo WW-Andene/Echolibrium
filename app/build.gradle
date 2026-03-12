@@ -90,6 +90,11 @@ android {
     // at first run. Compressed assets use more memory during extraction and are slower
     // to read via AssetManager.open(). "txt" covers tokens.txt and espeak dict files.
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'

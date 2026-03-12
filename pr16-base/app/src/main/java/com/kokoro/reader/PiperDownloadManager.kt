@@ -46,9 +46,22 @@ object PiperDownloadManager {
     fun isVoiceReady(ctx: Context, voiceId: String): Boolean {
         val dir = getVoiceDir(ctx, voiceId)
         return dir.exists()
-            && File(dir, "model.onnx").exists()
+            && getModelFile(dir, voiceId) != null
             && File(dir, "tokens.txt").exists()
             && File(dir, "espeak-ng-data").exists()
+    }
+
+    /**
+     * Find the .onnx model file inside a voice directory.
+     * sherpa-onnx names it "{voiceId}.onnx" (e.g. en_US-lessac-medium.onnx).
+     */
+    fun getModelFile(voiceDir: File, voiceId: String): File? {
+        val expected = File(voiceDir, "$voiceId.onnx")
+        if (expected.exists()) return expected
+        // Fallback: find any .onnx file that isn't a .json
+        return voiceDir.listFiles()?.firstOrNull {
+            it.extension == "onnx" && !it.name.endsWith(".onnx.json")
+        }
     }
 
     fun isDownloading(voiceId: String): Boolean =

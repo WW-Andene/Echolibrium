@@ -86,9 +86,29 @@
                 android:thumbTint="#ffaa00"/>
         </LinearLayout>
 
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// BACKGROUND" style="@style/SectionLabel" android:layout_marginTop="20dp"/>
+        <Button android:id="@+id/btn_battery" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="⚡ Disable Battery Optimization"
+            android:backgroundTint="#1a1a2a" android:textColor="#88ccff"
+            android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
+        <TextView android:id="@+id/txt_battery_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="11sp"
+            android:textColor="#555555" android:fontFamily="monospace"
+            android:layout_marginBottom="8dp" android:paddingStart="4dp"/>
+
+        <Button android:id="@+id/btn_restricted" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="🔓 Allow Restricted Settings"
+            android:backgroundTint="#1a1a2a" android:textColor="#cc88ff"
+            android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
+        <TextView android:id="@+id/txt_restricted_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="11sp"
+            android:textColor="#555555" android:fontFamily="monospace"
+            android:layout_marginBottom="16dp" android:paddingStart="4dp"/>
+
         <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="⏹  STOP SPEAKING"
             android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
-            android:fontFamily="monospace" android:layout_marginTop="20dp"/>
+            android:fontFamily="monospace" android:layout_marginTop="4dp"/>
     </LinearLayout>
 </ScrollView>

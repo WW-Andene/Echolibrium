@@ -78,6 +78,7 @@ class HomeFragment : Fragment() {
         val initLogPanel     = v.findViewById<View>(R.id.init_log_panel)
         val initLogContent   = v.findViewById<TextView>(R.id.init_log_content)
         val btnForceReport   = v.findViewById<Button>(R.id.btn_force_report)
+        val btnCopyInitLogs  = v.findViewById<Button>(R.id.btn_copy_init_logs)
 
         updateStatus(statusText, serviceStatusText, btnPermission)
         updateEngineStatus(engineStatusText)
@@ -98,6 +99,7 @@ class HomeFragment : Fragment() {
             logPanelVisible = !logPanelVisible
             if (logPanelVisible) {
                 initLogPanel.visibility = View.VISIBLE
+                btnCopyInitLogs.visibility = View.VISIBLE
                 btnShowInitLogs.text = "▼ Hide init logs"
                 // Request process log from :tts process
                 TtsBridge.requestProcessLog(c)
@@ -113,10 +115,26 @@ class HomeFragment : Fragment() {
                 refreshHandler.postDelayed(logRefreshRunnable!!, 300)
             } else {
                 initLogPanel.visibility = View.GONE
+                btnCopyInitLogs.visibility = View.GONE
                 btnShowInitLogs.text = "▶ Show init logs"
                 logRefreshRunnable?.let { refreshHandler.removeCallbacks(it) }
                 logRefreshRunnable = null
             }
+        }
+
+        btnCopyInitLogs.setOnClickListener {
+            val c = context ?: return@setOnClickListener
+            val logText = initLogContent.text?.toString()
+            if (logText.isNullOrEmpty()) {
+                Toast.makeText(c, "No logs to copy", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val clipboard = c.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager
+            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Kyōkan init logs", logText))
+            btnCopyInitLogs.text = "Copied!"
+            btnCopyInitLogs.postDelayed({ btnCopyInitLogs.text = "Copy full logs to clipboard" }, 1500)
+            Toast.makeText(c, "Full init logs copied to clipboard", Toast.LENGTH_SHORT).show()
         }
 
         // ── Force report to GitHub ─────────────────────────────────────────────

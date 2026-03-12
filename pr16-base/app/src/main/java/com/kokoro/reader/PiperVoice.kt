@@ -68,7 +68,7 @@ object PiperVoices {
     // ── English (US) — curated selection ────────────────────────────────────
     private val EN_US = listOf(
         piper("lessac",  "Female", "English (US)", "American", "en_US", "medium"),
-        piper("amy",     "Female", "English (US)", "American", "en_US", "medium"),
+        piper("ljspeech","Female", "English (US)", "American", "en_US", "medium"),
         piper("kristin", "Female", "English (US)", "American", "en_US", "medium"),
         piper("ryan",    "Male",   "English (US)", "American", "en_US", "medium"),
         piper("joe",     "Male",   "English (US)", "American", "en_US", "medium"),

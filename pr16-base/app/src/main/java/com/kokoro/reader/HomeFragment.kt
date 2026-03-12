@@ -101,18 +101,10 @@ class HomeFragment : Fragment() {
         val txtRestrictedStatus = v.findViewById<TextView>(R.id.txt_restricted_status)
         updateRestrictedStatus(txtRestrictedStatus)
         btnRestricted.setOnClickListener {
-            try {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:${requireContext().packageName}")
-                }
-                startActivity(intent)
-            } catch (_: Exception) {
-                // Fallback: open app detail settings where user can allow restricted settings
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:${requireContext().packageName}")
-                }
-                startActivity(intent)
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${requireContext().packageName}")
             }
+            startActivity(intent)
         }
     }
 

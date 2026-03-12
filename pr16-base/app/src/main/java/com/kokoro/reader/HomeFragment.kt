@@ -101,20 +101,10 @@ class HomeFragment : Fragment() {
         val txtRestrictedStatus = v.findViewById<TextView>(R.id.txt_restricted_status)
         updateRestrictedStatus(txtRestrictedStatus)
         btnRestricted.setOnClickListener {
-            val pkg = requireContext().packageName
-            try {
-                // Android 13+ (API 33): direct restricted settings page
-                val intent = Intent("android.settings.MANAGE_APP_RESTRICTED_SETTINGS").apply {
-                    data = Uri.parse("package:$pkg")
-                }
-                startActivity(intent)
-            } catch (_: Exception) {
-                // Pre-13 or unresolvable: open app info page
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:$pkg")
-                }
-                startActivity(intent)
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${requireContext().packageName}")
             }
+            startActivity(intent)
         }
     }
 

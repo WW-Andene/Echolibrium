@@ -63,8 +63,6 @@ class ProfilesFragment : Fragment() {
         setupCollapsibleSection(v, R.id.label_breathiness, R.id.section_breathiness, "// BREATHINESS")
         setupCollapsibleSection(v, R.id.label_stuttering, R.id.section_stuttering, "// STUTTERING")
         setupCollapsibleSection(v, R.id.label_intonation, R.id.section_intonation, "// INTONATION")
-        setupCollapsibleSection(v, R.id.label_gimmicks, R.id.gimmicks_container,
-            "// GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)")
     }
 
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
@@ -137,127 +135,156 @@ class ProfilesFragment : Fragment() {
     private fun renderVoiceGrid() {
         voiceGrid.removeAllViews()
 
+        // ── Model download status banner ──────────────────────────────────
+        if (!VoiceDownloadManager.isModelReady(requireContext())) {
+            voiceGrid.addView(buildDownloadBanner())
+            return
+        }
+
         // ── Filter Kokoro voices ──────────────────────────────────────────
-        val kokoroFiltered = KokoroVoices.ALL.filter { v ->
+        val filtered = KokoroVoices.ALL.filter { v ->
             val gOk = genderFilter   == "All" || v.gender   == genderFilter
             val lOk = languageFilter == "All" || v.language == languageFilter
             gOk && lOk
         }
 
-        // ── Filter Piper voices ───────────────────────────────────────────
-        val piperFiltered = PiperVoiceCatalog.ALL.filter { v ->
-            val gOk = genderFilter   == "All" || v.gender   == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-
-        if (kokoroFiltered.isEmpty() && piperFiltered.isEmpty()) {
+        if (filtered.isEmpty()) {
             voiceGrid.addView(TextView(requireContext()).apply {
                 text = "No voices match filter."; setTextColor(0xFF446644.toInt()); textSize = 12f
             }); return
         }
 
-        // ── Kokoro voices (grouped by language) ──────────────────────────
-        if (kokoroFiltered.isNotEmpty()) {
-            kokoroFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-                voiceGrid.addView(TextView(requireContext()).apply {
-                    text = "KOKORO · ${lang.uppercase()}  (${voices.size})"
-                    textSize = 10f; setTextColor(0xFF446644.toInt())
-                    setPadding(4, 14, 0, 6)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                })
-                renderKokoroVoiceRows(voices)
-            }
-        }
-
-        // ── Piper voices (grouped by language) ───────────────────────────
-        if (piperFiltered.isNotEmpty()) {
-            piperFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-                // De-duplicate by name (show only recommended quality per voice name)
-                val deduped = voices.groupBy { it.name }.map { (_, variants) ->
-                    variants.find { it.quality == "medium" } ?: variants.first()
-                }
-                voiceGrid.addView(TextView(requireContext()).apply {
-                    text = "PIPER · ${lang.uppercase()}  (${deduped.size})"
-                    textSize = 10f; setTextColor(0xFF446644.toInt())
-                    setPadding(4, 14, 0, 6)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                })
-                renderPiperVoiceRows(deduped)
-            }
-        }
-    }
-
-    private fun renderKokoroVoiceRows(voices: List<KokoroVoice>) {
-        renderVoiceCardRows(voices.map { v ->
-            VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                "${v.flagEmoji} ${v.nationality}", v.id, 0xFF00ff88.toInt())
-        })
-    }
-
-    private fun renderPiperVoiceRows(voices: List<PiperVoice>) {
-        renderVoiceCardRows(voices.map { v ->
-            VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                "${v.flagEmoji} ${v.nationality}", "${v.quality} · ${v.name}", 0xFF00ccff.toInt())
-        })
-    }
-
-    private data class VoiceCardData(
-        val voiceId: String, val genderIcon: String, val genderColor: Int,
-        val displayName: String, val subtitle: String, val detail: String,
-        val accentColor: Int
-    )
-
-    private fun renderVoiceCardRows(cards: List<VoiceCardData>) {
-        val chunkSize = 3
-        cards.chunked(chunkSize).forEach { rowCards ->
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
+        // Group by language
+        filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
+            voiceGrid.addView(TextView(requireContext()).apply {
+                text = "${lang.uppercase()}  (${voices.size})"
+                textSize = 10f; setTextColor(0xFF446644.toInt())
+                setPadding(4, 14, 0, 6)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            }
-            rowCards.forEach { c ->
-                val active = currentProfile.voiceName == c.voiceId
-                val card = LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = android.view.Gravity.CENTER
-                    setPadding(10, 14, 10, 14)
-                    val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    lp.setMargins(0, 0, 4, 4); layoutParams = lp
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
-                        setStroke(if (active) 2 else 0, c.accentColor)
-                        cornerRadius = 4f
+            })
+
+            val chunkSize = 3
+            voices.chunked(chunkSize).forEach { rowVoices ->
+                val row = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                }
+                rowVoices.forEach { v ->
+                    val active = currentProfile.voiceName == v.id
+                    val card = LinearLayout(requireContext()).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = android.view.Gravity.CENTER
+                        setPadding(10, 14, 10, 14)
+                        val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        lp.setMargins(0, 0, 4, 4); layoutParams = lp
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
+                            setStroke(if (active) 2 else 0, 0xFF00ff88.toInt())
+                            cornerRadius = 4f
+                        }
+                        setOnClickListener {
+                            currentProfile = currentProfile.copy(voiceName = v.id)
+                            renderVoiceGrid()
+                        }
                     }
+                    card.addView(TextView(requireContext()).apply {
+                        text = v.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
+                        setTextColor(v.genderColor)
+                    })
+                    card.addView(TextView(requireContext()).apply {
+                        text = v.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
+                        setTextColor(if (active) 0xFF00ff88.toInt() else 0xFFcccccc.toInt())
+                    })
+                    card.addView(TextView(requireContext()).apply {
+                        text = "${v.flagEmoji} ${v.nationality}"; textSize = 9f; gravity = android.view.Gravity.CENTER
+                        setTextColor(if (active) 0xFF00cc66.toInt() else 0xFF446644.toInt())
+                    })
+                    card.addView(TextView(requireContext()).apply {
+                        text = v.id; textSize = 8f; gravity = android.view.Gravity.CENTER
+                        setTextColor(0xFF333333.toInt())
+                    })
+                    row.addView(card)
+                }
+                repeat(chunkSize - rowVoices.size) {
+                    row.addView(android.view.View(requireContext()).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                    })
+                }
+                voiceGrid.addView(row)
+            }
+        }
+    }
+
+    private fun buildDownloadBanner(): android.view.View {
+        val ctx = requireContext()
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF1a1a00.toInt()); setPadding(20, 16, 20, 16)
+        }
+        val state = VoiceDownloadManager.state
+
+        when (state) {
+            VoiceDownloadManager.State.NOT_DOWNLOADED, VoiceDownloadManager.State.ERROR -> {
+                card.addView(TextView(ctx).apply {
+                    text = if (state == VoiceDownloadManager.State.ERROR)
+                        "⚠ Download failed: ${VoiceDownloadManager.errorMessage}"
+                    else "🎙 No voice model installed"
+                    textSize = 13f; setTextColor(0xFFffcc00.toInt()); setPadding(0, 0, 0, 8)
+                })
+                card.addView(TextView(ctx).apply {
+                    text = "The Kokoro voice model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) needs to be downloaded once.\nWi-Fi recommended."
+                    textSize = 12f; setTextColor(0xFF888888.toInt()); setPadding(0, 0, 0, 12)
+                })
+                card.addView(Button(ctx).apply {
+                    text = "⬇ DOWNLOAD KOKORO VOICES"
+                    setBackgroundColor(0xFF1a3a1a.toInt()); setTextColor(0xFF00ff88.toInt())
                     setOnClickListener {
-                        currentProfile = currentProfile.copy(voiceName = c.voiceId)
+                        VoiceDownloadManager.onProgress { pct ->
+                            // Update only the progress text and bar, not the whole grid
+                            activity?.runOnUiThread {
+                                if (!isAdded) return@runOnUiThread
+                                updateDownloadProgress(pct)
+                            }
+                        }
+                        VoiceDownloadManager.onStateChange { _ ->
+                            activity?.runOnUiThread {
+                                if (!isAdded) return@runOnUiThread
+                                buildFilterButtons(); renderVoiceGrid()
+                            }
+                        }
+                        VoiceDownloadManager.downloadModel(ctx)
                         renderVoiceGrid()
                     }
+                })
+            }
+            VoiceDownloadManager.State.DOWNLOADING -> {
+                val pct = VoiceDownloadManager.progressPercent
+                val statusText = TextView(ctx).apply {
+                    tag = "download_status"
+                    text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
+                    textSize = 13f; setTextColor(0xFF00ff88.toInt())
                 }
-                card.addView(TextView(requireContext()).apply {
-                    text = c.genderIcon; textSize = 20f; gravity = android.view.Gravity.CENTER
-                    setTextColor(c.genderColor)
-                })
-                card.addView(TextView(requireContext()).apply {
-                    text = c.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) c.accentColor else 0xFFcccccc.toInt())
-                })
-                card.addView(TextView(requireContext()).apply {
-                    text = c.subtitle; textSize = 9f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) c.accentColor else 0xFF446644.toInt())
-                })
-                card.addView(TextView(requireContext()).apply {
-                    text = c.detail; textSize = 8f; gravity = android.view.Gravity.CENTER
-                    setTextColor(0xFF333333.toInt())
-                })
-                row.addView(card)
+                card.addView(statusText)
+                val bar = android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    tag = "download_bar"
+                    max = 100; progress = if (pct >= 0) pct else 100
+                    isIndeterminate = pct < 0
+                    val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24)
+                    lp.setMargins(0, 12, 0, 0); layoutParams = lp
+                }
+                card.addView(bar)
             }
-            repeat(chunkSize - rowCards.size) {
-                row.addView(android.view.View(requireContext()).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                })
-            }
-            voiceGrid.addView(row)
+            VoiceDownloadManager.State.READY -> { /* won't reach here */ }
         }
+        return card
+    }
+
+    private fun updateDownloadProgress(pct: Int) {
+        val statusView = voiceGrid.findViewWithTag<TextView>("download_status") ?: return
+        val barView = voiceGrid.findViewWithTag<android.widget.ProgressBar>("download_bar") ?: return
+        statusView.text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
+        barView.isIndeterminate = pct < 0
+        if (pct >= 0) barView.progress = pct
     }
 
     private fun buildPresets() {

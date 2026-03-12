@@ -77,14 +77,39 @@ jobs:
           echo ""
           echo "All TTS assets verified ✓"
 
+      # Decode signing keystore from GitHub secret (base64-encoded)
+      # If KEYSTORE_BASE64 secret is not set, the build produces an unsigned APK
+      - name: Decode keystore
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+
       - run: chmod +x gradlew
-      - run: ./gradlew assembleRelease
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
 
       # Verify the APK contains the native library
       - name: Verify APK contents
         run: |
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          # Find the APK — signed builds go to app-release.apk, unsigned to app-release-unsigned.apk
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK" ]; then
+            APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          fi
+          echo "APK: $APK"
           echo "APK size: $(du -h "$APK" | cut -f1)"
+
+          # Check signing status
+          if jarsigner -verify -verbose -certs "$APK" 2>/dev/null | grep -q "jar verified"; then
+            echo "✓ APK is signed"
+          else
+            echo "⚠ APK is unsigned (set KEYSTORE_BASE64 secret to enable signing)"
+          fi
 
           # Check for native library
           if unzip -l "$APK" | grep -q "lib/arm64-v8a/.*\.so"; then
@@ -108,5 +133,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KokoroReader-v4
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30

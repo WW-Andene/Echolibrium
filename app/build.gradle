@@ -35,6 +35,19 @@ preBuild.dependsOn downloadTtsModels
 android {
     namespace 'com.kokoro.reader'
     compileSdk 34
+
+    signingConfigs {
+        release {
+            def ksFile = file("${rootProject.projectDir}/keystore.jks")
+            if (ksFile.exists()) {
+                storeFile ksFile
+                storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
+                keyAlias System.getenv("KEY_ALIAS") ?: "echolibrium"
+                keyPassword System.getenv("KEY_PASSWORD") ?: ""
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.kokoro.reader"
         minSdk 26
@@ -62,6 +75,10 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            def ksFile = file("${rootProject.projectDir}/keystore.jks")
+            if (ksFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {

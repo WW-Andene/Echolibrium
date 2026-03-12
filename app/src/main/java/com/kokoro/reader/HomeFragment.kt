@@ -148,8 +148,24 @@ class HomeFragment : Fragment() {
                 val result = GitHubReporter.forceReport(c)
                 activity?.runOnUiThread {
                     btnForceReport.isEnabled = true
-                    btnForceReport.text = "Force report to GitHub"
-                    Toast.makeText(c, result, Toast.LENGTH_LONG).show()
+                    btnForceReport.text = "Report to GitHub"
+                    Toast.makeText(c, result.message, Toast.LENGTH_LONG).show()
+                    // If API failed/no token, open browser with pre-filled issue
+                    if (!result.success && result.browserFallbackUrl != null) {
+                        // Copy full logs to clipboard first (URL has size limits)
+                        val logText = initLogContent.text?.toString() ?: ""
+                        if (logText.isNotEmpty()) {
+                            val clipboard = c.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as? android.content.ClipboardManager
+                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Kyōkan logs", logText))
+                        }
+                        try {
+                            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(result.browserFallbackUrl)))
+                        } catch (_: Throwable) {
+                            Toast.makeText(c, "No browser found — logs copied to clipboard", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 }
             }.apply { name = "ForceReport"; isDaemon = true; start() }
         }

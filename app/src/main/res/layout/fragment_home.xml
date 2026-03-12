@@ -64,7 +64,7 @@
             android:layout_marginBottom="2dp" android:visibility="gone"/>
 
         <Button android:id="@+id/btn_force_report" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="Force report to GitHub"
+            android:layout_height="wrap_content" android:text="Report to GitHub"
             android:backgroundTint="@color/surface" android:textColor="@color/status_warning"
             android:fontFamily="monospace" android:textSize="11sp"
             android:layout_marginBottom="8dp"/>

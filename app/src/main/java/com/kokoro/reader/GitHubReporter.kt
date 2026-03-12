@@ -61,22 +61,38 @@ object GitHubReporter {
         }.apply { name = "GitHubReporter-autoReport"; isDaemon = true; start() }
     }
 
+    /** Result of a report attempt. */
+    data class ReportResult(
+        val success: Boolean,
+        val message: String,
+        /** If API failed, provides a pre-filled browser URL as fallback. */
+        val browserFallbackUrl: String? = null
+    )
+
     /**
      * Manually triggered report — bypasses rate limiting and delay.
      * Called from "Force report to GitHub" button.
-     * Returns a result message for the UI.
+     * If the API token is missing or the request fails, returns a browser
+     * fallback URL so the user can open a pre-filled GitHub issue in the browser.
      */
-    fun forceReport(ctx: Context): String {
-        val token = BuildConfig.GITHUB_ISSUES_TOKEN
-        if (token.isEmpty()) {
-            return "No GitHub token configured (set github.issues.token in local.properties)"
-        }
-
+    fun forceReport(ctx: Context): ReportResult {
         val status = TtsBridge.readStatus(ctx)
-
-        // Build diagnostics even if no error — user wants to force it
         val title = buildTitle(ctx, status)
         val body = buildBody(ctx, status)
+
+        // Always prepare the browser fallback URL
+        val truncatedBody = if (body.length > 6000) body.take(6000) + "\n\n... (truncated — full log copied to clipboard)" else body
+        val fallbackUrl = android.net.Uri.parse("https://github.com/$GITHUB_REPO/issues/new").buildUpon()
+            .appendQueryParameter("title", title)
+            .appendQueryParameter("body", truncatedBody)
+            .appendQueryParameter("labels", "manual-report")
+            .build()
+            .toString()
+
+        val token = BuildConfig.GITHUB_ISSUES_TOKEN
+        if (token.isEmpty()) {
+            return ReportResult(false, "Opening GitHub in browser…", fallbackUrl)
+        }
 
         val success = createGitHubIssue(token, title, body, listOf("manual-report"))
         return if (success) {
@@ -85,9 +101,9 @@ object GitHubReporter {
                 .putString(KEY_LAST_REPORT_HASH, (status.error ?: "manual").hashCode().toString())
                 .putLong(KEY_LAST_REPORT_TIME, System.currentTimeMillis())
                 .apply()
-            "Report sent to GitHub Issues"
+            ReportResult(true, "Report sent to GitHub Issues")
         } else {
-            "Failed to create GitHub issue — check token/network"
+            ReportResult(false, "API failed — opening GitHub in browser…", fallbackUrl)
         }
     }
 

@@ -1270,6 +1270,18 @@ object SherpaEngine {
 
         var initWakeLock: PowerManager.WakeLock? = null
         return try {
+            // Acquire a partial WakeLock to keep the CPU alive during model loading.
+            // On Xiaomi/HyperOS, even foreground services get killed during long CPU-intensive
+            // operations (310MB ONNX model load can take 2-4 min on MediaTek).
+            try {
+                val pm = ctx.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                initWakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Kyokan:KokoroInit")
+                initWakeLock?.setReferenceCounted(false)
+                initWakeLock?.acquire(5 * 60 * 1000L)  // 5 min max — safety timeout
+                plog("initKokoro: WakeLock acquired")
+            } catch (e: Throwable) {
+                plog("initKokoro: WakeLock failed: ${e.message}")
+            }
             val initGlobalStart = System.currentTimeMillis()
             var probeElapsedMs = 0L
 
@@ -1476,6 +1488,7 @@ object SherpaEngine {
                 lastTelemetry = telemetry
                 writeInitLog(ctx, msg, telemetry = telemetry)
                 syncStatus()
+                try { initWakeLock?.release() } catch (_: Throwable) {}
                 return false
             }
 
@@ -1564,6 +1577,7 @@ object SherpaEngine {
                 isReady = false
                 writeInitLog(ctx, "Direct load timed out after ${loadElapsed}ms", telemetry = telemetry)
                 syncStatus()
+                try { initWakeLock?.release() } catch (_: Throwable) {}
                 return false
             }
 
@@ -1588,10 +1602,12 @@ object SherpaEngine {
                 errorMessage = "Engine returned null"
                 isReady = false
                 writeInitLog(ctx, "OfflineTts() returned null", telemetry = telemetry)
+                try { initWakeLock?.release() } catch (_: Throwable) {}
                 return false
             }
 
             // ── SUCCESS ──────────────────────────────────────────────────
+            try { initWakeLock?.release(); initWakeLock = null } catch (_: Throwable) {}
             initPrefs.edit()
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putInt(KEY_INIT_CRASH_COUNT, 0)

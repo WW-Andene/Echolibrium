@@ -973,6 +973,8 @@ object SherpaEngine {
     private const val KEY_SKIP_ORT = "skip_ort"
     /** Tracks how many times the OS killed the process during init (memory pressure). */
     private const val KEY_INIT_OS_KILL_COUNT = "init_os_kill_count"
+    /** If true, force INT8 model on next init (set after OS kills during FP32 loading). */
+    private const val KEY_FORCE_INT8 = "force_int8"
     /** Base delay (ms) for exponential backoff after crashes. Delay = base * 2^(n-1). */
     private const val CRASH_BACKOFF_BASE_MS = 3_000L   // 3s, 6s, 12s, 24s, 48s…
     /** Max backoff delay (ms) — caps at ~1 minute, then retries forever at this interval. */
@@ -1027,6 +1029,7 @@ object SherpaEngine {
                 .putInt(KEY_INIT_OS_KILL_COUNT, 0)
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putBoolean(KEY_SKIP_ORT, false)
+                .putBoolean(KEY_FORCE_INT8, false)
                 .putLong("last_init_version", currentVersion)
                 .apply()
         }
@@ -1054,10 +1057,14 @@ object SherpaEngine {
             } else {
                 // OS killed process during init — likely memory pressure.
                 // Track separately: after OS_KILL_THRESHOLD kills, skip Kokoro.
+                // Also force INT8 model on next attempt (smaller memory footprint).
                 val osKillCount = initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0) + 1
-                initPrefs.edit().putInt(KEY_INIT_OS_KILL_COUNT, osKillCount).apply()
-                plog("warmUp: OS killed process (not native crash) — osKillCount=$osKillCount")
-                Log.i(TAG, "Previous engine init: OS killed process (memory pressure?) — osKillCount=$osKillCount, crashCount stays at $crashCount")
+                initPrefs.edit()
+                    .putInt(KEY_INIT_OS_KILL_COUNT, osKillCount)
+                    .putBoolean(KEY_FORCE_INT8, true)
+                    .apply()
+                plog("warmUp: OS killed process (not native crash) — osKillCount=$osKillCount, will force INT8")
+                Log.i(TAG, "Previous engine init: OS killed process (memory pressure?) — osKillCount=$osKillCount, forcing INT8 on next attempt")
             }
             initPrefs.edit()
                 .putInt(KEY_INIT_CRASH_COUNT, crashCount)
@@ -1322,6 +1329,7 @@ object SherpaEngine {
             .putInt(KEY_INIT_OS_KILL_COUNT, 0)
             .putBoolean(KEY_INIT_IN_PROGRESS, false)
             .putBoolean(KEY_SKIP_ORT, false)
+            .putBoolean(KEY_FORCE_INT8, false)
             .remove(KEY_INIT_FORMAT)
             .apply()
         errorMessage = null
@@ -1578,14 +1586,16 @@ object SherpaEngine {
             val ortFile = File(extractedDir, "model.ort")
             val hasInt8 = int8File.exists() && int8File.length() > 50L * 1024 * 1024  // >50MB sanity
             val hasFp32 = onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE
+            val forceInt8 = initPrefs.getBoolean(KEY_FORCE_INT8, false)
 
-            val useInt8 = hasInt8 && (memInfo.availMem < MIN_RAM_FOR_FP32_BYTES || !hasFp32)
+            val useInt8 = hasInt8 && (forceInt8 || memInfo.availMem < MIN_RAM_FOR_FP32_BYTES || !hasFp32)
             val modelFile: File
             if (useInt8 && memInfo.availMem >= MIN_RAM_FOR_INT8_BYTES) {
                 modelFile = int8File
-                plog("initKokoro: using INT8 model (${availMB}MB RAM, need ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB for FP32)")
-                Log.i(TAG, "│ RAM: ${availMB}MB — using INT8 quantized model (${int8File.length() / 1024 / 1024}MB)")
-                statusMessage = "loading Kokoro INT8 model (low RAM)…"
+                val reason = if (forceInt8) "OS killed FP32 init" else "low RAM (${availMB}MB)"
+                plog("initKokoro: using INT8 model ($reason, need ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB for FP32)")
+                Log.i(TAG, "│ Using INT8 model ($reason) — ${int8File.length() / 1024 / 1024}MB")
+                statusMessage = "loading Kokoro INT8 model…"
                 syncStatus()
             } else if (memInfo.availMem >= MIN_RAM_FOR_FP32_BYTES || !hasInt8) {
                 // Enough RAM for FP32, or INT8 not available
@@ -1729,6 +1739,7 @@ object SherpaEngine {
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
                 .putInt(KEY_INIT_OS_KILL_COUNT, 0)
+                // Keep force_int8 if it worked — no point going back to FP32 OOM
                 .apply()
 
             initProgress = 100

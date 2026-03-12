@@ -5,10 +5,8 @@ import android.util.Log
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
-import java.io.BufferedInputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.zip.GZIPInputStream
 
 /**
  * Manages Piper TTS voice downloads from the repo's tts-assets-v1 release.
@@ -180,51 +178,26 @@ object PiperDownloadManager {
             tmpTokens.renameTo(tokensFile)
         }
 
-        // Download espeak-ng-data
+        // Download espeak-ng-data (7MB tar.bz2 from k2-fsa)
         if (!espeakDir.isDirectory) {
             Log.d(TAG, "Downloading shared espeak-ng-data")
             onProgress?.invoke(voiceId, -1)
 
-            // Try repo release first
-            val espeakArchive = File(sharedDir, "espeak-ng-data.tar.gz")
-            var extracted = false
-
+            val espeakArchive = File(sharedDir, "espeak-ng-data.tar.bz2")
             try {
                 download(PiperVoices.espeakUrl(), espeakArchive) {}
-                extractTarGz(espeakArchive, sharedDir)
+                Log.d(TAG, "Extracting espeak-ng-data (${espeakArchive.length() / 1024}KB)")
+                extractTarBz2(espeakArchive, sharedDir)
                 espeakArchive.delete()
-                extracted = espeakDir.isDirectory
             } catch (e: Exception) {
-                Log.w(TAG, "espeak-ng-data.tar.gz not in release, using fallback", e)
                 espeakArchive.delete()
-            }
-
-            // Fallback: extract from k2-fsa lessac tar.bz2
-            if (!extracted) {
-                Log.d(TAG, "Fallback: extracting espeak-ng-data from k2-fsa lessac archive")
-                val fallbackTar = File(sharedDir, "fallback.tar.bz2")
-                val fallbackDir = File(sharedDir, "fallback-extract")
-                try {
-                    download(PiperVoices.espeakFallbackUrl(), fallbackTar) {}
-                    fallbackDir.mkdirs()
-                    extractTarBz2Selective(fallbackTar, fallbackDir, "espeak-ng-data")
-                    // Also grab tokens.txt if we don't have it
-                    if (!tokensFile.exists()) {
-                        extractTarBz2Selective(fallbackTar, fallbackDir, "tokens.txt")
-                        val extractedTokens = findFile(fallbackDir, "tokens.txt")
-                        extractedTokens?.copyTo(tokensFile, overwrite = true)
-                    }
-                    val extractedEspeak = findDir(fallbackDir, "espeak-ng-data")
-                    extractedEspeak?.copyRecursively(espeakDir, overwrite = true)
-                } finally {
-                    fallbackTar.delete()
-                    fallbackDir.deleteRecursively()
-                }
+                throw Exception("Failed to download espeak-ng-data: ${e.message}", e)
             }
 
             if (!espeakDir.isDirectory) {
-                throw Exception("Failed to download espeak-ng-data")
+                throw Exception("espeak-ng-data extraction failed — directory not found")
             }
+            Log.d(TAG, "espeak-ng-data ready (${espeakDir.listFiles()?.size ?: 0} entries)")
         }
     }
 
@@ -280,10 +253,10 @@ object PiperDownloadManager {
         }
     }
 
-    private fun extractTarGz(archive: File, destDir: File) {
+    private fun extractTarBz2(archive: File, destDir: File) {
         archive.inputStream().buffered().use { raw ->
-            GZIPInputStream(raw).use { gz ->
-                TarArchiveInputStream(gz).use { tar ->
+            BZip2CompressorInputStream(raw).use { bz2 ->
+                TarArchiveInputStream(bz2).use { tar ->
                     var entry = tar.nextTarEntry
                     while (entry != null) {
                         val outFile = File(destDir, entry.name)
@@ -300,57 +273,6 @@ object PiperDownloadManager {
                 }
             }
         }
-    }
-
-    /**
-     * Extract only entries matching targetName from a tar.bz2 archive.
-     */
-    private fun extractTarBz2Selective(archive: File, destDir: File, targetName: String) {
-        archive.inputStream().buffered().use { raw ->
-            BZip2CompressorInputStream(raw).use { bz2 ->
-                TarArchiveInputStream(bz2).use { tar ->
-                    var entry = tar.nextTarEntry
-                    while (entry != null) {
-                        if (entry.name.contains(targetName)) {
-                            val outFile = File(destDir, entry.name)
-                            if (entry.isDirectory) {
-                                outFile.mkdirs()
-                            } else {
-                                outFile.parentFile?.mkdirs()
-                                outFile.outputStream().use { out ->
-                                    tar.copyTo(out, bufferSize = 32 * 1024)
-                                }
-                            }
-                        }
-                        entry = tar.nextTarEntry
-                    }
-                }
-            }
-        }
-    }
-
-    private fun findFile(dir: File, name: String): File? {
-        if (!dir.isDirectory) return null
-        dir.listFiles()?.forEach { f ->
-            if (f.isFile && f.name == name) return f
-            if (f.isDirectory) {
-                val found = findFile(f, name)
-                if (found != null) return found
-            }
-        }
-        return null
-    }
-
-    private fun findDir(dir: File, name: String): File? {
-        if (!dir.isDirectory) return null
-        dir.listFiles()?.forEach { f ->
-            if (f.isDirectory && f.name == name) return f
-            if (f.isDirectory) {
-                val found = findDir(f, name)
-                if (found != null) return found
-            }
-        }
-        return null
     }
 
     private fun copyFileIfMissing(src: File, dest: File) {

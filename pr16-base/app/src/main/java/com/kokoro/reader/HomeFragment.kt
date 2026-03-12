@@ -1,6 +1,9 @@
 package com.kokoro.reader
 
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import android.view.*
@@ -76,11 +79,30 @@ class HomeFragment : Fragment() {
         })
 
         btnStop.setOnClickListener { NotificationReaderService.instance?.stopSpeaking() }
+
+        // Battery optimization bypass
+        val btnBattery = v.findViewById<Button>(R.id.btn_battery)
+        val txtBatteryStatus = v.findViewById<TextView>(R.id.txt_battery_status)
+        updateBatteryStatus(btnBattery, txtBatteryStatus)
+        btnBattery.setOnClickListener {
+            val pm = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(requireContext().packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${requireContext().packageName}")
+                }
+                startActivity(intent)
+            } else {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        view?.let { updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission)) }
+        view?.let {
+            updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission))
+            updateBatteryStatus(it.findViewById(R.id.btn_battery), it.findViewById(R.id.txt_battery_status))
+        }
     }
 
     private fun updateStatus(tv: TextView, btn: Button) {
@@ -89,6 +111,20 @@ class HomeFragment : Fragment() {
                   else "✗ Notification access required"
         tv.setTextColor(requireContext().getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
         btn.text = if (granted) "Notification Settings" else "Grant Permission"
+    }
+
+    private fun updateBatteryStatus(btn: Button, txt: TextView) {
+        val pm = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
+        val exempt = pm.isIgnoringBatteryOptimizations(requireContext().packageName)
+        if (exempt) {
+            btn.text = "✓ Battery Optimization Disabled"
+            btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
+            txt.text = "App can run freely in background"
+        } else {
+            btn.text = "⚡ Disable Battery Optimization"
+            btn.setTextColor(0xFF88ccff.toInt())
+            txt.text = "Required to keep reading when screen is off"
+        }
     }
 
     private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {

@@ -20,11 +20,13 @@ class NotificationReaderService : NotificationListenerService() {
         super.onCreate()
         instance = this
         AudioPipeline.start(this)
+        TtsAliveService.start(this)
     }
 
     override fun onDestroy() {
         instance = null
         AudioPipeline.shutdown()
+        TtsAliveService.stop(this)
         super.onDestroy()
     }
 

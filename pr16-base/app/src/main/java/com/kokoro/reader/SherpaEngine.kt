@@ -113,13 +113,26 @@ object SherpaEngine {
         return try {
             val voiceDir = PiperDownloadManager.getVoiceDir(ctx, voiceId)
             val modelFile = PiperDownloadManager.getModelFile(voiceDir, voiceId)
-                ?: throw IllegalStateException("No .onnx model found in $voiceDir")
+            if (modelFile == null) {
+                Log.e(TAG, "No .onnx model found in $voiceDir")
+                return false
+            }
+            val tokensFile = File(voiceDir, "tokens.txt")
+            val espeakDir = File(voiceDir, "espeak-ng-data")
+            if (!tokensFile.exists()) {
+                Log.e(TAG, "tokens.txt missing in $voiceDir")
+                return false
+            }
+            if (!espeakDir.exists() || !espeakDir.isDirectory) {
+                Log.e(TAG, "espeak-ng-data missing in $voiceDir")
+                return false
+            }
             Log.d(TAG, "Loading Piper voice $voiceId from ${modelFile.name}")
 
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model   = modelFile.absolutePath,
-                tokens  = File(voiceDir, "tokens.txt").absolutePath,
-                dataDir = File(voiceDir, "espeak-ng-data").absolutePath
+                tokens  = tokensFile.absolutePath,
+                dataDir = espeakDir.absolutePath
             )
 
             val modelConfig = OfflineTtsModelConfig(

@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 #
-# Downloads 9 Piper TTS voices from k2-fsa/sherpa-onnx releases and
-# prepares them as APK assets.
+# Downloads 9 Piper TTS voices from this repo's tts-assets-v1 release
+# and prepares them as APK assets.
+#
+# The release contains individual .onnx files (uploaded by upload-voices.yml)
+# plus shared piper-tokens.txt and espeak-ng-data.tar.gz.
 #
 # Layout:  app/src/main/assets/piper_voices/{voiceId}/
 #            ├── {voiceId}.onnx
-#            ├── {voiceId}.onnx.json
 #            ├── tokens.txt
-#            └── espeak-ng-data/   (shared copy — symlinked after first extract)
-#
-# Optimization: espeak-ng-data/ is identical across all en_* voices.
-# We keep ONE full copy and use hardlinks for the rest (saves ~50MB in APK).
+#            └── espeak-ng-data/
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ASSETS_DIR="$SCRIPT_DIR/src/main/assets/piper_voices"
 TEMP_DIR="$SCRIPT_DIR/build/piper-download-tmp"
-BASE_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models"
+
+# GitHub repo release URL
+REPO_OWNER="${GITHUB_REPOSITORY:-WW-Andene/Echolibrium}"
+RELEASE_TAG="tts-assets-v1"
+BASE_URL="https://github.com/${REPO_OWNER}/releases/download/${RELEASE_TAG}"
 
 # ── Voice list (9 voices: 6 en_US + 3 en_GB) ─────────────────────────────
 VOICES=(
@@ -40,12 +43,45 @@ trap cleanup EXIT
 
 mkdir -p "$ASSETS_DIR" "$TEMP_DIR"
 
+# ── Step 1: Download shared assets (tokens + espeak-ng-data) ─────────────
+echo "=== Downloading shared Piper assets ==="
+
+TOKENS_FILE="$TEMP_DIR/tokens.txt"
+ESPEAK_ARCHIVE="$TEMP_DIR/espeak-ng-data.tar.gz"
+ESPEAK_DIR="$TEMP_DIR/espeak-ng-data"
+
+if [ ! -f "$TOKENS_FILE" ]; then
+    echo "  [download] piper-tokens.txt"
+    curl -fL --retry 3 --retry-delay 2 -o "$TOKENS_FILE" \
+        "$BASE_URL/piper-tokens.txt"
+    echo "  [ok]       tokens.txt ($(wc -c < "$TOKENS_FILE") bytes)"
+fi
+
+if [ ! -d "$ESPEAK_DIR" ]; then
+    echo "  [download] espeak-ng-data.tar.gz"
+    curl -fL --retry 3 --retry-delay 2 -o "$ESPEAK_ARCHIVE" \
+        "$BASE_URL/espeak-ng-data.tar.gz"
+    echo "  [extract]  espeak-ng-data"
+    tar xzf "$ESPEAK_ARCHIVE" -C "$TEMP_DIR"
+
+    # Strip non-English dicts to save space
+    BEFORE_SIZE=$(du -sm "$ESPEAK_DIR" | cut -f1)
+    for DICT_FILE in "$ESPEAK_DIR/"*_dict; do
+        BASENAME=$(basename "$DICT_FILE")
+        if ! echo "$KEEP_DICTS" | grep -qw "$BASENAME"; then
+            rm -f "$DICT_FILE"
+        fi
+    done
+    AFTER_SIZE=$(du -sm "$ESPEAK_DIR" | cut -f1)
+    echo "  [strip]    espeak-ng-data: ${BEFORE_SIZE}MB → ${AFTER_SIZE}MB"
+    rm -f "$ESPEAK_ARCHIVE"
+fi
+
+# ── Step 2: Download each voice .onnx and assemble with shared assets ─────
+echo ""
 echo "=== Downloading ${#VOICES[@]} Piper voices ==="
-ESPEAK_REF=""
 
 for VOICE_ID in "${VOICES[@]}"; do
-    ARCHIVE_NAME="vits-piper-${VOICE_ID}"
-    TAR_FILE="$TEMP_DIR/${ARCHIVE_NAME}.tar.bz2"
     VOICE_DIR="$ASSETS_DIR/$VOICE_ID"
 
     if [ -d "$VOICE_DIR" ] && [ -f "$VOICE_DIR/${VOICE_ID}.onnx" ]; then
@@ -54,54 +90,24 @@ for VOICE_ID in "${VOICES[@]}"; do
     fi
 
     echo "  [download] $VOICE_ID"
-    curl -L --retry 3 --retry-delay 2 --fail -o "$TAR_FILE" \
-        "$BASE_URL/${ARCHIVE_NAME}.tar.bz2"
+    ONNX_FILE="$TEMP_DIR/${VOICE_ID}.onnx"
+    curl -fL --retry 3 --retry-delay 2 -o "$ONNX_FILE" \
+        "$BASE_URL/${VOICE_ID}.onnx"
 
-    # Verify the download isn't a tiny error page
-    FILE_SIZE=$(wc -c < "$TAR_FILE")
+    # Verify download
+    FILE_SIZE=$(wc -c < "$ONNX_FILE")
     if [ "$FILE_SIZE" -lt 1000 ]; then
-        echo "  [ERROR] $VOICE_ID download too small (${FILE_SIZE} bytes) — URL may be invalid"
-        rm -f "$TAR_FILE"
+        echo "  [ERROR] $VOICE_ID too small (${FILE_SIZE} bytes) — asset may be missing from release"
+        rm -f "$ONNX_FILE"
         exit 1
     fi
+    echo "  [ok]       ${VOICE_ID}.onnx ($(du -h "$ONNX_FILE" | cut -f1))"
 
-    echo "  [extract]  $VOICE_ID"
+    # Assemble voice directory
     mkdir -p "$VOICE_DIR"
-
-    # Extract model, tokens, json
-    tar xjf "$TAR_FILE" -C "$TEMP_DIR"
-    EXTRACTED="$TEMP_DIR/$ARCHIVE_NAME"
-
-    cp "$EXTRACTED/${VOICE_ID}.onnx" "$VOICE_DIR/"
-    [ -f "$EXTRACTED/${VOICE_ID}.onnx.json" ] && \
-        cp "$EXTRACTED/${VOICE_ID}.onnx.json" "$VOICE_DIR/"
-    cp "$EXTRACTED/tokens.txt" "$VOICE_DIR/"
-
-    # espeak-ng-data: keep one full copy, reuse for others
-    if [ -z "$ESPEAK_REF" ]; then
-        echo "  [espeak]   Keeping reference espeak-ng-data from $VOICE_ID"
-        cp -r "$EXTRACTED/espeak-ng-data" "$VOICE_DIR/"
-
-        # Strip non-English dicts to save space
-        echo "  [strip]    Removing non-English espeak dicts..."
-        BEFORE_SIZE=$(du -sm "$VOICE_DIR/espeak-ng-data" | cut -f1)
-        for DICT_FILE in "$VOICE_DIR/espeak-ng-data/"*_dict; do
-            BASENAME=$(basename "$DICT_FILE")
-            if ! echo "$KEEP_DICTS" | grep -qw "$BASENAME"; then
-                rm -f "$DICT_FILE"
-            fi
-        done
-        AFTER_SIZE=$(du -sm "$VOICE_DIR/espeak-ng-data" | cut -f1)
-        echo "  [strip]    espeak-ng-data: ${BEFORE_SIZE}MB → ${AFTER_SIZE}MB"
-
-        ESPEAK_REF="$VOICE_DIR/espeak-ng-data"
-    else
-        echo "  [espeak]   Copying shared espeak-ng-data for $VOICE_ID"
-        cp -r "$ESPEAK_REF" "$VOICE_DIR/"
-    fi
-
-    # Clean up extracted archive
-    rm -rf "$EXTRACTED" "$TAR_FILE"
+    mv "$ONNX_FILE" "$VOICE_DIR/"
+    cp "$TOKENS_FILE" "$VOICE_DIR/tokens.txt"
+    cp -r "$ESPEAK_DIR" "$VOICE_DIR/espeak-ng-data"
 done
 
 echo ""

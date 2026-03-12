@@ -1026,10 +1026,11 @@ object SherpaEngine {
             crashCount = 0
             initPrefs.edit()
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
-                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
+                // Keep os_kill_count and force_int8 across updates — RAM limits are
+                // a hardware constraint, not a code bug. Resetting them just causes
+                // the device to repeat the FP32→OS kill→force INT8 cycle on every update.
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putBoolean(KEY_SKIP_ORT, false)
-                .putBoolean(KEY_FORCE_INT8, false)
                 .putLong("last_init_version", currentVersion)
                 .apply()
         }
@@ -1597,8 +1598,23 @@ object SherpaEngine {
                 Log.i(TAG, "│ Using INT8 model ($reason) — ${int8File.length() / 1024 / 1024}MB")
                 statusMessage = "loading Kokoro INT8 model…"
                 syncStatus()
+            } else if (forceInt8 && !hasInt8) {
+                // OS previously killed FP32 init but INT8 model is not bundled.
+                // Don't retry FP32 — it will just get killed again. Skip to Piper.
+                val msg = "FP32 model too large for this device (OS killed init) " +
+                    "and INT8 model not bundled. Falling back to Piper."
+                Log.w(TAG, "│ $msg")
+                Log.e(TAG, "└── Kokoro init SKIPPED (no INT8 for low-RAM device) ──")
+                plog("initKokoro: force_int8 but no INT8 model bundled — skipping Kokoro")
+                statusMessage = "Kokoro too large — using lighter engine…"
+                isReady = false
+                lastTelemetry = telemetry
+                writeInitLog(ctx, msg, telemetry = telemetry)
+                syncStatus()
+                try { initWakeLock?.release() } catch (_: Throwable) {}
+                return false
             } else if (memInfo.availMem >= MIN_RAM_FOR_FP32_BYTES || !hasInt8) {
-                // Enough RAM for FP32, or INT8 not available
+                // Enough RAM for FP32, or INT8 not available and no prior OS kills
                 if (memInfo.availMem < MIN_RAM_FOR_FP32_BYTES && !hasInt8) {
                     // Not enough RAM and no INT8 — warn but try anyway (might work on some devices)
                     Log.w(TAG, "│ RAM: ${availMB}MB is below ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB threshold, no INT8 available — trying FP32 anyway")

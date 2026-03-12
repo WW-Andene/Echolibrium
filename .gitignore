@@ -1,20 +1,22 @@
+# ── IDE & Build ────────────────────────────────────────────────────────────────
 *.iml
 .gradle
-/local.properties
 /.idea
-.DS_Store
 /build
 /captures
 .externalNativeBuild
 .cxx
+.DS_Store
+
+# ── Local config (never commit) ───────────────────────────────────────────────
 local.properties
 
-# ── Downloaded at build time by app/download-models.sh ───────────────────────
+# ── Signing (never commit) ────────────────────────────────────────────────────
+*.jks
+*.keystore
+
+# ── Downloaded at build time by app/download-models.sh ────────────────────────
 # Large binary files auto-downloaded before compilation.
 # Run: cd app && bash download-models.sh   (or just ./gradlew assembleDebug)
 app/libs/
 app/src/main/assets/piper-models/
-
-# Signing keystore (never commit)
-*.jks
-*.keystore

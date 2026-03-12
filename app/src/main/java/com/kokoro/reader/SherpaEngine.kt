@@ -56,9 +56,13 @@ object SherpaEngine {
     /** Minimum free disk space (bytes) required before extracting the Kokoro model. */
     private const val MIN_DISK_SPACE_BYTES = 400L * 1024 * 1024  // 400 MB
 
-    /** Minimum free RAM (bytes) required before attempting native model loading.
-     *  The 310MB model needs ~2-3x its size in working memory during ONNX runtime init. */
-    private const val MIN_RAM_FOR_INIT_BYTES = 800L * 1024 * 1024  // 800 MB
+    /** Minimum free RAM (bytes) required for loading the FP32 model (~310MB).
+     *  The model needs ~2-3x its size in working memory during ONNX runtime init. */
+    private const val MIN_RAM_FOR_FP32_BYTES = 800L * 1024 * 1024  // 800 MB
+
+    /** Minimum free RAM (bytes) required for loading the INT8 model (~110MB).
+     *  INT8 model needs ~2x its size in working memory. */
+    private const val MIN_RAM_FOR_INT8_BYTES = 300L * 1024 * 1024  // 300 MB
 
     /** Minimum expected model.ort/.onnx file size — below this, extraction is corrupt. */
     private const val MIN_MODEL_FILE_SIZE = 100L * 1024 * 1024  // 100 MB
@@ -1402,12 +1406,16 @@ object SherpaEngine {
             )
             val missingFiles = mutableListOf<String>()
             for (path in requiredFiles) {
-                // For model files, also accept .ort pre-optimized variant
+                // For model files, also accept .ort or .int8.onnx variants
                 val ortPath = path.replace(".onnx", ".ort")
+                val int8Path = path.replace("model.onnx", "model.int8.onnx")
                 val exists = try {
                     ctx.assets.open(path).use { true }
                 } catch (_: Throwable) {
-                    if (ortPath != path) try { ctx.assets.open(ortPath).use { true } } catch (_: Throwable) { false }
+                    if (ortPath != path) try { ctx.assets.open(ortPath).use { true } } catch (_: Throwable) {
+                        if (int8Path != path) try { ctx.assets.open(int8Path).use { true } } catch (_: Throwable) { false }
+                        else false
+                    }
                     else false
                 }
                 Log.i(TAG, "│ asset %-30s %s".format(path, if (exists) "✓" else "✗ MISSING"))
@@ -1484,9 +1492,13 @@ object SherpaEngine {
 
             // ── Post-extraction integrity check ──────────────────────────
             // Verify extracted files aren't truncated/corrupt (e.g. from power loss mid-write).
-            val modelCandidate = File(extractedDir, "model.ort").let {
-                if (it.exists()) it else File(extractedDir, "model.onnx")
-            }
+            // At least one model variant must be present (FP32 or INT8).
+            val modelCandidate = listOf(
+                File(extractedDir, "model.ort"),
+                File(extractedDir, "model.onnx"),
+                File(extractedDir, "model.int8.onnx")
+            ).firstOrNull { it.exists() && it.length() > 50L * 1024 * 1024 }
+                ?: File(extractedDir, "model.onnx")  // will fail the check below
             val voicesCheck = File(extractedDir, "voices.bin")
             val tokensCheck = File(extractedDir, "tokens.txt")
             if (!modelCandidate.exists() || modelCandidate.length() < MIN_MODEL_FILE_SIZE) {
@@ -1554,18 +1566,46 @@ object SherpaEngine {
             Log.i(TAG, "│ RAM: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
             Log.i(TAG, "│ JVM: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
 
-            if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
-                val availMB = memInfo.availMem / 1024 / 1024
-                val needMB = MIN_RAM_FOR_INIT_BYTES / 1024 / 1024
+            // ── Model file resolution (RAM-adaptive) ─────────────────
+            // Choose model variant based on available RAM:
+            //   - FP32 (310MB) if ≥ 800MB free — best quality
+            //   - INT8 (110MB) if ≥ 300MB free — same voices, slightly lower quality
+            //   - Fall back to Piper if < 300MB
+            initProgress = 28
+            val availMB = memInfo.availMem / 1024 / 1024
+            val int8File = File(extractedDir, "model.int8.onnx")
+            val onnxFile = File(extractedDir, "model.onnx")
+            val ortFile = File(extractedDir, "model.ort")
+            val hasInt8 = int8File.exists() && int8File.length() > 50L * 1024 * 1024  // >50MB sanity
+            val hasFp32 = onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE
+
+            val useInt8 = hasInt8 && (memInfo.availMem < MIN_RAM_FOR_FP32_BYTES || !hasFp32)
+            val modelFile: File
+            if (useInt8 && memInfo.availMem >= MIN_RAM_FOR_INT8_BYTES) {
+                modelFile = int8File
+                plog("initKokoro: using INT8 model (${availMB}MB RAM, need ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB for FP32)")
+                Log.i(TAG, "│ RAM: ${availMB}MB — using INT8 quantized model (${int8File.length() / 1024 / 1024}MB)")
+                statusMessage = "loading Kokoro INT8 model (low RAM)…"
+                syncStatus()
+            } else if (memInfo.availMem >= MIN_RAM_FOR_FP32_BYTES || !hasInt8) {
+                // Enough RAM for FP32, or INT8 not available
+                if (memInfo.availMem < MIN_RAM_FOR_FP32_BYTES && !hasInt8) {
+                    // Not enough RAM and no INT8 — warn but try anyway (might work on some devices)
+                    Log.w(TAG, "│ RAM: ${availMB}MB is below ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB threshold, no INT8 available — trying FP32 anyway")
+                    plog("initKokoro: low RAM (${availMB}MB) but no INT8 model — trying FP32")
+                }
+                modelFile = if (onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE) onnxFile
+                    else if (ortFile.exists() && ortFile.length() > MIN_MODEL_FILE_SIZE) ortFile
+                    else onnxFile  // will fail at check below
+            } else {
+                // Not enough RAM even for INT8
                 val msg = "Not enough RAM: ${availMB}MB available, " +
-                    "need ${needMB}MB for Kokoro model. " +
+                    "need ${MIN_RAM_FOR_INT8_BYTES / 1024 / 1024}MB minimum. " +
                     "Falling back to lighter engine."
                 Log.w(TAG, "│ $msg")
-                Log.w(TAG, "│ Will try Piper fallback (smaller model)")
                 Log.e(TAG, "└── Kokoro init SKIPPED (low memory) ─────────")
-                plog("initKokoro: RAM too low (${availMB}MB < ${needMB}MB) — skipping Kokoro")
+                plog("initKokoro: RAM too low (${availMB}MB) even for INT8 — skipping Kokoro")
                 statusMessage = "not enough RAM — trying lighter engine…"
-                // Don't set errorMessage — let the caller try Piper fallback
                 isReady = false
                 lastTelemetry = telemetry
                 writeInitLog(ctx, msg, telemetry = telemetry)
@@ -1573,18 +1613,13 @@ object SherpaEngine {
                 try { initWakeLock?.release() } catch (_: Throwable) {}
                 return false
             }
-
-            // ── Model file resolution ────────────────────────────────
-            // Use .onnx directly (most compatible). Skip .ort to avoid
-            // ORT version mismatch SIGSEGV issues.
-            initProgress = 28
-            val onnxFile = File(extractedDir, "model.onnx")
-            val ortFile = File(extractedDir, "model.ort")
-            val modelFile = if (onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE) onnxFile
-                else if (ortFile.exists() && ortFile.length() > MIN_MODEL_FILE_SIZE) ortFile
-                else onnxFile  // will fail at check below
             val isOrt = modelFile.name.endsWith(".ort")
-            telemetry.modelFormat = if (isOrt) "ORT" else "ONNX"
+            val isInt8 = modelFile.name.contains("int8")
+            telemetry.modelFormat = when {
+                isInt8 -> "INT8"
+                isOrt -> "ORT"
+                else -> "ONNX"
+            }
             Log.i(TAG, "│ Model: ${modelFile.name} (${modelFile.length() / 1024 / 1024}MB)")
 
             telemetry.extractionMs = System.currentTimeMillis() - stageStart - telemetry.gcMs
@@ -2099,8 +2134,11 @@ object SherpaEngine {
             val espeakDir = File(destDir, "espeak-ng-data")
 
             // Check if already fully extracted AND matches current APK version
+            // At least one model variant (FP32, ORT, or INT8) must be present
+            val anyModelExists = modelFile.let { it.exists() && it.length() > 0 } ||
+                File(destDir, "model.int8.onnx").let { it.exists() && it.length() > 0 }
             if (isExtractionCurrent(destDir, ctx) &&
-                modelFile.exists() && modelFile.length() > 0 &&
+                anyModelExists &&
                 voicesFile.exists() && voicesFile.length() > 0 &&
                 tokensFile.exists() && tokensFile.length() > 0 &&
                 espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
@@ -2128,6 +2166,18 @@ object SherpaEngine {
                     Log.i(TAG, "│   Extracting model.onnx (runtime fallback)…")
                     extractAssetAtomic(ctx, onnxAsset, onnxFallback)
                     Log.i(TAG, "│   model.onnx: ${onnxFallback.length() / 1024 / 1024}MB (fallback)")
+                }
+            }
+
+            // Extract INT8 quantized model if bundled (110MB vs 310MB — for low-RAM devices)
+            val int8Asset = "$KOKORO_DIR/model.int8.onnx"
+            val hasInt8 = try { ctx.assets.open(int8Asset).use { true } } catch (_: Throwable) { false }
+            if (hasInt8) {
+                val int8File = File(destDir, "model.int8.onnx")
+                if (!int8File.exists() || int8File.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                    Log.i(TAG, "│   Extracting model.int8.onnx (low-RAM variant)…")
+                    extractAssetAtomic(ctx, int8Asset, int8File)
+                    Log.i(TAG, "│   model.int8.onnx: ${int8File.length() / 1024 / 1024}MB")
                 }
             }
 

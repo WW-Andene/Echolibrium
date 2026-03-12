@@ -52,14 +52,28 @@ echo "═══ Step 2/3: Kokoro multi-lang model ═══"
 mkdir -p "$KOKORO_DIR"
 
 if [ -f "$KOKORO_DIR/model.onnx" ] && [ -f "$KOKORO_DIR/voices.bin" ] && [ -f "$KOKORO_DIR/tokens.txt" ] && [ -d "$KOKORO_DIR/espeak-ng-data" ]; then
-    echo "  ✓ Kokoro model already present — skipping"
+    echo "  ✓ Kokoro FP32 model already present — skipping"
 else
-    echo "  ↓ Downloading Kokoro model (~120MB)…"
+    echo "  ↓ Downloading Kokoro FP32 model (~120MB)…"
     curl -fL $RETRY "$RELEASE_BASE/kokoro-multi-lang-v1_0.tar.bz2" -o kokoro-model.tar.bz2
     echo "  ↓ Extracting…"
     tar -xjf kokoro-model.tar.bz2 -C "$KOKORO_DIR" --strip-components=1
     rm -f kokoro-model.tar.bz2
-    echo "  ✓ Kokoro model ready"
+    echo "  ✓ Kokoro FP32 model ready"
+fi
+
+# INT8 quantized model (110MB vs 310MB — for low-RAM devices)
+if [ -f "$KOKORO_DIR/model.int8.onnx" ]; then
+    echo "  ✓ Kokoro INT8 model already present — skipping"
+else
+    echo "  ↓ Downloading Kokoro INT8 model (~126MB archive)…"
+    curl -fL $RETRY "$RELEASE_BASE/kokoro-int8-multi-lang-v1_0.tar.bz2" -o kokoro-int8.tar.bz2
+    echo "  ↓ Extracting model.int8.onnx…"
+    # Only extract the INT8 model file — voices.bin/tokens.txt/espeak-ng-data are shared
+    tar -xjf kokoro-int8.tar.bz2 --strip-components=1 -C "$KOKORO_DIR" \
+        "kokoro-int8-multi-lang-v1_0/model.int8.onnx"
+    rm -f kokoro-int8.tar.bz2
+    echo "  ✓ Kokoro INT8 model ready"
 fi
 
 echo "  Files:"

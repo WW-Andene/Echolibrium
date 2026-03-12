@@ -58,13 +58,35 @@ if [ ! -f "$TOKENS_FILE" ]; then
 fi
 
 if [ ! -d "$ESPEAK_DIR" ]; then
-    echo "  [download] espeak-ng-data.tar.gz"
-    curl -fL --retry 3 --retry-delay 2 -o "$ESPEAK_ARCHIVE" \
-        "$BASE_URL/espeak-ng-data.tar.gz"
-    echo "  [extract]  espeak-ng-data"
-    tar xzf "$ESPEAK_ARCHIVE" -C "$TEMP_DIR"
+    # Try repo release first, fall back to extracting from a k2-fsa Piper archive
+    if curl -fL --retry 2 --retry-delay 2 -o "$ESPEAK_ARCHIVE" \
+        "$BASE_URL/espeak-ng-data.tar.gz" 2>/dev/null; then
+        echo "  [download] espeak-ng-data.tar.gz (from repo release)"
+        tar xzf "$ESPEAK_ARCHIVE" -C "$TEMP_DIR"
+        rm -f "$ESPEAK_ARCHIVE"
+    else
+        echo "  [fallback] espeak-ng-data not in release — extracting from k2-fsa lessac archive"
+        FALLBACK_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"
+        FALLBACK_TAR="$TEMP_DIR/fallback-lessac.tar.bz2"
+        curl -fL --retry 3 --retry-delay 2 -o "$FALLBACK_TAR" "$FALLBACK_URL"
+        mkdir -p "$TEMP_DIR/fallback-extract"
+        tar xjf "$FALLBACK_TAR" -C "$TEMP_DIR/fallback-extract"
+        ESPEAK_SRC=$(find "$TEMP_DIR/fallback-extract" -type d -name "espeak-ng-data" | head -1)
+        if [ -z "$ESPEAK_SRC" ]; then
+            echo "  [ERROR] espeak-ng-data not found in fallback archive"
+            exit 1
+        fi
+        cp -r "$ESPEAK_SRC" "$ESPEAK_DIR"
+        # Also grab tokens.txt if we don't have it
+        if [ ! -f "$TOKENS_FILE" ]; then
+            TOKENS_SRC=$(find "$TEMP_DIR/fallback-extract" -name "tokens.txt" | head -1)
+            [ -n "$TOKENS_SRC" ] && cp "$TOKENS_SRC" "$TOKENS_FILE"
+        fi
+        rm -rf "$TEMP_DIR/fallback-extract" "$FALLBACK_TAR"
+    fi
 
     # Strip non-English dicts to save space
+    echo "  [strip]    Removing non-English espeak dicts..."
     BEFORE_SIZE=$(du -sm "$ESPEAK_DIR" | cut -f1)
     for DICT_FILE in "$ESPEAK_DIR/"*_dict; do
         BASENAME=$(basename "$DICT_FILE")
@@ -74,7 +96,6 @@ if [ ! -d "$ESPEAK_DIR" ]; then
     done
     AFTER_SIZE=$(du -sm "$ESPEAK_DIR" | cut -f1)
     echo "  [strip]    espeak-ng-data: ${BEFORE_SIZE}MB → ${AFTER_SIZE}MB"
-    rm -f "$ESPEAK_ARCHIVE"
 fi
 
 # ── Step 2: Download each voice .onnx and assemble with shared assets ─────

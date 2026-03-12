@@ -46,44 +46,13 @@ mkdir -p "$LIBS_DIR"
 download "$RELEASE_BASE/sherpa_onnx.aar" "$LIBS_DIR/sherpa_onnx.aar"
 
 # ── 2. Kokoro model ─────────────────────────────────────────────────────────
+# DISABLED: Kokoro is not bundled in the APK for now (causes RAM crashes on
+# low-RAM devices). Will be re-enabled when cloud TTS is ready.
+# The code and release assets are preserved — just not downloaded into the APK.
 
 echo ""
-echo "═══ Step 2/3: Kokoro multi-lang model ═══"
-mkdir -p "$KOKORO_DIR"
-
-if [ -f "$KOKORO_DIR/model.onnx" ] && [ -f "$KOKORO_DIR/voices.bin" ] && [ -f "$KOKORO_DIR/tokens.txt" ] && [ -d "$KOKORO_DIR/espeak-ng-data" ]; then
-    echo "  ✓ Kokoro FP32 model already present — skipping"
-else
-    echo "  ↓ Downloading Kokoro FP32 model (~120MB)…"
-    curl -fL $RETRY "$RELEASE_BASE/kokoro-multi-lang-v1_0.tar.bz2" -o kokoro-model.tar.bz2
-    echo "  ↓ Extracting…"
-    tar -xjf kokoro-model.tar.bz2 -C "$KOKORO_DIR" --strip-components=1
-    rm -f kokoro-model.tar.bz2
-    echo "  ✓ Kokoro FP32 model ready"
-fi
-
-# INT8 quantized model (110MB vs 310MB — for low-RAM devices)
-# Optional: the app works without it but will fall back to Piper on low-RAM devices.
-if [ -f "$KOKORO_DIR/model.int8.onnx" ]; then
-    echo "  ✓ Kokoro INT8 model already present — skipping"
-else
-    echo "  ↓ Downloading Kokoro INT8 model (~126MB archive)…"
-    if curl -fL $RETRY "$RELEASE_BASE/kokoro-int8-multi-lang-v1_0.tar.bz2" -o kokoro-int8.tar.bz2; then
-        echo "  ↓ Extracting model.int8.onnx…"
-        # Only extract the INT8 model file — voices.bin/tokens.txt/espeak-ng-data are shared
-        tar -xjf kokoro-int8.tar.bz2 --strip-components=1 -C "$KOKORO_DIR" \
-            "kokoro-int8-multi-lang-v1_0/model.int8.onnx"
-        rm -f kokoro-int8.tar.bz2
-        echo "  ✓ Kokoro INT8 model ready"
-    else
-        echo "  ⚠ INT8 model not available yet (run upload-voices.yml to add it)"
-        echo "    The app will still work — low-RAM devices will use Piper fallback"
-        rm -f kokoro-int8.tar.bz2
-    fi
-fi
-
-echo "  Files:"
-ls -lh "$KOKORO_DIR"/*.onnx "$KOKORO_DIR"/*.bin "$KOKORO_DIR"/*.txt 2>/dev/null | while read -r line; do echo "    $line"; done
+echo "═══ Step 2/3: Kokoro model ═══"
+echo "  ⏭ SKIPPED — Kokoro disabled (using Piper + future cloud TTS)"
 
 # ── 3. Core Piper voices (bundled in APK) ────────────────────────────────────
 
@@ -146,9 +115,9 @@ echo "════════════════════════�
 PIPER_ONNX=$(find "$PIPER_DIR" -maxdepth 1 -name '*.onnx' 2>/dev/null | wc -l)
 PIPER_ORT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 PIPER_COUNT=$((PIPER_ONNX + PIPER_ORT))
-ORT_COUNT=$(find "$KOKORO_DIR" "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
+ORT_COUNT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
-echo "  Kokoro: $(du -sh "$KOKORO_DIR" 2>/dev/null | cut -f1 || echo 'MISSING')"
+echo "  Kokoro: DISABLED (cloud TTS planned)"
 echo "  Piper:  ${PIPER_COUNT} bundled voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"
 if [ "$ORT_COUNT" -gt 0 ]; then
     echo "  ORT:    ${ORT_COUNT} pre-optimized models (5-10x faster load)"

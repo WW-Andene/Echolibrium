@@ -38,19 +38,9 @@ jobs:
           check() { if [ ! -e "$1" ]; then echo "✗ MISSING: $1"; MISSING=1; else echo "✓ $1"; fi; }
 
           check "app/libs/sherpa_onnx.aar"
-          check "app/src/main/assets/kokoro-model/tokens.txt"
-          check "app/src/main/assets/kokoro-model/voices.bin"
-          check "app/src/main/assets/kokoro-model/espeak-ng-data"
 
-          # Accept either .ort (optimized) or .onnx for the model
-          if [ -f "app/src/main/assets/kokoro-model/model.ort" ]; then
-            echo "✓ kokoro model (ORT optimized)"
-          elif [ -f "app/src/main/assets/kokoro-model/model.onnx" ]; then
-            echo "✓ kokoro model (ONNX)"
-          else
-            echo "✗ MISSING: kokoro model (no .ort or .onnx)"
-            MISSING=1
-          fi
+          # Kokoro model is disabled (cloud TTS planned) — skip check
+          echo "⏭ Kokoro model: DISABLED (not bundled)"
 
           PIPER_COUNT=$(find app/src/main/assets/piper-models -name '*.onnx' -o -name '*.ort' 2>/dev/null | wc -l)
           echo "  Piper voices: $PIPER_COUNT"
@@ -134,11 +124,11 @@ jobs:
             exit 1
           fi
 
-          # Check for model assets
-          ASSETS=$(unzip -l "$APK" | grep "assets/kokoro-model/" | wc -l)
-          echo "  Kokoro model files in APK: $ASSETS"
-          if [ "$ASSETS" -lt 3 ]; then
-            echo "✗ WARNING: Kokoro model may be incomplete"
+          # Kokoro model is disabled — check Piper assets instead
+          PIPER_IN_APK=$(unzip -l "$APK" | grep "assets/piper-models/" | wc -l)
+          echo "  Piper model files in APK: $PIPER_IN_APK"
+          if [ "$PIPER_IN_APK" -lt 1 ]; then
+            echo "✗ WARNING: No Piper models found in APK"
             exit 1
           fi
 

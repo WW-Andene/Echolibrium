@@ -145,7 +145,6 @@ object PiperVoices {
     /** Download URL for the shared tokens.txt */
     fun tokensUrl(): String = "$BASE_URL/piper-tokens.txt"
 
-    /** Download URL for the shared espeak-ng-data archive (k2-fsa direct) */
-    fun espeakUrl(): String =
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2"
+    /** Download URL for the shared espeak-ng-data archive */
+    fun espeakUrl(): String = "$BASE_URL/espeak-ng-data.tar.bz2"
 }

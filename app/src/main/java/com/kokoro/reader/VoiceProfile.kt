@@ -3,10 +3,9 @@ package com.kokoro.reader
 import org.json.JSONArray
 import org.json.JSONObject
 
-// ── Voice classification — handles Kokoro naming + generic SherpaTTS voices ──
+// ── Voice classification — handles SherpaTTS voice naming ──
 // SherpaTTS voice names can be:
-//   Kokoro:  af_heart, am_adam, bf_emma, bm_george, ef_dora, em_alex → prefix encodes lang+gender
-//   Generic: en-us-amy-medium, fr-fr-gilles-low, de_DE-thorsten-high
+//   Piper:   en-us-amy-medium, fr-fr-gilles-low, de_DE-thorsten-high
 //   Or:      just a plain name like "default" or "en-US"
 data class VoiceInfo(
     val name: String,
@@ -15,7 +14,7 @@ data class VoiceInfo(
     val nationality: String // American | British | French | etc. — for filter display
 ) {
     val shortName: String get() = when {
-        // Kokoro: af_heart → "Heart", am_adam → "Adam"
+        // Prefix format: af_heart → "Heart", am_adam → "Adam"
         name.length > 3 && name[2] == '_' -> name.drop(3).replaceFirstChar { it.uppercase() }
         // Generic hyphen format: en-us-amy-medium → "Amy"
         name.contains("-") -> name.split("-").firstOrNull { it.length > 2 && it[0].isLetter() && it.all { c -> c.isLetter() } && it !in setOf("en","fr","de","es","it","pt","nl","ru","zh","ja","ko","ar","hi","us","gb","uk","au","ca") }
@@ -27,7 +26,7 @@ data class VoiceInfo(
         fun from(voiceName: String): VoiceInfo {
             val n = voiceName.lowercase().trim()
 
-            // ── Kokoro prefix format: af_ am_ bf_ bm_ ef_ em_ ─────────────────
+            // ── Prefix format: af_ am_ bf_ bm_ ef_ em_ ──────────────────────
             if (n.length > 3 && n[2] == '_') {
                 val prefix = n.take(2)
                 val gender = when {

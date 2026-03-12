@@ -124,14 +124,11 @@ object AudioPipeline {
     }
 
     /**
-     * Waits for Kokoro engine to become ready (warm-up runs in background).
+     * Waits for the TTS engine to become ready (warm-up runs in background).
      * Returns true if ready, false if init failed or timed out.
      */
-    private fun ensureKokoroReady(ctx: Context): Boolean {
+    private fun ensureEngineReady(ctx: Context): Boolean {
         if (SherpaEngine.isReady) return true
-
-        // Piper fallback is running — Kokoro isn't ready but we can still synthesize
-        if (SherpaEngine.isPiperFallbackReady) return false
 
         // If the engine already has an error (crash loop, timeout, etc.), don't retry
         if (SherpaEngine.errorMessage != null) return false
@@ -146,17 +143,10 @@ object AudioPipeline {
 
         if (SherpaEngine.isReady) return true
 
-        // If there's now an error (set during our wait), don't attempt init
         if (SherpaEngine.errorMessage != null) {
-            Log.w(TAG, "Engine has error, not attempting init: ${SherpaEngine.errorMessage}")
-            return false
+            Log.w(TAG, "Engine has error: ${SherpaEngine.errorMessage}")
         }
-
-        // Warm-up didn't succeed — try one direct init as last resort
-        // initializeKokoro() has its own crash-counter check and will refuse
-        // if too many previous attempts failed.
-        Log.w(TAG, "Warm-up didn't complete, attempting direct init")
-        return SherpaEngine.initializeKokoro(ctx)
+        return false
     }
 
     // ── Sentence splitter for chunked synthesis ────────────────────────────
@@ -221,47 +211,36 @@ object AudioPipeline {
      * Extracted from processItem to support both single-shot and chunked paths.
      */
     private fun synthesizeAndPlay(ctx: Context, item: Item, text: String) {
-        // ── Synthesize (route to Kokoro or Piper engine) ──────────────
+        // ── Synthesize via Piper engine ───────────────────────────────
         val voiceId = item.profile.voiceName
-        val kokoroVoice = KokoroVoices.byId(voiceId)
-        val piperVoice  = PiperVoiceCatalog.byId(voiceId)
+        val piperVoice = PiperVoiceCatalog.byId(voiceId)
 
         val result: Pair<FloatArray, Int>? = when {
-            // Kokoro voice: use Kokoro engine with speaker ID
-            kokoroVoice != null -> {
-                if (ensureKokoroReady(ctx)) {
-                    SherpaEngine.synthesize(
-                        text  = text,
-                        sid   = kokoroVoice.sid,
-                        speed = item.modulated.speed
-                    )
-                } else {
-                    // Kokoro unavailable — try Piper fallback instead of dropping
-                    Log.w(TAG, "Kokoro engine not ready — attempting Piper fallback")
-                    SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
-                }
-            }
-
             // Piper voice: loaded directly from assets by SherpaEngine
             piperVoice != null -> {
-                try {
-                    SherpaEngine.synthesizePiper(
-                        ctx     = ctx,
-                        text    = text,
-                        voiceId = voiceId,
-                        speed   = item.modulated.speed
-                    )
-                } catch (e: Throwable) {
-                    // Catch native crashes from Piper engine and fall back
-                    Log.e(TAG, "Piper synthesis crashed for $voiceId, trying fallback", e)
-                    SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
+                if (!ensureEngineReady(ctx)) {
+                    Log.w(TAG, "Engine not ready — cannot synthesize")
+                    null
+                } else {
+                    try {
+                        SherpaEngine.synthesizePiper(
+                            ctx     = ctx,
+                            text    = text,
+                            voiceId = voiceId,
+                            speed   = item.modulated.speed
+                        )
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Piper synthesis crashed for $voiceId, trying fallback", e)
+                        SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
+                    }
                 }
             }
 
             // Fallback: try whatever engine is available
             else -> {
                 Log.w(TAG, "Voice '$voiceId' not recognized, using best available engine")
-                SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
+                if (!ensureEngineReady(ctx)) null
+                else SherpaEngine.synthesizeWithFallback(ctx, text, speed = item.modulated.speed)
             }
         }
 

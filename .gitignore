@@ -10,10 +10,9 @@
 local.properties
 
 # ── Downloaded at build time by app/download-models.sh ───────────────────────
-# Large binary files (~600MB total) auto-downloaded before compilation.
+# Large binary files auto-downloaded before compilation.
 # Run: cd app && bash download-models.sh   (or just ./gradlew assembleDebug)
 app/libs/
-app/src/main/assets/kokoro-model/
 app/src/main/assets/piper-models/
 
 # Signing keystore (never commit)

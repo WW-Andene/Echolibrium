@@ -4,12 +4,12 @@ plugins {
 }
 
 // ── Auto-download TTS models before build ───────────────────────────────────
-// Ensures the AAR, Kokoro model, and core Piper voices are present.
+// Ensures the AAR and core Piper voices are present.
 // Only 8 Piper voices are bundled — the rest are downloaded by the app on demand.
 // Skips files that already exist (idempotent).
 
 task downloadTtsModels(type: Exec) {
-    description = 'Downloads sherpa-onnx AAR, Kokoro model, and core Piper voices if missing'
+    description = 'Downloads sherpa-onnx AAR and core Piper voices if missing'
     group = 'setup'
 
     workingDir projectDir
@@ -18,10 +18,8 @@ task downloadTtsModels(type: Exec) {
     // Only run if key files are missing
     onlyIf {
         def aar = file("${projectDir}/libs/sherpa_onnx.aar")
-        def modelOnnx = file("${projectDir}/src/main/assets/kokoro-model/model.onnx")
-        def modelOrt = file("${projectDir}/src/main/assets/kokoro-model/model.ort")
         def tokens = file("${projectDir}/src/main/assets/piper-models/tokens.txt")
-        def missing = !aar.exists() || (!modelOnnx.exists() && !modelOrt.exists()) || !tokens.exists()
+        def missing = !aar.exists() || !tokens.exists()
         if (missing) {
             logger.lifecycle("TTS models missing — running download-models.sh")
         }

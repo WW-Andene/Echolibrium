@@ -24,7 +24,6 @@ import sys
 import glob
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-KOKORO_DIR = os.path.join(SCRIPT_DIR, "src", "main", "assets", "kokoro-model")
 PIPER_DIR  = os.path.join(SCRIPT_DIR, "src", "main", "assets", "piper-models")
 
 # Languages used by the app (espeak-ng language codes)
@@ -112,27 +111,14 @@ def main():
     print()
     print("═══ Model Optimization ═══")
 
-    # 1. Convert Kokoro model to ORT format
-    kokoro_model = os.path.join(KOKORO_DIR, "model.onnx")
-    if os.path.exists(kokoro_model):
-        print()
-        print("── Kokoro model → ORT ──")
-        convert_to_ort(kokoro_model)
-    elif os.path.exists(kokoro_model.replace(".onnx", ".ort")):
-        print()
-        print("── Kokoro model → ORT ──")
-        print(f"  ✓ model.ort already exists")
-    else:
-        print(f"  ✗ Kokoro model not found at {kokoro_model}")
-
-    # 2. Strip unused espeak-ng languages
-    espeak_dir = os.path.join(KOKORO_DIR, "espeak-ng-data")
+    # 1. Strip unused espeak-ng languages
+    espeak_dir = os.path.join(PIPER_DIR, "espeak-ng-data")
     if os.path.isdir(espeak_dir):
         print()
         print("── Strip unused espeak-ng languages ──")
         strip_espeak_languages(espeak_dir)
 
-    # 3. Convert bundled Piper voice models to ORT format
+    # 2. Convert bundled Piper voice models to ORT format
     piper_models = sorted(glob.glob(os.path.join(PIPER_DIR, "*.onnx")))
     # Exclude tokens.txt and other non-model files
     piper_models = [m for m in piper_models if not m.endswith("tokens.txt")]
@@ -148,7 +134,7 @@ def main():
                 failed += 1
         print(f"  Total: {converted} converted, {failed} failed")
 
-    # 4. Write ORT version file for runtime compatibility checking
+    # 3. Write ORT version file for runtime compatibility checking
     try:
         import onnxruntime as ort
         version_file = os.path.join(SCRIPT_DIR, "src", "main", "assets", "ort_version.txt")

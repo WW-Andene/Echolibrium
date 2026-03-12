@@ -14,7 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 LIBS_DIR="libs"
-KOKORO_DIR="src/main/assets/kokoro-model"
 PIPER_DIR="src/main/assets/piper-models"
 
 # All assets live in a single GitHub Release
@@ -41,23 +40,14 @@ download() {
 # ── 1. Sherpa-onnx AAR ──────────────────────────────────────────────────────
 
 echo ""
-echo "═══ Step 1/3: sherpa-onnx AAR ═══"
+echo "═══ Step 1/2: sherpa-onnx AAR ═══"
 mkdir -p "$LIBS_DIR"
 download "$RELEASE_BASE/sherpa_onnx.aar" "$LIBS_DIR/sherpa_onnx.aar"
 
-# ── 2. Kokoro model ─────────────────────────────────────────────────────────
-# DISABLED: Kokoro is not bundled in the APK for now (causes RAM crashes on
-# low-RAM devices). Will be re-enabled when cloud TTS is ready.
-# The code and release assets are preserved — just not downloaded into the APK.
+# ── 2. Core Piper voices (bundled in APK) ────────────────────────────────────
 
 echo ""
-echo "═══ Step 2/3: Kokoro model ═══"
-echo "  ⏭ SKIPPED — Kokoro disabled (using Piper + future cloud TTS)"
-
-# ── 3. Core Piper voices (bundled in APK) ────────────────────────────────────
-
-echo ""
-echo "═══ Step 3/3: Core Piper voices (bundled in APK) ═══"
+echo "═══ Step 2/2: Core Piper voices (bundled in APK) ═══"
 mkdir -p "$PIPER_DIR"
 
 # Shared tokens.txt
@@ -95,10 +85,10 @@ done
 echo ""
 echo "  Bundled voices: $TOTAL total, $FAILED failed"
 
-# ── 4. Optimize models (ORT format) ─────────────────────────────────────────
+# ── 3. Optimize models (ORT format) ─────────────────────────────────────────
 
 echo ""
-echo "═══ Step 4/4: Optimize bundled models (ORT format) ═══"
+echo "═══ Step 3/3: Optimize bundled models (ORT format) ═══"
 
 if command -v python3 &>/dev/null && python3 -c "import onnxruntime" 2>/dev/null; then
     python3 "$SCRIPT_DIR/optimize-models.py"
@@ -117,7 +107,6 @@ PIPER_ORT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 PIPER_COUNT=$((PIPER_ONNX + PIPER_ORT))
 ORT_COUNT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
-echo "  Kokoro: DISABLED (cloud TTS planned)"
 echo "  Piper:  ${PIPER_COUNT} bundled voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"
 if [ "$ORT_COUNT" -gt 0 ]; then
     echo "  ORT:    ${ORT_COUNT} pre-optimized models (5-10x faster load)"

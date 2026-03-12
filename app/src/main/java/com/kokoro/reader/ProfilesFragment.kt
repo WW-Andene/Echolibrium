@@ -207,12 +207,12 @@ class ProfilesFragment : Fragment() {
         genderRow?.removeAllViews()
         nationRow?.removeAllViews()
 
-        KokoroVoices.genders().forEach { g ->
+        PiperVoiceCatalog.genders().forEach { g ->
             genderRow?.addView(filterBtn(ctx, g, genderFilter == g) {
                 genderFilter = g; buildFilterButtons(); renderVoiceGrid()
             })
         }
-        KokoroVoices.languages().forEach { l ->
+        (listOf("All") + PiperVoiceCatalog.languages().sorted()).forEach { l ->
             nationRow?.addView(filterBtn(ctx, l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
             })
@@ -235,16 +235,8 @@ class ProfilesFragment : Fragment() {
         if (!viewsBound || !isAdded || view == null) return
         val voiceId = currentProfile.voiceName
         val alias = currentProfile.voiceAlias
-        val kokoroVoice = KokoroVoices.byId(voiceId)
         val piperVoice = PiperVoiceCatalog.byId(voiceId)
         when {
-            kokoroVoice != null -> {
-                tvSelectedVoiceIcon?.text = kokoroVoice.genderIcon
-                tvSelectedVoiceIcon?.setTextColor(kokoroVoice.genderColor)
-                tvSelectedVoiceName?.text = if (alias.isNotBlank()) "$alias (${kokoroVoice.displayName})" else kokoroVoice.displayName
-                tvSelectedVoiceDetail?.text = "${kokoroVoice.flagEmoji} ${kokoroVoice.nationality} · ${kokoroVoice.gender} · Kokoro"
-                selectedVoiceBanner?.setBackgroundColor(0xFF0d2a0d.toInt())
-            }
             piperVoice != null -> {
                 tvSelectedVoiceIcon?.text = piperVoice.genderIcon
                 tvSelectedVoiceIcon?.setTextColor(piperVoice.genderColor)
@@ -271,13 +263,6 @@ class ProfilesFragment : Fragment() {
         val ctx = context ?: return
         voiceGrid?.removeAllViews()
 
-        // ── Filter Kokoro voices ──────────────────────────────────────────
-        val kokoroFiltered = KokoroVoices.ALL.filter { v ->
-            val gOk = genderFilter   == "All" || v.gender   == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-
         // ── Filter Piper voices ───────────────────────────────────────────
         val piperFiltered = PiperVoiceCatalog.ALL.filter { v ->
             val gOk = genderFilter   == "All" || v.gender   == genderFilter
@@ -285,26 +270,10 @@ class ProfilesFragment : Fragment() {
             gOk && lOk
         }
 
-        if (kokoroFiltered.isEmpty() && piperFiltered.isEmpty()) {
+        if (piperFiltered.isEmpty()) {
             voiceGrid?.addView(TextView(ctx).apply {
                 text = "No voices match filter."; setTextColor(0xFF446644.toInt()); textSize = 12f
             }); return
-        }
-
-        // ── Kokoro voices (grouped by language) ──────────────────────────
-        if (kokoroFiltered.isNotEmpty()) {
-            kokoroFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-                voiceGrid?.addView(TextView(ctx).apply {
-                    text = "KOKORO · ${lang.uppercase()}  (${voices.size} bundled)"
-                    textSize = 10f; setTextColor(0xFF446644.toInt())
-                    setPadding(4, 14, 0, 6)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                })
-                renderVoiceCardRows(voices.map { v ->
-                    VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                        "${v.flagEmoji} ${v.nationality}", "bundled", 0xFF00ff88.toInt(), true)
-                })
-            }
         }
 
         // ── Piper voices (grouped by language, bundled + downloadable) ──

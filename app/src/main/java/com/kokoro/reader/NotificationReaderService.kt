@@ -66,7 +66,7 @@ class NotificationReaderService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "NotiReaderService"
-        private const val CHANNEL_ID = "kokoro_foreground"
+        private const val CHANNEL_ID = "echolibrium_foreground"
         private const val FOREGROUND_ID = 1
 
         var instance: NotificationReaderService? = null

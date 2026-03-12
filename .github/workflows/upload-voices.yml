@@ -27,19 +27,6 @@ jobs:
             -o "$STAGING/sherpa_onnx.aar"
           echo "✓ sherpa_onnx.aar ($(du -h "$STAGING/sherpa_onnx.aar" | cut -f1))"
 
-          # ── Kokoro models (FP32 + INT8) ──
-          echo ""
-          echo "═══ Kokoro models ═══"
-          curl -fL $RETRY \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2" \
-            -o "$STAGING/kokoro-multi-lang-v1_0.tar.bz2"
-          echo "✓ kokoro-multi-lang-v1_0.tar.bz2 ($(du -h "$STAGING/kokoro-multi-lang-v1_0.tar.bz2" | cut -f1))"
-
-          curl -fL $RETRY \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2" \
-            -o "$STAGING/kokoro-int8-multi-lang-v1_0.tar.bz2"
-          echo "✓ kokoro-int8-multi-lang-v1_0.tar.bz2 ($(du -h "$STAGING/kokoro-int8-multi-lang-v1_0.tar.bz2" | cut -f1))"
-
           # ── Piper tokens.txt + all 44 voices ──
           echo ""
           echo "═══ Piper tokens.txt ═══"

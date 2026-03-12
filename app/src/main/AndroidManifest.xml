@@ -26,7 +26,7 @@
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false"
         android:requestLegacyExternalStorage="true"
-        android:extractNativeLibs="false"
+        android:extractNativeLibs="true"
         android:largeHeap="true">
 
         <activity android:name=".CrashReportActivity"

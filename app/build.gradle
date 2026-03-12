@@ -91,15 +91,16 @@ android {
     // at first run. Compressed assets use more memory during extraction and are slower
     // to read via AssetManager.open(). "txt" covers tokens.txt and espeak dict files.
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
-    // Load native libs directly from APK via mmap (default behavior).
-    // The standalone sherpa-onnx APK (Sherpa_base*.zip) uses this same approach
-    // and works correctly on Xiaomi 13T / Dimensity 8200 / HyperOS 2.0.
-    // Previous useLegacyPackaging=true was added speculatively but was never the
-    // cause of crashes — the real issues were ORT version mismatch and HyperOS
-    // process killing.
+    // Extract native libs to filesystem instead of loading from APK via mmap.
+    // The standalone sherpa-onnx APK loads in the MAIN process and works fine
+    // with mmap, but Echolibrium loads sherpa-onnx in a SEPARATE :tts process
+    // (android:process=":tts"). On Xiaomi/HyperOS, background service processes
+    // can fail to mmap native libs from the APK (EXIT_SELF status=255).
+    // Extracting to filesystem (/data/app/<pkg>/lib/arm64/) ensures any process
+    // can load the .so reliably.
     packagingOptions {
         jniLibs {
-            useLegacyPackaging = false
+            useLegacyPackaging = true
         }
     }
 }

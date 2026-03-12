@@ -217,7 +217,7 @@ Dependencies:
 - `libsherpa-onnx-cxx-api.so` — sherpa-onnx C++ API
 - `libsherpa-onnx-jni.so` — JNI bridge
 
-**Note on `useLegacyPackaging`:** Was previously set to `true` (extract .so to filesystem) as a speculative SIGSEGV fix. Reverted to `false` after analysis of a working standalone sherpa-onnx APK showed mmap loading works fine. The real crash causes were ORT version mismatch and HyperOS process killing.
+**Note on `useLegacyPackaging`:** Set to `true` (extract .so to filesystem). The standalone sherpa-onnx APK works with `false` (mmap from APK), but it runs in the **main process**. Echolibrium loads native libs in a **separate `:tts` process** (`android:process=":tts"`), and on Xiaomi/HyperOS, background service processes fail to mmap native libs from the APK (EXIT_SELF status=255). Extracting to filesystem ensures any process can load reliably.
 
 ---
 

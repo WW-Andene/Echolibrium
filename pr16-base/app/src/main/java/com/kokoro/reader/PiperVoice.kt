@@ -69,7 +69,7 @@ object PiperVoices {
     // ── English (US) — bundled in APK ─────────────────────────────────────
     private val EN_US = listOf(
         piper("lessac",  "Female", "English (US)", "American", "en_US", "medium", bundled = true),
-        piper("amy",     "Female", "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("ljspeech","Female", "English (US)", "American", "en_US", "medium", bundled = true),
         piper("kristin", "Female", "English (US)", "American", "en_US", "medium", bundled = true),
         piper("ryan",    "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
         piper("joe",     "Male",   "English (US)", "American", "en_US", "medium", bundled = true),

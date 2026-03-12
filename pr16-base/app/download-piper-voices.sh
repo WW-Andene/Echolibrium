@@ -22,7 +22,7 @@ BASE_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models"
 # ── Voice list (9 voices: 6 en_US + 3 en_GB) ─────────────────────────────
 VOICES=(
     "en_US-lessac-medium"
-    "en_US-amy-medium"
+    "en_US-ljspeech-medium"
     "en_US-kristin-medium"
     "en_US-ryan-medium"
     "en_US-joe-medium"
@@ -54,8 +54,16 @@ for VOICE_ID in "${VOICES[@]}"; do
     fi
 
     echo "  [download] $VOICE_ID"
-    curl -L --retry 3 --retry-delay 2 -o "$TAR_FILE" \
+    curl -L --retry 3 --retry-delay 2 --fail -o "$TAR_FILE" \
         "$BASE_URL/${ARCHIVE_NAME}.tar.bz2"
+
+    # Verify the download isn't a tiny error page
+    FILE_SIZE=$(wc -c < "$TAR_FILE")
+    if [ "$FILE_SIZE" -lt 1000 ]; then
+        echo "  [ERROR] $VOICE_ID download too small (${FILE_SIZE} bytes) — URL may be invalid"
+        rm -f "$TAR_FILE"
+        exit 1
+    fi
 
     echo "  [extract]  $VOICE_ID"
     mkdir -p "$VOICE_DIR"

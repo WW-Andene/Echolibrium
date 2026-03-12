@@ -105,7 +105,7 @@ class NotificationReaderService : NotificationListenerService() {
                 OemProtection.requestBatteryExemption(this)
             }
 
-            // Eager engine init — safe in the :tts process (no HWUI to corrupt).
+            // Eager engine init on service start.
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {
                 updateForegroundText("Listening for notifications")
@@ -116,7 +116,7 @@ class NotificationReaderService : NotificationListenerService() {
             // actual engine state (loading, error, etc.). The "starting" above is just
             // a brief placeholder until warmUp's syncStatus runs.
 
-            // Start voice commands if enabled (must happen in :tts process)
+            // Start voice commands if enabled
             val voiceCmdEnabled = prefs.getBoolean("voice_commands_enabled", false)
             if (voiceCmdEnabled) {
                 VoiceCommandListener.start(this.applicationContext)

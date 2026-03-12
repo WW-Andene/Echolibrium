@@ -1,15 +1,10 @@
 package com.kokoro.reader
 
-import android.app.ActivityManager
 import android.app.Application
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
-import android.service.notification.NotificationListenerService
 import android.util.Log
 import java.io.File
 import java.io.PrintWriter
@@ -63,24 +58,17 @@ class ReaderApplication : Application() {
         resolvedLogDir = resolveLogDirectory()
         installUncaughtExceptionHandler()
 
-        // Only run crash detection/recovery in the main (UI) process.
-        // The :tts process has no Activity to show CrashReportActivity, and
-        // running it in both processes causes SharedPreferences races.
-        if (isMainProcess()) {
-            detectPreviousCrash()
-            markSessionActive()
-            startTtsWatchdog()
+        detectPreviousCrash()
+        markSessionActive()
 
-            // Auto-report engine errors to GitHub Issues after 30s
-            GitHubReporter.scheduleAutoReport(this, 30_000L)
-            // Check for remote config / instructions from repo owner
-            GitHubReporter.checkRemoteConfig(this)
-        }
+        // Auto-report engine errors to GitHub Issues after 30s
+        GitHubReporter.scheduleAutoReport(this, 30_000L)
+        // Check for remote config / instructions from repo owner
+        GitHubReporter.checkRemoteConfig(this)
 
         // Engine warm-up is handled by NotificationReaderService.onCreate()
-        // in the :tts process. Do NOT call warmUp() here — it races with the
-        // Service's warmUp(), and if the crash-loop breaker fires, the Service's
-        // TtsBridge.writeStatus("starting") overwrites the error status.
+        // when the service starts. Do NOT call warmUp() here — it races with
+        // the Service's warmUp().
     }
 
     override fun onTrimMemory(level: Int) {
@@ -88,61 +76,6 @@ class ReaderApplication : Application() {
         // Mark clean exit when system is about to kill the process
         if (level >= TRIM_MEMORY_COMPLETE) {
             markSessionClean()
-        }
-    }
-
-    /** Returns true if running in the main app process (not :tts). */
-    private fun isMainProcess(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return Application.getProcessName() == packageName
-        }
-        val myPid = android.os.Process.myPid()
-        val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
-        return am.runningAppProcesses?.find { it.pid == myPid }?.processName == packageName
-    }
-
-    // ── TTS process watchdog ────────────────────────────────────────────────
-    // MIUI/HyperOS kills the :tts process aggressively. This watchdog runs in
-    // the main process and requests a service rebind when the TTS process goes
-    // stale. This is what makes the app self-healing on Xiaomi devices without
-    // requiring manual ADB commands.
-
-    /** How often to check if the :tts process is alive (ms). */
-    private val WATCHDOG_INTERVAL_MS = 15_000L
-
-    /** Delay before first check — give the service time to start. */
-    private val WATCHDOG_INITIAL_DELAY_MS = 30_000L
-
-    private val watchdogHandler = Handler(Looper.getMainLooper())
-    private var watchdogRunnable: Runnable? = null
-
-    private fun startTtsWatchdog() {
-        watchdogRunnable = object : Runnable {
-            override fun run() {
-                checkAndReviveTtsProcess()
-                watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
-            }
-        }
-        watchdogHandler.postDelayed(watchdogRunnable!!, WATCHDOG_INITIAL_DELAY_MS)
-        Log.d(TAG, "TTS watchdog started (interval=${WATCHDOG_INTERVAL_MS}ms)")
-    }
-
-    private fun checkAndReviveTtsProcess() {
-        try {
-            val healthy = TtsBridge.isTtsProcessHealthy(this)
-            if (healthy) return
-
-            val age = TtsBridge.getTtsProcessAgeMs(this)
-            Log.w(TAG, "TTS process appears stale (age=${age}ms) — requesting rebind")
-
-            // requestRebind() tells Android to restart and reconnect the
-            // NotificationListenerService. This works even after MIUI/HyperOS
-            // kills the :tts process because the system still holds the
-            // notification listener binding intent.
-            val cn = ComponentName(this, NotificationReaderService::class.java)
-            NotificationListenerService.requestRebind(cn)
-        } catch (e: Throwable) {
-            Log.w(TAG, "Watchdog rebind failed: ${e.message}")
         }
     }
 

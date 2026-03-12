@@ -259,18 +259,18 @@ object SherpaEngine {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             // Get recent exit reasons for our package, limit to 5
             val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5)
-            // Find the most recent exit for the :tts process
-            val ttsExit = exitInfos.firstOrNull { info ->
-                info.processName?.endsWith(":tts") == true
+            // Find the most recent exit for our process (main process — TTS runs here now)
+            val lastExit = exitInfos.firstOrNull { info ->
+                info.processName == ctx.packageName
             }
-            if (ttsExit == null) {
-                plog("wasLastExitNativeCrash: no exit info for :tts — assuming crash")
+            if (lastExit == null) {
+                plog("wasLastExitNativeCrash: no exit info — assuming crash")
                 return true
             }
-            val reason = ttsExit.reason
-            val desc = ttsExit.description ?: "none"
+            val reason = lastExit.reason
+            val desc = lastExit.description ?: "none"
             plog("wasLastExitNativeCrash: reason=$reason (${exitReasonName(reason)}), desc=$desc, " +
-                "importance=${ttsExit.importance}, status=${ttsExit.status}")
+                "importance=${lastExit.importance}, status=${lastExit.status}")
             // REASON_CRASH_NATIVE (6) = SIGSEGV/SIGABRT/etc — definitely a native crash
             // REASON_CRASH (4) = uncaught Java exception — treat as crash
             // REASON_ANR (3) = ANR — treat as crash (init took too long)
@@ -282,22 +282,22 @@ object SherpaEngine {
                 ApplicationExitInfo.REASON_CRASH_NATIVE,
                 ApplicationExitInfo.REASON_CRASH,
                 ApplicationExitInfo.REASON_ANR -> {
-                    Log.w(TAG, "Last :tts exit was ${exitReasonName(reason)}: $desc")
+                    Log.w(TAG, "Last exit was ${exitReasonName(reason)}: $desc")
                     true
                 }
                 ApplicationExitInfo.REASON_EXIT_SELF -> {
-                    val status = ttsExit.status
+                    val status = lastExit.status
                     if (status != 0) {
-                        Log.w(TAG, "Last :tts exit was EXIT_SELF with status=$status (abnormal) — treating as crash")
+                        Log.w(TAG, "Last exit was EXIT_SELF with status=$status (abnormal) — treating as crash")
                         plog("wasLastExitNativeCrash: EXIT_SELF status=$status — treating as crash")
                         true
                     } else {
-                        Log.i(TAG, "Last :tts exit was EXIT_SELF with status=0 (clean shutdown)")
+                        Log.i(TAG, "Last exit was EXIT_SELF with status=0 (clean shutdown)")
                         false
                     }
                 }
                 else -> {
-                    Log.i(TAG, "Last :tts exit was ${exitReasonName(reason)} (not native crash): $desc")
+                    Log.i(TAG, "Last exit was ${exitReasonName(reason)} (not native crash): $desc")
                     false
                 }
             }

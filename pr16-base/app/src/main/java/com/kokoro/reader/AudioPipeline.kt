@@ -99,20 +99,13 @@ object AudioPipeline {
         )
         if (processed.isBlank()) return
 
-        // ── Step 2: Initialize engine (if not already) ────────────────────
-        if (!SherpaEngine.initialize(ctx)) {
-            Log.w(TAG, "SherpaEngine not ready — model may still be downloading")
-            return
-        }
-
-        // ── Step 3: Synthesize ────────────────────────────────────────────
+        // ── Step 2+3: Route to correct engine and synthesize ────────────
         val voiceId = item.profile.voiceName
-        val voice   = KokoroVoices.byId(voiceId) ?: KokoroVoices.default()
-        val result  = SherpaEngine.synthesize(
-            text  = processed,
-            sid   = voice.sid,
-            speed = item.modulated.speed
-        ) ?: return
+        val result = if (PiperVoices.isPiperVoice(voiceId)) {
+            synthesizeWithPiper(ctx, voiceId, processed, item.modulated.speed)
+        } else {
+            synthesizeWithKokoro(ctx, voiceId, processed, item.modulated.speed)
+        } ?: return
 
         val (rawPcm, sampleRate) = result
 
@@ -121,6 +114,27 @@ object AudioPipeline {
 
         // ── Step 5: Play ──────────────────────────────────────────────────
         playPcm(pcm, sampleRate, item.modulated.pitch)
+    }
+
+    private fun synthesizeWithKokoro(
+        ctx: Context, voiceId: String, text: String, speed: Float
+    ): Pair<FloatArray, Int>? {
+        if (!SherpaEngine.initialize(ctx)) {
+            Log.w(TAG, "Kokoro not ready — model may still be downloading")
+            return null
+        }
+        val voice = KokoroVoices.byId(voiceId) ?: KokoroVoices.default()
+        return SherpaEngine.synthesize(text = text, sid = voice.sid, speed = speed)
+    }
+
+    private fun synthesizeWithPiper(
+        ctx: Context, voiceId: String, text: String, speed: Float
+    ): Pair<FloatArray, Int>? {
+        if (!SherpaEngine.initPiper(ctx, voiceId)) {
+            Log.w(TAG, "Piper voice $voiceId not ready — may still be downloading")
+            return null
+        }
+        return SherpaEngine.synthesizePiper(voiceId = voiceId, text = text, speed = speed)
     }
 
     // ── Playback ──────────────────────────────────────────────────────────────

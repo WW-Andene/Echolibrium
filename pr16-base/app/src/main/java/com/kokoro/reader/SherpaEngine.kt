@@ -6,45 +6,63 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 
 /**
- * Singleton wrapper around sherpa-onnx OfflineTts.
+ * Dual-engine TTS wrapper around sherpa-onnx OfflineTts.
  *
- * Initialization is lazy — the model is large (~120MB), loading takes a few seconds.
- * Keep the instance alive as long as the service is running.
+ * Supports two engine types:
+ *   • Kokoro — single model with multiple speaker IDs (sid 0-10)
+ *   • Piper  — one VITS model per voice (sid always 0)
  *
- * Thread-safe: synthesize() is called from the AudioPipeline background thread.
+ * Kokoro is initialized once and shared across all Kokoro voices.
+ * Piper instances are created per-voice and cached (LRU eviction).
+ *
+ * Thread-safe: all public methods are synchronized.
  */
 object SherpaEngine {
 
     private const val TAG = "SherpaEngine"
+    private const val MAX_PIPER_CACHE = 2 // keep at most 2 Piper models in memory
 
-    private var tts: OfflineTts? = null
+    // ── Kokoro engine ───────────────────────────────────────────────────────
+
+    private var kokoroTts: OfflineTts? = null
+
+    @Volatile var isKokoroReady = false
+        private set
+
+    // ── Piper engine cache ──────────────────────────────────────────────────
+
+    private val piperCache = LinkedHashMap<String, OfflineTts>(4, 0.75f, true)
+
+    // ── Public state ────────────────────────────────────────────────────────
+
     var lastSampleRate: Int = 22050
         private set
 
-    @Volatile var isReady = false
-        private set
+    /** True if Kokoro is initialized (for backward compat with AudioPipeline) */
+    val isReady get() = isKokoroReady
 
-    // ── Initialize ────────────────────────────────────────────────────────────
+    // ── Kokoro: Initialize ──────────────────────────────────────────────────
 
     @Synchronized
     fun initialize(ctx: Context): Boolean {
-        if (isReady && tts != null) return true
+        if (isKokoroReady && kokoroTts != null) return true
         if (!VoiceDownloadManager.isModelReady(ctx)) {
-            Log.w(TAG, "Model not downloaded yet")
+            Log.w(TAG, "Kokoro model not downloaded yet")
             return false
         }
 
         return try {
             val modelDir = VoiceDownloadManager.getModelDir(ctx)
-            Log.d(TAG, "Loading model from $modelDir")
+            Log.d(TAG, "Loading Kokoro from $modelDir")
 
             val kokoroConfig = OfflineTtsKokoroModelConfig(
-                model  = File(modelDir, "model.onnx").absolutePath,
-                voices = File(modelDir, "voices.bin").absolutePath,
-                tokens = File(modelDir, "tokens.txt").absolutePath,
+                model   = File(modelDir, "model.onnx").absolutePath,
+                voices  = File(modelDir, "voices.bin").absolutePath,
+                tokens  = File(modelDir, "tokens.txt").absolutePath,
                 dataDir = File(modelDir, "espeak-ng-data").absolutePath
             )
 
@@ -55,48 +73,114 @@ object SherpaEngine {
                 provider   = "cpu"
             )
 
-            val config = OfflineTtsConfig(model = modelConfig)
-            tts = OfflineTts(config = config)
-            isReady = true
-            Log.d(TAG, "SherpaEngine ready")
+            kokoroTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
+            isKokoroReady = true
+            Log.d(TAG, "Kokoro engine ready")
             true
-
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize SherpaEngine", e)
-            tts = null
-            isReady = false
+            Log.e(TAG, "Failed to initialize Kokoro", e)
+            kokoroTts = null
+            isKokoroReady = false
             false
         }
     }
 
-    // ── Synthesize ────────────────────────────────────────────────────────────
+    // ── Kokoro: Synthesize ──────────────────────────────────────────────────
 
-    /**
-     * Synthesize text → (PCM samples, sample rate)
-     * @param text   The text to speak (after all transforms applied)
-     * @param sid    Speaker ID (from KokoroVoice.sid)
-     * @param speed  Playback speed (1.0 = normal)
-     */
     @Synchronized
     fun synthesize(text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? {
-        val engine = tts ?: return null
+        val engine = kokoroTts ?: return null
         return try {
             val audio = engine.generate(text = text, sid = sid, speed = speed)
             lastSampleRate = audio.sampleRate
             Pair(audio.samples, audio.sampleRate)
         } catch (e: Exception) {
-            Log.e(TAG, "Synthesis failed", e)
+            Log.e(TAG, "Kokoro synthesis failed", e)
             null
         }
     }
 
-    // ── Release ───────────────────────────────────────────────────────────────
+    // ── Piper: Initialize ───────────────────────────────────────────────────
+
+    @Synchronized
+    fun initPiper(ctx: Context, voiceId: String): Boolean {
+        if (piperCache.containsKey(voiceId)) return true
+        if (!PiperDownloadManager.isVoiceReady(ctx, voiceId)) {
+            Log.w(TAG, "Piper voice $voiceId not downloaded yet")
+            return false
+        }
+
+        return try {
+            val voiceDir = PiperDownloadManager.getVoiceDir(ctx, voiceId)
+            Log.d(TAG, "Loading Piper voice $voiceId from $voiceDir")
+
+            val vitsConfig = OfflineTtsVitsModelConfig(
+                model   = File(voiceDir, "model.onnx").absolutePath,
+                tokens  = File(voiceDir, "tokens.txt").absolutePath,
+                dataDir = File(voiceDir, "espeak-ng-data").absolutePath
+            )
+
+            val modelConfig = OfflineTtsModelConfig(
+                vits       = vitsConfig,
+                numThreads = 2,
+                debug      = false,
+                provider   = "cpu"
+            )
+
+            val tts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
+
+            // Evict oldest if cache is full
+            evictPiperCache()
+            piperCache[voiceId] = tts
+            Log.d(TAG, "Piper voice $voiceId ready (cache: ${piperCache.size})")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize Piper voice $voiceId", e)
+            false
+        }
+    }
+
+    // ── Piper: Synthesize ───────────────────────────────────────────────────
+
+    @Synchronized
+    fun synthesizePiper(
+        voiceId: String, text: String, speed: Float = 1.0f
+    ): Pair<FloatArray, Int>? {
+        val engine = piperCache[voiceId] ?: return null
+        return try {
+            val audio = engine.generate(text = text, sid = 0, speed = speed)
+            lastSampleRate = audio.sampleRate
+            Pair(audio.samples, audio.sampleRate)
+        } catch (e: Exception) {
+            Log.e(TAG, "Piper synthesis failed for $voiceId", e)
+            null
+        }
+    }
+
+    // ── Release ─────────────────────────────────────────────────────────────
 
     @Synchronized
     fun release() {
-        try { tts?.release() } catch (e: Exception) { /* ignore */ }
-        tts = null
-        isReady = false
-        Log.d(TAG, "SherpaEngine released")
+        try { kokoroTts?.release() } catch (_: Exception) {}
+        kokoroTts = null
+        isKokoroReady = false
+
+        piperCache.values.forEach { tts ->
+            try { tts.release() } catch (_: Exception) {}
+        }
+        piperCache.clear()
+
+        Log.d(TAG, "SherpaEngine released (Kokoro + Piper)")
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────────
+
+    private fun evictPiperCache() {
+        while (piperCache.size >= MAX_PIPER_CACHE) {
+            val oldest = piperCache.entries.firstOrNull() ?: break
+            Log.d(TAG, "Evicting Piper voice ${oldest.key} from cache")
+            try { oldest.value.release() } catch (_: Exception) {}
+            piperCache.remove(oldest.key)
+        }
     }
 }

@@ -20,3 +20,6 @@ local.properties
 # Run: cd app && bash download-models.sh   (or just ./gradlew assembleDebug)
 app/libs/
 app/src/main/assets/piper-models/
+
+# ── pr16-base: downloaded at CI time ────────────────────────────────────────
+pr16-base/app/libs/

@@ -160,7 +160,7 @@ class ProfilesFragment : Fragment() {
         })
 
         // ── PIPER section ───────────────────────────────────────────────────
-        voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt()))
+        voiceGrid.addView(buildSectionHeader("PIPER", "9 voices bundled  ·  extracts on first use", 0xFF88ccff.toInt()))
         renderPiperVoices()
     }
 
@@ -248,7 +248,11 @@ class ProfilesFragment : Fragment() {
         val ctx = requireContext()
         val state = PiperDownloadManager.getState(ctx, v.id)
         val ready = state == PiperDownloadManager.State.READY
+        val bundled = state == PiperDownloadManager.State.BUNDLED
         val active = currentProfile.voiceName == v.id
+
+        // Bundled voices are selectable immediately — extraction happens on first synthesis
+        val selectable = ready || bundled
 
         val statusText: String
         val statusColor: Int
@@ -258,6 +262,16 @@ class ProfilesFragment : Fragment() {
             PiperDownloadManager.State.READY -> {
                 statusText = "ready"
                 statusColor = 0xFF446644.toInt()
+                statusClickable = false
+            }
+            PiperDownloadManager.State.BUNDLED -> {
+                statusText = "bundled"
+                statusColor = 0xFF88ccff.toInt()
+                statusClickable = false
+            }
+            PiperDownloadManager.State.EXTRACTING -> {
+                statusText = "extracting..."
+                statusColor = 0xFFffcc00.toInt()
                 statusClickable = false
             }
             PiperDownloadManager.State.DOWNLOADING -> {
@@ -280,10 +294,10 @@ class ProfilesFragment : Fragment() {
 
         val card = buildVoiceCard(
             name = v.displayName, icon = v.genderIcon,
-            iconColor = if (ready) v.genderColor else 0xFF444444.toInt(),
+            iconColor = if (selectable) v.genderColor else 0xFF444444.toInt(),
             badge = "${v.flagEmoji} ${v.quality}", voiceId = v.id,
-            active = active, accent = 0xFF88ccff.toInt(), enabled = ready,
-            onClick = if (ready) {
+            active = active, accent = 0xFF88ccff.toInt(), enabled = selectable,
+            onClick = if (selectable) {
                 { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
             } else null
         )
@@ -291,8 +305,11 @@ class ProfilesFragment : Fragment() {
         // Add status / download indicator
         val statusView = TextView(ctx).apply {
             tag = "piper_status_${v.id}"
-            text = if (!ready && state != PiperDownloadManager.State.DOWNLOADING
-                && state != PiperDownloadManager.State.ERROR) "⬇ $statusText" else statusText
+            text = when {
+                state == PiperDownloadManager.State.NOT_DOWNLOADED -> "⬇ $statusText"
+                state == PiperDownloadManager.State.ERROR -> "⚠ $statusText"
+                else -> statusText
+            }
             textSize = 10f; gravity = android.view.Gravity.CENTER
             setTextColor(statusColor)
             setPadding(0, 4, 0, 0)

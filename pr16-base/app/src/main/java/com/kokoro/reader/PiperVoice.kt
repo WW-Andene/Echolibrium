@@ -19,7 +19,8 @@ data class PiperVoice(
     val language: String,     // e.g. "English (US)"
     val nationality: String,  // e.g. "American"
     val locale: String,       // e.g. "en_US"
-    val quality: String       // low | medium | high
+    val quality: String,      // low | medium | high
+    val bundled: Boolean = false  // true = shipped inside APK assets
 ) {
     val genderIcon get() = when (gender) {
         "Female" -> "♀"
@@ -51,7 +52,7 @@ object PiperVoices {
 
     private fun piper(
         name: String, gender: String, language: String, nationality: String,
-        locale: String, quality: String
+        locale: String, quality: String, bundled: Boolean = false
     ): PiperVoice {
         val id = "${locale}-${name}-${quality}"
         return PiperVoice(
@@ -61,25 +62,25 @@ object PiperVoices {
                 it.replaceFirstChar { c -> c.uppercase() }
             },
             gender = gender, language = language, nationality = nationality,
-            locale = locale, quality = quality
+            locale = locale, quality = quality, bundled = bundled
         )
     }
 
-    // ── English (US) — curated selection ────────────────────────────────────
+    // ── English (US) — bundled in APK ─────────────────────────────────────
     private val EN_US = listOf(
-        piper("lessac",  "Female", "English (US)", "American", "en_US", "medium"),
-        piper("amy",     "Female", "English (US)", "American", "en_US", "medium"),
-        piper("kristin", "Female", "English (US)", "American", "en_US", "medium"),
-        piper("ryan",    "Male",   "English (US)", "American", "en_US", "medium"),
-        piper("joe",     "Male",   "English (US)", "American", "en_US", "medium"),
-        piper("bryce",   "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("lessac",  "Female", "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("amy",     "Female", "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("kristin", "Female", "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("ryan",    "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("joe",     "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("bryce",   "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
     )
 
-    // ── English (UK) ────────────────────────────────────────────────────────
+    // ── English (UK) — bundled in APK ─────────────────────────────────────
     private val EN_GB = listOf(
-        piper("alba",  "Female", "English (UK)", "British", "en_GB", "medium"),
-        piper("alan",  "Male",   "English (UK)", "British", "en_GB", "medium"),
-        piper("cori",  "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("alba",  "Female", "English (UK)", "British", "en_GB", "medium", bundled = true),
+        piper("alan",  "Male",   "English (UK)", "British", "en_GB", "medium", bundled = true),
+        piper("cori",  "Female", "English (UK)", "British", "en_GB", "medium", bundled = true),
     )
 
     val ALL: List<PiperVoice> = EN_US + EN_GB

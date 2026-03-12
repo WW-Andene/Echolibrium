@@ -130,8 +130,13 @@ object AudioPipeline {
     private fun synthesizeWithPiper(
         ctx: Context, voiceId: String, text: String, speed: Float
     ): Pair<FloatArray, Int>? {
-        if (!SherpaEngine.initPiper(ctx, voiceId)) {
+        // Ensure voice files are on filesystem (extracts from assets if bundled)
+        if (!PiperDownloadManager.ensureVoiceReady(ctx, voiceId)) {
             Log.w(TAG, "Piper voice $voiceId not ready — may still be downloading")
+            return null
+        }
+        if (!SherpaEngine.initPiper(ctx, voiceId)) {
+            Log.w(TAG, "Piper voice $voiceId failed to init in sherpa-onnx")
             return null
         }
         return SherpaEngine.synthesizePiper(voiceId = voiceId, text = text, speed = speed)

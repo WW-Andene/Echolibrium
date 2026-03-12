@@ -9,26 +9,33 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Downloads and manages individual Piper TTS voice packages.
+ * Manages Piper TTS voice packages — both bundled (APK assets) and downloaded.
  *
- * Each voice is a tar.bz2 from k2-fsa/sherpa-onnx releases containing:
- *   model.onnx, tokens.txt, espeak-ng-data/
+ * Bundled voices live in assets/piper_voices/{voiceId}/ and are extracted
+ * to the filesystem on first use (sherpa-onnx needs file paths).
+ *
+ * Downloaded voices come as tar.bz2 from k2-fsa/sherpa-onnx releases.
  *
  * Storage: filesDir/sherpa/piper/{voiceId}/
  *
- * Thread-safe: downloads run on background threads, state is volatile.
+ * Thread-safe: downloads and extractions run on background threads.
  */
 object PiperDownloadManager {
 
     private const val TAG = "PiperDownload"
+    private const val ASSET_DIR = "piper_voices"
+    private const val VERSION_MARKER = ".extracted_v1"
 
-    enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }
+    enum class State { NOT_DOWNLOADED, BUNDLED, DOWNLOADING, EXTRACTING, READY, ERROR }
 
     // Per-voice state tracking
     private val voiceStates = mutableMapOf<String, State>()
     private val voiceProgress = mutableMapOf<String, Int>()
     private val voiceErrors = mutableMapOf<String, String>()
     private val downloading = mutableSetOf<String>()
+
+    // Cache of bundled voice IDs (populated once)
+    private var bundledVoiceIds: Set<String>? = null
 
     @Volatile var onStateChange: ((voiceId: String, State) -> Unit)? = null
     @Volatile var onProgress: ((voiceId: String, Int) -> Unit)? = null
@@ -40,6 +47,28 @@ object PiperDownloadManager {
 
     fun getVoiceDir(ctx: Context, voiceId: String): File =
         File(getPiperDir(ctx), voiceId)
+
+    // ── Bundled voice detection ─────────────────────────────────────────────
+
+    /**
+     * Returns the set of voice IDs bundled inside the APK assets.
+     * Cached after first call.
+     */
+    fun getBundledVoiceIds(ctx: Context): Set<String> {
+        bundledVoiceIds?.let { return it }
+        val ids = try {
+            ctx.assets.list(ASSET_DIR)?.toSet() ?: emptySet()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not list bundled voices", e)
+            emptySet()
+        }
+        bundledVoiceIds = ids
+        Log.d(TAG, "Bundled voices: $ids")
+        return ids
+    }
+
+    fun isBundled(ctx: Context, voiceId: String): Boolean =
+        voiceId in getBundledVoiceIds(ctx)
 
     // ── State queries ───────────────────────────────────────────────────────
 
@@ -58,7 +87,6 @@ object PiperDownloadManager {
     fun getModelFile(voiceDir: File, voiceId: String): File? {
         val expected = File(voiceDir, "$voiceId.onnx")
         if (expected.exists()) return expected
-        // Fallback: find any .onnx file that isn't a .json
         return voiceDir.listFiles()?.firstOrNull {
             it.extension == "onnx" && !it.name.endsWith(".onnx.json")
         }
@@ -69,7 +97,8 @@ object PiperDownloadManager {
 
     fun getState(ctx: Context, voiceId: String): State {
         if (isVoiceReady(ctx, voiceId)) return State.READY
-        if (isDownloading(voiceId)) return State.DOWNLOADING
+        if (isDownloading(voiceId)) return voiceStates[voiceId] ?: State.DOWNLOADING
+        if (isBundled(ctx, voiceId)) return State.BUNDLED
         return voiceStates[voiceId] ?: State.NOT_DOWNLOADED
     }
 
@@ -79,9 +108,105 @@ object PiperDownloadManager {
     fun getError(voiceId: String): String =
         voiceErrors[voiceId] ?: ""
 
-    // ── Download ────────────────────────────────────────────────────────────
+    // ── Extract bundled voice from APK assets ───────────────────────────────
+
+    /**
+     * Extracts a bundled voice from APK assets to the filesystem.
+     * This is called lazily when the voice is first used.
+     * Returns true if extraction succeeded (or voice already extracted).
+     */
+    fun extractBundledVoice(ctx: Context, voiceId: String): Boolean {
+        if (isVoiceReady(ctx, voiceId)) return true
+        if (!isBundled(ctx, voiceId)) return false
+
+        synchronized(downloading) {
+            if (voiceId in downloading) return false
+            downloading.add(voiceId)
+        }
+
+        updateState(voiceId, State.EXTRACTING)
+
+        try {
+            val voiceDir = getVoiceDir(ctx, voiceId)
+            val marker = File(voiceDir, VERSION_MARKER)
+
+            // Skip if already extracted with current version
+            if (marker.exists() && isVoiceReady(ctx, voiceId)) {
+                updateState(voiceId, State.READY)
+                return true
+            }
+
+            // Clean and re-extract
+            voiceDir.deleteRecursively()
+            voiceDir.mkdirs()
+
+            val assetPath = "$ASSET_DIR/$voiceId"
+            val files = ctx.assets.list(assetPath) ?: emptyArray()
+            Log.d(TAG, "Extracting bundled voice $voiceId (${files.size} entries)")
+
+            for (name in files) {
+                extractAssetRecursive(ctx, "$assetPath/$name", File(voiceDir, name))
+            }
+
+            // Write version marker for future APK updates
+            marker.writeText(android.os.Build.TIME.toString())
+
+            if (isVoiceReady(ctx, voiceId)) {
+                Log.d(TAG, "Bundled voice $voiceId extracted successfully")
+                updateState(voiceId, State.READY)
+                return true
+            } else {
+                voiceErrors[voiceId] = "Extraction incomplete"
+                updateState(voiceId, State.ERROR)
+                return false
+            }
+        } catch (e: Exception) {
+            voiceErrors[voiceId] = e.message ?: "Extraction failed"
+            Log.e(TAG, "Failed to extract bundled voice $voiceId", e)
+            updateState(voiceId, State.ERROR)
+            return false
+        } finally {
+            synchronized(downloading) { downloading.remove(voiceId) }
+        }
+    }
+
+    /**
+     * Extract bundled voice in background thread with progress callbacks.
+     */
+    fun extractBundledVoiceAsync(ctx: Context, voiceId: String) {
+        Thread {
+            extractBundledVoice(ctx, voiceId)
+        }.start()
+    }
+
+    private fun extractAssetRecursive(ctx: Context, assetPath: String, dest: File) {
+        val children = try { ctx.assets.list(assetPath) } catch (_: Exception) { null }
+        if (children != null && children.isNotEmpty()) {
+            // It's a directory
+            dest.mkdirs()
+            for (child in children) {
+                extractAssetRecursive(ctx, "$assetPath/$child", File(dest, child))
+            }
+        } else {
+            // It's a file
+            dest.parentFile?.mkdirs()
+            ctx.assets.open(assetPath).use { input ->
+                dest.outputStream().use { output ->
+                    input.copyTo(output, bufferSize = 32 * 1024)
+                }
+            }
+        }
+    }
+
+    // ── Download (for non-bundled voices) ────────────────────────────────────
 
     fun downloadVoice(ctx: Context, voiceId: String) {
+        // If it's a bundled voice, extract from assets instead
+        if (isBundled(ctx, voiceId)) {
+            extractBundledVoiceAsync(ctx, voiceId)
+            return
+        }
+
         synchronized(downloading) {
             if (voiceId in downloading) return
             downloading.add(voiceId)
@@ -108,7 +233,7 @@ object PiperDownloadManager {
                 }
 
                 Log.d(TAG, "Extracting $voiceId")
-                onProgress?.invoke(voiceId, -1) // signal extracting
+                onProgress?.invoke(voiceId, -1)
                 extract(tmpFile, getPiperDir(ctx), voiceId)
 
                 tmpFile.delete()
@@ -139,6 +264,18 @@ object PiperDownloadManager {
         updateState(voiceId, State.NOT_DOWNLOADED)
     }
 
+    // ── Ensure voice ready (blocking) ───────────────────────────────────────
+
+    /**
+     * Ensures a voice is extracted and ready. Blocks if extraction is needed.
+     * Called from AudioPipeline's background thread before synthesis.
+     */
+    fun ensureVoiceReady(ctx: Context, voiceId: String): Boolean {
+        if (isVoiceReady(ctx, voiceId)) return true
+        if (isBundled(ctx, voiceId)) return extractBundledVoice(ctx, voiceId)
+        return false
+    }
+
     // ── Internal ────────────────────────────────────────────────────────────
 
     private fun updateState(voiceId: String, state: State) {
@@ -153,7 +290,6 @@ object PiperDownloadManager {
         conn.readTimeout = 30_000
         conn.connect()
 
-        // Follow redirects (GitHub releases redirect to CDN)
         var redirects = 0
         while (conn.responseCode in 300..399 && redirects++ < 5) {
             val location = conn.getHeaderField("Location") ?: break
@@ -192,12 +328,6 @@ object PiperDownloadManager {
         }
     }
 
-    /**
-     * Extract tar.bz2 and rename the inner directory to voiceId.
-     *
-     * sherpa-onnx archives extract to "vits-piper-{voiceId}/" but we
-     * store as "{voiceId}/" for cleaner paths.
-     */
     private fun extract(tarBz2: File, destDir: File, voiceId: String) {
         val archiveDir = PiperVoices.archiveDirName(voiceId)
         val targetDir = File(destDir, voiceId)
@@ -208,7 +338,6 @@ object PiperDownloadManager {
                 TarArchiveInputStream(bz2).use { tar ->
                     var entry = tar.nextTarEntry
                     while (entry != null) {
-                        // Strip the archive directory prefix
                         val relativePath = entry.name.removePrefix("$archiveDir/")
                             .removePrefix(archiveDir)
                         if (relativePath.isNotBlank()) {

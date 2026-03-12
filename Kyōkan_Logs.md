@@ -5,6 +5,55 @@
 
 ---
 
+## Session: March 12, 2026 (claude/fix-ci-cd-workflow-tBMek)
+
+Focus: Matching standalone Sherpa APK behavior to fix engine init on Xiaomi 13T / Dimensity 8200 / HyperOS 2.0.
+
+### Issue 16: Stale crash counter blocks new init code from running
+**Commit:** `7f107b5`
+**Symptom:** After installing the simplified init build, engine immediately reports "Native stack broken (8 crashes)" and falls back to Android system TTS (which also fails). The new init code never executes.
+**Root cause:** SharedPreferences persists across app updates. The `init_crash_count` of 8 accumulated from previous builds' `:tts` process deaths was still present. Since 8 >= `NATIVE_BROKEN_THRESHOLD`, `warmUp()` skipped directly to the broken-native path without ever attempting the new simplified init.
+**Fix:** Added version-based crash counter reset in `warmUp()`. On app version change (tracked via `last_init_version` in SharedPreferences), all crash state is cleared: `init_crash_count`, `init_in_progress`, `skip_ort`. Bumped version code from 4 to 5 to trigger the reset.
+**Lesson:** When changing init strategy, stale crash-tracking state from previous versions must be invalidated. Always version-gate crash counters.
+
+### Issue 15: Simplify engine init to match standalone Sherpa APK
+**Commit:** `8cdfb23`
+**Symptom:** Engine repeatedly crashes in `:tts` process (EXIT_SELF status=255). The standalone sherpa-onnx APK (PR #16) works perfectly on the same device.
+**Root cause:** Echolibrium's init had three major differences from the standalone app:
+1. **Piper probe phase** — loaded a 60MB VITS model before attempting Kokoro. This either crashed itself or left corrupt native state (unreleased ORT allocator regions, stale thread-local storage) that made the subsequent Kokoro load fail.
+2. **Escalation ladder** — tried multiple thread/provider configs with timeouts, creating repeated native load attempts. Each attempt could leave partial native state.
+3. **Heap reservation + model pre-warming** — the standalone app does neither.
+
+**Fix:** Stripped init down to match standalone behavior:
+- Removed Stage 0 Piper probe entirely (biggest change)
+- Removed escalation ladder — single attempt with 1 thread + cpu provider
+- Removed heap reservation and model pre-warming
+- Prefer `.onnx` over `.ort` (avoids ORT flatbuffer version mismatch)
+- Restored `:tts` process isolation as safety net (UI survives native crashes)
+- Restored watchdog, `isMainProcess()`, `extractNativeLibs="true"`
+- Disabled R8/ProGuard to eliminate minification as a variable
+
+**Lesson:** Defensive measures can become the problem. The probe phase was designed to detect broken native stacks early, but it was itself causing the breakage. When a simpler approach (standalone APK) works, match it first, then add defenses incrementally.
+
+### Attempted fix: Remove R8 minification
+**Commit:** `7f3d7db`
+**Symptom:** Investigating whether R8/ProGuard was stripping JNI-related classes or methods needed by sherpa-onnx native code.
+**Fix:** Set `minifyEnabled false`, `shrinkResources false`, removed proguard rules. Kept as part of final solution to eliminate minification as a variable.
+
+### Attempted fix: Match standalone extractNativeLibs setting
+**Commit:** `a81b1ca`
+**Symptom:** Standalone Sherpa APK uses `extractNativeLibs="false"` (mmap from APK). Echolibrium used `extractNativeLibs="true"` (extract to filesystem).
+**Fix:** Changed to `extractNativeLibs="false"`, removed `useLegacyPackaging=true`.
+**Result:** Did not fix the engine crash. Later reverted to `true` since `:tts` process isolation was restored and filesystem extraction is more reliable.
+
+### Attempted fix: Remove `:tts` process isolation
+**Commit:** `6b81b83`
+**Symptom:** Standalone Sherpa APK runs everything in one process. Echolibrium splits TTS into `:tts` process.
+**Fix:** Removed `android:process=":tts"` from service and receiver. Removed watchdog and `isMainProcess()` check.
+**Result:** App crashed entirely when engine init failed (SIGSEGV in main process kills UI). Reverted — process isolation is needed as a safety net.
+
+---
+
 ## Session: March 2026 (claude/review-kyokan-docs-0kSrs)
 
 Focus: HyperOS compatibility, OEM background kill prevention, self-healing watchdog, Android system TTS fallback, auto-reporting, and SIGSEGV-surviving format fallback.
@@ -322,3 +371,7 @@ This was the original critical bug. It took **8 sequential fix attempts** to ful
 8. **Don't require external apps.** Shizuku was technically powerful but requiring users to install a separate app is bad UX. Standard Android APIs (battery exemption dialog, OEM AutoStart intents) cover all critical use cases.
 
 9. **All OEMs kill background processes.** It's not just Xiaomi — Samsung, Huawei, OnePlus, Oppo, Vivo, and others all have proprietary background kill systems. `OemProtection.kt` maintains AutoStart intents for all major OEMs.
+
+10. **Defensive measures can become the attack surface.** The Piper probe (Stage 0) was designed to detect broken native stacks early, but it was itself causing native state corruption that broke subsequent Kokoro loading. The escalation ladder created multiple partial native loads. When a standalone APK with zero defenses works on the same device, the defenses are the problem.
+
+11. **Stale crash state poisons new code.** SharedPreferences crash counters persist across app updates. A new init strategy can be dead-on-arrival if old crash counts exceed thresholds. Always version-gate persistent crash tracking and reset on app update.

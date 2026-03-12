@@ -39,7 +39,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KokoroReader-v3
-          path: pr16-base/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: pr16-base/app/build/outputs/apk/release/app-release*.apk
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:

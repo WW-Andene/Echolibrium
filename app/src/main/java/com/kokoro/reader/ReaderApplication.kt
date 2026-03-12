@@ -48,6 +48,7 @@ class ReaderApplication : Application() {
         private const val RAPID_CRASH_WINDOW_MS = 60_000L
         /** Delay before running logcat capture to let HWUI finish initializing */
         private const val LOGCAT_CAPTURE_DELAY_MS = 5_000L
+        private const val KEY_HWUI_SAFE_MODE = "hwui_safe_mode"
 
         /** Resolved log directory — accessible from other components for "view logs" UI */
         @Volatile var resolvedLogDir: File? = null
@@ -55,6 +56,10 @@ class ReaderApplication : Application() {
 
         /** Human description of where logs are stored */
         @Volatile var logLocationDescription: String = "not initialized"
+            private set
+
+        /** True when rapid HWUI crashes detected — activities should use software rendering */
+        @Volatile var hwuiSafeMode: Boolean = false
             private set
     }
 
@@ -66,6 +71,11 @@ class ReaderApplication : Application() {
         // Only run crash detection/recovery in the main (UI) process.
         // The :tts process has no Activity to show CrashReportActivity.
         if (isMainProcess()) {
+            // Load HWUI safe mode flag before anything else
+            hwuiSafeMode = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_HWUI_SAFE_MODE, false)
+            if (hwuiSafeMode) Log.w(TAG, "HWUI safe mode active — software rendering for activities")
+
             detectPreviousCrash()
             markSessionActive()
             startTtsWatchdog()
@@ -85,6 +95,12 @@ class ReaderApplication : Application() {
         // Mark clean exit when system is about to kill the process
         if (level >= TRIM_MEMORY_COMPLETE) {
             markSessionClean()
+            // Clear HWUI safe mode on clean exit — GPU was stable this session
+            if (hwuiSafeMode) {
+                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit().putBoolean(KEY_HWUI_SAFE_MODE, false).apply()
+                hwuiSafeMode = false
+            }
         }
     }
 
@@ -176,6 +192,15 @@ class ReaderApplication : Application() {
             .putInt(KEY_RAPID_CRASH_COUNT, rapidCount)
             .putLong(KEY_LAST_CRASH_TIME, now)
             .apply()
+
+        if (rapidCount >= 2) {
+            // Enable software rendering to break HWUI/Mali GPU crash loops.
+            // Common on Xiaomi/MediaTek: memory pressure corrupts GPU mutex,
+            // process restarts immediately, same mutex is still dirty → crash loop.
+            Log.w(TAG, "Rapid crash loop ($rapidCount) — enabling HWUI safe mode (software rendering)")
+            prefs.edit().putBoolean(KEY_HWUI_SAFE_MODE, true).apply()
+            hwuiSafeMode = true
+        }
 
         if (rapidCount > MAX_RAPID_CRASHES) {
             Log.e(TAG, "Rapid crash loop detected ($rapidCount crashes in <${RAPID_CRASH_WINDOW_MS/1000}s) — skipping logcat capture to break loop")

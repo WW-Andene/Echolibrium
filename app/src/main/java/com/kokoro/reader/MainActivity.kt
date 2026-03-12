@@ -1,6 +1,7 @@
 package com.kokoro.reader
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -35,6 +36,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_main)
+
+        // If rapid HWUI/GPU crashes were detected, switch to software rendering.
+        // Breaks the crash loop on Xiaomi/MediaTek where Mali GPU mutex gets corrupted
+        // under memory pressure and stays dirty across process restarts.
+        if (ReaderApplication.hwuiSafeMode) {
+            Log.w("MainActivity", "HWUI safe mode — using software rendering")
+            findViewById<View>(R.id.fragment_container)
+                .setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        }
 
         // Restore existing fragments after configuration change
         if (savedInstanceState != null) {

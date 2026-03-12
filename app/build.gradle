@@ -72,9 +72,8 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            minifyEnabled false
+            shrinkResources false
             def ksFile = file("${rootProject.projectDir}/keystore.jks")
             if (ksFile.exists()) {
                 signingConfig signingConfigs.release

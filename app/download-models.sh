@@ -63,17 +63,23 @@ else
 fi
 
 # INT8 quantized model (110MB vs 310MB — for low-RAM devices)
+# Optional: the app works without it but will fall back to Piper on low-RAM devices.
 if [ -f "$KOKORO_DIR/model.int8.onnx" ]; then
     echo "  ✓ Kokoro INT8 model already present — skipping"
 else
     echo "  ↓ Downloading Kokoro INT8 model (~126MB archive)…"
-    curl -fL $RETRY "$RELEASE_BASE/kokoro-int8-multi-lang-v1_0.tar.bz2" -o kokoro-int8.tar.bz2
-    echo "  ↓ Extracting model.int8.onnx…"
-    # Only extract the INT8 model file — voices.bin/tokens.txt/espeak-ng-data are shared
-    tar -xjf kokoro-int8.tar.bz2 --strip-components=1 -C "$KOKORO_DIR" \
-        "kokoro-int8-multi-lang-v1_0/model.int8.onnx"
-    rm -f kokoro-int8.tar.bz2
-    echo "  ✓ Kokoro INT8 model ready"
+    if curl -fL $RETRY "$RELEASE_BASE/kokoro-int8-multi-lang-v1_0.tar.bz2" -o kokoro-int8.tar.bz2; then
+        echo "  ↓ Extracting model.int8.onnx…"
+        # Only extract the INT8 model file — voices.bin/tokens.txt/espeak-ng-data are shared
+        tar -xjf kokoro-int8.tar.bz2 --strip-components=1 -C "$KOKORO_DIR" \
+            "kokoro-int8-multi-lang-v1_0/model.int8.onnx"
+        rm -f kokoro-int8.tar.bz2
+        echo "  ✓ Kokoro INT8 model ready"
+    else
+        echo "  ⚠ INT8 model not available yet (run upload-voices.yml to add it)"
+        echo "    The app will still work — low-RAM devices will use Piper fallback"
+        rm -f kokoro-int8.tar.bz2
+    fi
 fi
 
 echo "  Files:"

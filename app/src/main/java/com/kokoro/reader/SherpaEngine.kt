@@ -353,39 +353,59 @@ object SherpaEngine {
 
     private fun initSystemTtsFallback(ctx: Context): Boolean {
         plog("initSystemTtsFallback: initializing Android system TTS")
-        val latch = CountDownLatch(1)
-        var initStatus = TextToSpeech.ERROR
-        try {
-            val tts = TextToSpeech(ctx.applicationContext) { status ->
-                initStatus = status
-                latch.countDown()
-            }
-            // Wait up to 5 seconds for system TTS to init
-            if (!latch.await(5, TimeUnit.SECONDS)) {
-                plog("initSystemTtsFallback: timeout waiting for system TTS init")
-                tts.shutdown()
+        // Try up to 2 times — the first attempt can fail on Xiaomi/HyperOS when
+        // the system TTS service is slow to bind after repeated :tts process crashes.
+        for (attempt in 1..2) {
+            plog("initSystemTtsFallback: attempt $attempt/2")
+            val latch = CountDownLatch(1)
+            var initStatus = TextToSpeech.ERROR
+            try {
+                val tts = TextToSpeech(ctx.applicationContext) { status ->
+                    initStatus = status
+                    latch.countDown()
+                }
+                // Wait up to 15 seconds — Xiaomi/HyperOS can be very slow to bind
+                // the system TTS service from a background process that has been
+                // crash-looping.
+                if (!latch.await(15, TimeUnit.SECONDS)) {
+                    plog("initSystemTtsFallback: timeout waiting for system TTS init (attempt $attempt)")
+                    tts.shutdown()
+                    if (attempt < 2) {
+                        Thread.sleep(2000)  // Brief pause before retry
+                        continue
+                    }
+                    return false
+                }
+                if (initStatus != TextToSpeech.SUCCESS) {
+                    plog("initSystemTtsFallback: system TTS init failed (status=$initStatus, attempt $attempt)")
+                    tts.shutdown()
+                    if (attempt < 2) {
+                        Thread.sleep(2000)
+                        continue
+                    }
+                    return false
+                }
+                // Set language to English (fallback)
+                val langResult = tts.setLanguage(java.util.Locale.US)
+                if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    plog("initSystemTtsFallback: English not available, trying default locale")
+                    tts.setLanguage(java.util.Locale.getDefault())
+                }
+                systemTts = tts
+                plog("initSystemTtsFallback: system TTS ready (engine=${tts.defaultEngine})")
+                Log.i(TAG, "Android system TTS ready: ${tts.defaultEngine}")
+                return true
+            } catch (e: Throwable) {
+                plog("initSystemTtsFallback: exception on attempt $attempt: ${e.message}")
+                Log.e(TAG, "System TTS init failed (attempt $attempt)", e)
+                if (attempt < 2) {
+                    Thread.sleep(2000)
+                    continue
+                }
                 return false
             }
-            if (initStatus != TextToSpeech.SUCCESS) {
-                plog("initSystemTtsFallback: system TTS init failed (status=$initStatus)")
-                tts.shutdown()
-                return false
-            }
-            // Set language to English (fallback)
-            val langResult = tts.setLanguage(java.util.Locale.US)
-            if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                plog("initSystemTtsFallback: English not available, trying default locale")
-                tts.setLanguage(java.util.Locale.getDefault())
-            }
-            systemTts = tts
-            plog("initSystemTtsFallback: system TTS ready (engine=${tts.defaultEngine})")
-            Log.i(TAG, "Android system TTS ready: ${tts.defaultEngine}")
-            return true
-        } catch (e: Throwable) {
-            plog("initSystemTtsFallback: exception: ${e.message}")
-            Log.e(TAG, "System TTS init failed", e)
-            return false
         }
+        return false
     }
 
     /**

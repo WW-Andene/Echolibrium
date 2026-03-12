@@ -274,6 +274,9 @@ object SherpaEngine {
             // REASON_CRASH_NATIVE (6) = SIGSEGV/SIGABRT/etc — definitely a native crash
             // REASON_CRASH (4) = uncaught Java exception — treat as crash
             // REASON_ANR (3) = ANR — treat as crash (init took too long)
+            // REASON_EXIT_SELF (1) with non-zero status = abnormal self-exit during init
+            //   (e.g. OOM, uncaught error causing exit(255)) — treat as crash to avoid
+            //   infinite retry loops where init keeps dying at the same point
             // Everything else = OS killed it (not the native code's fault)
             when (reason) {
                 ApplicationExitInfo.REASON_CRASH_NATIVE,
@@ -281,6 +284,17 @@ object SherpaEngine {
                 ApplicationExitInfo.REASON_ANR -> {
                     Log.w(TAG, "Last :tts exit was ${exitReasonName(reason)}: $desc")
                     true
+                }
+                ApplicationExitInfo.REASON_EXIT_SELF -> {
+                    val status = ttsExit.status
+                    if (status != 0) {
+                        Log.w(TAG, "Last :tts exit was EXIT_SELF with status=$status (abnormal) — treating as crash")
+                        plog("wasLastExitNativeCrash: EXIT_SELF status=$status — treating as crash")
+                        true
+                    } else {
+                        Log.i(TAG, "Last :tts exit was EXIT_SELF with status=0 (clean shutdown)")
+                        false
+                    }
                 }
                 else -> {
                     Log.i(TAG, "Last :tts exit was ${exitReasonName(reason)} (not native crash): $desc")
@@ -1003,7 +1017,7 @@ object SherpaEngine {
 
         // Reset crash counter if enough time has passed (device might have cooled down)
         if (crashCount > 0 && System.currentTimeMillis() - lastCrashTime > CRASH_RESET_WINDOW_MS) {
-            plog("warmUp: crash counter reset (>5min since last crash)")
+            plog("warmUp: crash counter reset (>${CRASH_RESET_WINDOW_MS / 1000}s since last crash)")
             crashCount = 0
             initPrefs.edit().putInt(KEY_INIT_CRASH_COUNT, 0).apply()
             Log.d(TAG, "Init crash counter reset (>5min since last crash)")

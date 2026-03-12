@@ -93,14 +93,32 @@ ESPEAK_DIR="$PIPER_DIR/espeak-ng-data"
 if [ -d "$ESPEAK_DIR" ] && [ "$(ls -A "$ESPEAK_DIR" 2>/dev/null)" ]; then
     echo "  ✓ espeak-ng-data already exists — skipping"
 else
-    echo "  ↓ Downloading espeak-ng-data.tar.gz…"
-    curl -fL $RETRY "$RELEASE_BASE/espeak-ng-data.tar.gz" -o "$PIPER_DIR/espeak-ng-data.tar.gz" || {
-        echo "  ✗ FAILED to download espeak-ng-data.tar.gz"
-        echo "  ✗ Piper TTS will not work without espeak-ng-data!"
-        exit 1
-    }
-    tar -xzf "$PIPER_DIR/espeak-ng-data.tar.gz" -C "$PIPER_DIR"
-    rm -f "$PIPER_DIR/espeak-ng-data.tar.gz"
+    # Try our release first, fall back to extracting from a Piper voice package
+    echo "  ↓ Downloading espeak-ng-data…"
+    if curl -fL $RETRY "$RELEASE_BASE/espeak-ng-data.tar.gz" -o "$PIPER_DIR/espeak-ng-data.tar.gz" 2>/dev/null; then
+        tar -xzf "$PIPER_DIR/espeak-ng-data.tar.gz" -C "$PIPER_DIR"
+        rm -f "$PIPER_DIR/espeak-ng-data.tar.gz"
+    else
+        echo "  ⚠ espeak-ng-data.tar.gz not in release — extracting from Piper voice package"
+        curl -fL $RETRY \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
+            -o "$PIPER_DIR/_piper-pkg.tar.bz2" || {
+            echo "  ✗ FAILED to download Piper voice package"
+            echo "  ✗ Piper TTS will not work without espeak-ng-data!"
+            exit 1
+        }
+        mkdir -p "$PIPER_DIR/_tmp-piper"
+        tar -xjf "$PIPER_DIR/_piper-pkg.tar.bz2" -C "$PIPER_DIR/_tmp-piper"
+        ESPEAK_SRC=$(find "$PIPER_DIR/_tmp-piper" -type d -name "espeak-ng-data" | head -1)
+        if [ -n "$ESPEAK_SRC" ]; then
+            cp -r "$ESPEAK_SRC" "$ESPEAK_DIR"
+        else
+            echo "  ✗ espeak-ng-data not found in Piper package!"
+            rm -rf "$PIPER_DIR/_tmp-piper" "$PIPER_DIR/_piper-pkg.tar.bz2"
+            exit 1
+        fi
+        rm -rf "$PIPER_DIR/_tmp-piper" "$PIPER_DIR/_piper-pkg.tar.bz2"
+    fi
     echo "  ✓ espeak-ng-data extracted ($(du -sh "$ESPEAK_DIR" 2>/dev/null | cut -f1))"
 fi
 

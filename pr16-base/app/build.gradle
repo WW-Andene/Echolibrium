@@ -1,0 +1,37 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+android {
+    namespace 'com.kokoro.reader'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.kokoro.reader"
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName "3.0"
+        // Only include arm64 — Dimensity 8200 is arm64, keeps APK small
+        ndk { abiFilters "arm64-v8a" }
+    }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+}
+dependencies {
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.preference:preference-ktx:1.2.1'
+    implementation 'androidx.fragment:fragment-ktx:1.6.2'
+
+    // Sherpa-onnx Android library (pre-built AAR downloaded by CI — see build.yml)
+    implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
+
+    // Tar.bz2 extraction for Kokoro model download
+    implementation 'org.apache.commons:commons-compress:1.26.2'
+}

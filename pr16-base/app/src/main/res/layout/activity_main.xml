@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="#0d0d0d">
+    <FrameLayout android:id="@+id/fragment_container"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+    <LinearLayout android:id="@+id/bottom_nav"
+        android:layout_width="match_parent" android:layout_height="56dp"
+        android:background="#111111" android:orientation="horizontal"
+        android:gravity="center_vertical" android:baselineAligned="false">
+        <LinearLayout android:id="@+id/nav_home" style="@style/NavTab"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="24dp" android:layout_height="24dp"
+                android:src="@drawable/ic_home" android:contentDescription="Home"
+                android:importantForAccessibility="no"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Home"/>
+        </LinearLayout>
+        <LinearLayout android:id="@+id/nav_profiles" style="@style/NavTab"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="24dp" android:layout_height="24dp"
+                android:src="@drawable/ic_voice" android:contentDescription="Voices"
+                android:importantForAccessibility="no"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Voices"/>
+        </LinearLayout>
+        <LinearLayout android:id="@+id/nav_apps" style="@style/NavTab"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="24dp" android:layout_height="24dp"
+                android:src="@drawable/ic_apps" android:contentDescription="Apps"
+                android:importantForAccessibility="no"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Apps"/>
+        </LinearLayout>
+        <LinearLayout android:id="@+id/nav_rules" style="@style/NavTab"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
+            <ImageView android:layout_width="24dp" android:layout_height="24dp"
+                android:src="@drawable/ic_rules" android:contentDescription="Words"
+                android:importantForAccessibility="no"/>
+            <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Words"/>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

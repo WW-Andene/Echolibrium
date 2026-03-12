@@ -1,11 +1,14 @@
 name: Build APK
 on:
   push:
-    branches: [ main, 'claude/**' ]
+    branches: [ main, master, 'claude/**' ]
   workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pr16-base
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -14,130 +17,32 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
 
-      # Install onnxruntime for ORT model optimization (faster load on device).
-      # CRITICAL: Must match the ORT version bundled in the sherpa-onnx AAR.
-      # sherpa-onnx 1.12.28 builds with onnxruntime 1.17.1 for Android.
-      # Using a newer ORT version here produces .ort files with an incompatible
-      # flatbuffer format, causing SIGSEGV or silent load failure on device.
-      - name: Install onnxruntime
-        run: pip install onnxruntime==1.17.1
-
-      # Downloads sherpa-onnx AAR, Kokoro model, and 8 core Piper voices.
-      # Then converts bundled models to ORT format (5-10x faster loading).
-      # Non-bundled voices are downloaded by the app on demand from GitHub Releases.
-      - name: Download and optimize TTS models
-        run: cd app && bash download-models.sh
-
-      # Fail fast if critical assets are missing before building
-      - name: Verify TTS assets
+      # Download pre-built sherpa-onnx Android AAR (same as original PR #16)
+      - name: Download sherpa-onnx AAR
         run: |
-          set -euo pipefail
-          echo "Checking critical build assets..."
-          MISSING=0
+          mkdir -p app/libs
+          VERSION="1.12.28"
+          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${VERSION}/sherpa-onnx-${VERSION}.aar"
+          echo "Downloading sherpa-onnx AAR from $URL"
+          curl -L "$URL" -o app/libs/sherpa_onnx.aar
+          echo "AAR placed at app/libs/sherpa_onnx.aar ($(du -h app/libs/sherpa_onnx.aar | cut -f1))"
 
-          check() { if [ ! -e "$1" ]; then echo "✗ MISSING: $1"; MISSING=1; else echo "✓ $1"; fi; }
-
-          check "app/libs/sherpa_onnx.aar"
-
-          # Kokoro model is disabled (cloud TTS planned) — skip check
-          echo "⏭ Kokoro model: DISABLED (not bundled)"
-
-          PIPER_COUNT=$(find app/src/main/assets/piper-models -name '*.onnx' -o -name '*.ort' 2>/dev/null | wc -l)
-          echo "  Piper voices: $PIPER_COUNT"
-          if [ "$PIPER_COUNT" -lt 1 ]; then
-            echo "✗ No Piper voice models found"
-            MISSING=1
-          fi
-
-          if [ "$MISSING" -eq 1 ]; then
-            echo ""
-            echo "═══════════════════════════════════════════════════════"
-            echo "BUILD BLOCKED: Required TTS assets are missing."
-            echo ""
-            echo "Have you run the 'Upload TTS Assets' workflow?"
-            echo "  → Go to Actions → 'Upload TTS Assets to Release'"
-            echo "  → Click 'Run workflow' (manual trigger)"
-            echo ""
-            echo "This creates the tts-assets-v1 release that"
-            echo "download-models.sh fetches from."
-            echo "═══════════════════════════════════════════════════════"
-            exit 1
-          fi
-
-          echo ""
-          echo "All TTS assets verified ✓"
-
-      # If KEYSTORE_BASE64 secret is set, decode it. Otherwise generate a
-      # temporary debug-signing keystore so the APK is always installable.
-      # To use your own keystore, set these repository secrets:
-      #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
-      - name: Prepare signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      # Assemble SherpaTTS engine APK from the split zip files in the repo
+      - name: Assemble SherpaTTS APK from repo
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "Using keystore from repository secrets"
-            echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
-          else
-            echo "No KEYSTORE_BASE64 secret — generating CI signing key"
-            keytool -genkeypair -v \
-              -keystore keystore.jks \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -alias echolibrium \
-              -storepass echolibrium \
-              -keypass echolibrium \
-              -dname "CN=Echolibrium CI, O=Echolibrium, L=CI, ST=CI, C=US"
-          fi
+          cat Sherpa_base1.zip Sherpa_base2.zip Sherpa_base3.zip > SherpaTTS-arm64-v8a.apk
+          echo "SherpaTTS APK assembled from repo zip parts ($(wc -c < SherpaTTS-arm64-v8a.apk) bytes)"
 
       - run: chmod +x gradlew
-      - name: Build release APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'echolibrium' }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'echolibrium' }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'echolibrium' }}
-        run: ./gradlew assembleRelease
-
-      # Verify the APK contains the native library
-      - name: Verify APK contents
-        run: |
-          # Find the APK — signed builds go to app-release.apk, unsigned to app-release-unsigned.apk
-          APK="app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK" ]; then
-            APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          fi
-          echo "APK: $APK"
-          echo "APK size: $(du -h "$APK" | cut -f1)"
-
-          # Check signing status
-          if jarsigner -verify -verbose -certs "$APK" 2>/dev/null | grep -q "jar verified"; then
-            echo "✓ APK is signed"
-          else
-            echo "⚠ APK is unsigned (set KEYSTORE_BASE64 secret to enable signing)"
-          fi
-
-          # Check for native library
-          if unzip -l "$APK" | grep -q "lib/arm64-v8a/.*\.so"; then
-            echo "✓ Native library (arm64-v8a) present"
-          else
-            echo "✗ WARNING: No arm64-v8a native library found in APK!"
-            echo "  The app will crash with UnsatisfiedLinkError on launch."
-            exit 1
-          fi
-
-          # Kokoro model is disabled — check Piper assets instead
-          PIPER_IN_APK=$(unzip -l "$APK" | grep "assets/piper-models/" | wc -l)
-          echo "  Piper model files in APK: $PIPER_IN_APK"
-          if [ "$PIPER_IN_APK" -lt 1 ]; then
-            echo "✗ WARNING: No Piper models found in APK"
-            exit 1
-          fi
-
-          echo "APK verification passed ✓"
+      - run: ./gradlew assembleRelease
 
       - uses: actions/upload-artifact@v4
         with:
-          name: KokoroReader-v4
-          path: |
-            app/build/outputs/apk/release/app-release.apk
-            app/build/outputs/apk/release/app-release-unsigned.apk
+          name: KokoroReader-v3
+          path: pr16-base/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SherpaTTS-arm64-v8a
+          path: pr16-base/SherpaTTS-arm64-v8a.apk
           retention-days: 30

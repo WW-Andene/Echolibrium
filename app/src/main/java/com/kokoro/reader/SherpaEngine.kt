@@ -286,15 +286,16 @@ object SherpaEngine {
                     true
                 }
                 ApplicationExitInfo.REASON_EXIT_SELF -> {
+                    // EXIT_SELF is ambiguous: could be our code calling exit(), OR the OS
+                    // (especially Xiaomi/HyperOS) killing background processes for battery
+                    // management. Status=255 is commonly used by the system for forced kills.
+                    // Only REASON_CRASH_NATIVE reliably indicates a SIGSEGV/SIGABRT.
+                    // Treating EXIT_SELF as crash causes false positives on aggressive OEMs,
+                    // permanently disabling the engine after NATIVE_BROKEN_THRESHOLD.
                     val status = ttsExit.status
-                    if (status != 0) {
-                        Log.w(TAG, "Last :tts exit was EXIT_SELF with status=$status (abnormal) — treating as crash")
-                        plog("wasLastExitNativeCrash: EXIT_SELF status=$status — treating as crash")
-                        true
-                    } else {
-                        Log.i(TAG, "Last :tts exit was EXIT_SELF with status=0 (clean shutdown)")
-                        false
-                    }
+                    Log.i(TAG, "Last :tts exit was EXIT_SELF with status=$status — not counting as native crash")
+                    plog("wasLastExitNativeCrash: EXIT_SELF status=$status — not counting as native crash (may be OS kill)")
+                    false
                 }
                 else -> {
                     Log.i(TAG, "Last :tts exit was ${exitReasonName(reason)} (not native crash): $desc")
@@ -1104,8 +1105,9 @@ object SherpaEngine {
                     synchronized(warmUpLock) { isWarmingUp = false }
                 }
 
-                // Schedule native retry after long backoff (conditions might change)
-                val backoffMs = CRASH_BACKOFF_MAX_MS
+                // Schedule native retry after long backoff (conditions might change).
+                // Must wait at least CRASH_RESET_WINDOW_MS so the counter resets on re-entry.
+                val backoffMs = CRASH_RESET_WINDOW_MS + 5_000L  // 2min + 5s margin
                 Log.i(TAG, "Will retry native in ${backoffMs / 1000}s")
                 Thread {
                     try {

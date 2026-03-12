@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
 
-      # Download pre-built sherpa-onnx Android AAR (same as original PR #16)
+      # Download pre-built sherpa-onnx Android AAR
       - name: Download sherpa-onnx AAR
         run: |
           mkdir -p app/libs
@@ -27,22 +27,21 @@ jobs:
           curl -L "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar ($(du -h app/libs/sherpa_onnx.aar | cut -f1))"
 
-      # Assemble SherpaTTS engine APK from the split zip files in the repo
-      - name: Assemble SherpaTTS APK from repo
-        run: |
-          cat Sherpa_base1.zip Sherpa_base2.zip Sherpa_base3.zip > SherpaTTS-arm64-v8a.apk
-          echo "SherpaTTS APK assembled from repo zip parts ($(wc -c < SherpaTTS-arm64-v8a.apk) bytes)"
-
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
+
+      # Verify APK was built
+      - name: Verify APK
+        run: |
+          APK=$(find app/build/outputs/apk/release/ -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found!"
+            exit 1
+          fi
+          echo "APK: $APK ($(du -h "$APK" | cut -f1))"
 
       - uses: actions/upload-artifact@v4
         with:
           name: KokoroReader-v3
           path: pr16-base/app/build/outputs/apk/release/app-release*.apk
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SherpaTTS-arm64-v8a
-          path: pr16-base/SherpaTTS-arm64-v8a.apk
           retention-days: 30

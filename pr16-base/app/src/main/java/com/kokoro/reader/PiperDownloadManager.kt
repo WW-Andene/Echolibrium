@@ -5,18 +5,21 @@ import android.util.Log
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
+import java.io.BufferedInputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.GZIPInputStream
 
 /**
- * Downloads and manages individual Piper TTS voice packages.
+ * Manages Piper TTS voice downloads from the repo's tts-assets-v1 release.
  *
- * Each voice is a tar.bz2 from k2-fsa/sherpa-onnx releases containing:
- *   model.onnx, tokens.txt, espeak-ng-data/
+ * Downloads individual .onnx files per voice. Shared assets (tokens.txt,
+ * espeak-ng-data/) are downloaded once and copied to each voice directory.
  *
  * Storage: filesDir/sherpa/piper/{voiceId}/
+ *          filesDir/sherpa/piper/shared/   (tokens + espeak-ng-data)
  *
- * Thread-safe: downloads run on background threads, state is volatile.
+ * Thread-safe: downloads run on background threads.
  */
 object PiperDownloadManager {
 
@@ -41,6 +44,9 @@ object PiperDownloadManager {
     fun getVoiceDir(ctx: Context, voiceId: String): File =
         File(getPiperDir(ctx), voiceId)
 
+    private fun getSharedDir(ctx: Context): File =
+        File(getPiperDir(ctx), "shared").also { it.mkdirs() }
+
     // ── State queries ───────────────────────────────────────────────────────
 
     fun isVoiceReady(ctx: Context, voiceId: String): Boolean {
@@ -48,17 +54,15 @@ object PiperDownloadManager {
         return dir.exists()
             && getModelFile(dir, voiceId) != null
             && File(dir, "tokens.txt").exists()
-            && File(dir, "espeak-ng-data").exists()
+            && File(dir, "espeak-ng-data").isDirectory
     }
 
     /**
      * Find the .onnx model file inside a voice directory.
-     * sherpa-onnx names it "{voiceId}.onnx" (e.g. en_US-lessac-medium.onnx).
      */
     fun getModelFile(voiceDir: File, voiceId: String): File? {
         val expected = File(voiceDir, "$voiceId.onnx")
         if (expected.exists()) return expected
-        // Fallback: find any .onnx file that isn't a .json
         return voiceDir.listFiles()?.firstOrNull {
             it.extension == "onnx" && !it.name.endsWith(".onnx.json")
         }
@@ -69,7 +73,7 @@ object PiperDownloadManager {
 
     fun getState(ctx: Context, voiceId: String): State {
         if (isVoiceReady(ctx, voiceId)) return State.READY
-        if (isDownloading(voiceId)) return State.DOWNLOADING
+        if (isDownloading(voiceId)) return voiceStates[voiceId] ?: State.DOWNLOADING
         return voiceStates[voiceId] ?: State.NOT_DOWNLOADED
     }
 
@@ -79,7 +83,7 @@ object PiperDownloadManager {
     fun getError(voiceId: String): String =
         voiceErrors[voiceId] ?: ""
 
-    // ── Download ────────────────────────────────────────────────────────────
+    // ── Download voice ──────────────────────────────────────────────────────
 
     fun downloadVoice(ctx: Context, voiceId: String) {
         synchronized(downloading) {
@@ -97,31 +101,38 @@ object PiperDownloadManager {
         voiceProgress[voiceId] = 0
 
         Thread {
-            val tmpFile = File(getPiperDir(ctx), "$voiceId.tar.bz2.tmp")
             try {
+                // Step 1: Ensure shared assets exist (tokens + espeak-ng-data)
+                ensureSharedAssets(ctx, voiceId)
+
+                // Step 2: Download the voice .onnx file
+                val voiceDir = getVoiceDir(ctx, voiceId)
+                voiceDir.mkdirs()
+                val onnxFile = File(voiceDir, "$voiceId.onnx")
+                val tmpFile = File(voiceDir, "$voiceId.onnx.tmp")
+
                 val url = PiperVoices.downloadUrl(voiceId)
                 Log.d(TAG, "Downloading $voiceId from $url")
-
                 download(url, tmpFile) { pct ->
                     voiceProgress[voiceId] = pct
                     onProgress?.invoke(voiceId, pct)
                 }
+                tmpFile.renameTo(onnxFile)
 
-                Log.d(TAG, "Extracting $voiceId")
-                onProgress?.invoke(voiceId, -1) // signal extracting
-                extract(tmpFile, getPiperDir(ctx), voiceId)
-
-                tmpFile.delete()
+                // Step 3: Copy shared assets into voice directory
+                onProgress?.invoke(voiceId, -1) // "setting up..."
+                val sharedDir = getSharedDir(ctx)
+                copyFileIfMissing(File(sharedDir, "tokens.txt"), File(voiceDir, "tokens.txt"))
+                copyDirIfMissing(File(sharedDir, "espeak-ng-data"), File(voiceDir, "espeak-ng-data"))
 
                 if (isVoiceReady(ctx, voiceId)) {
                     Log.d(TAG, "Voice $voiceId ready")
                     updateState(voiceId, State.READY)
                 } else {
-                    voiceErrors[voiceId] = "Extraction incomplete"
+                    voiceErrors[voiceId] = "Setup incomplete"
                     updateState(voiceId, State.ERROR)
                 }
             } catch (e: Exception) {
-                tmpFile.delete()
                 voiceErrors[voiceId] = e.message ?: "Unknown error"
                 Log.e(TAG, "Download failed for $voiceId", e)
                 updateState(voiceId, State.ERROR)
@@ -139,7 +150,85 @@ object PiperDownloadManager {
         updateState(voiceId, State.NOT_DOWNLOADED)
     }
 
-    // ── Internal ────────────────────────────────────────────────────────────
+    // ── Ensure voice ready (blocking) ───────────────────────────────────────
+
+    /**
+     * Checks if a voice is ready. Called from AudioPipeline before synthesis.
+     */
+    fun ensureVoiceReady(ctx: Context, voiceId: String): Boolean {
+        return isVoiceReady(ctx, voiceId)
+    }
+
+    // ── Shared assets ───────────────────────────────────────────────────────
+
+    /**
+     * Downloads tokens.txt and espeak-ng-data if not already present.
+     * These are shared across all Piper voices.
+     */
+    @Synchronized
+    private fun ensureSharedAssets(ctx: Context, voiceId: String) {
+        val sharedDir = getSharedDir(ctx)
+        val tokensFile = File(sharedDir, "tokens.txt")
+        val espeakDir = File(sharedDir, "espeak-ng-data")
+
+        // Download tokens.txt
+        if (!tokensFile.exists()) {
+            Log.d(TAG, "Downloading shared tokens.txt")
+            onProgress?.invoke(voiceId, -1)
+            val tmpTokens = File(sharedDir, "tokens.txt.tmp")
+            download(PiperVoices.tokensUrl(), tmpTokens) {}
+            tmpTokens.renameTo(tokensFile)
+        }
+
+        // Download espeak-ng-data
+        if (!espeakDir.isDirectory) {
+            Log.d(TAG, "Downloading shared espeak-ng-data")
+            onProgress?.invoke(voiceId, -1)
+
+            // Try repo release first
+            val espeakArchive = File(sharedDir, "espeak-ng-data.tar.gz")
+            var extracted = false
+
+            try {
+                download(PiperVoices.espeakUrl(), espeakArchive) {}
+                extractTarGz(espeakArchive, sharedDir)
+                espeakArchive.delete()
+                extracted = espeakDir.isDirectory
+            } catch (e: Exception) {
+                Log.w(TAG, "espeak-ng-data.tar.gz not in release, using fallback", e)
+                espeakArchive.delete()
+            }
+
+            // Fallback: extract from k2-fsa lessac tar.bz2
+            if (!extracted) {
+                Log.d(TAG, "Fallback: extracting espeak-ng-data from k2-fsa lessac archive")
+                val fallbackTar = File(sharedDir, "fallback.tar.bz2")
+                val fallbackDir = File(sharedDir, "fallback-extract")
+                try {
+                    download(PiperVoices.espeakFallbackUrl(), fallbackTar) {}
+                    fallbackDir.mkdirs()
+                    extractTarBz2Selective(fallbackTar, fallbackDir, "espeak-ng-data")
+                    // Also grab tokens.txt if we don't have it
+                    if (!tokensFile.exists()) {
+                        extractTarBz2Selective(fallbackTar, fallbackDir, "tokens.txt")
+                        val extractedTokens = findFile(fallbackDir, "tokens.txt")
+                        extractedTokens?.copyTo(tokensFile, overwrite = true)
+                    }
+                    val extractedEspeak = findDir(fallbackDir, "espeak-ng-data")
+                    extractedEspeak?.copyRecursively(espeakDir, overwrite = true)
+                } finally {
+                    fallbackTar.delete()
+                    fallbackDir.deleteRecursively()
+                }
+            }
+
+            if (!espeakDir.isDirectory) {
+                throw Exception("Failed to download espeak-ng-data")
+            }
+        }
+    }
+
+    // ── Internal helpers ────────────────────────────────────────────────────
 
     private fun updateState(voiceId: String, state: State) {
         voiceStates[voiceId] = state
@@ -153,7 +242,6 @@ object PiperDownloadManager {
         conn.readTimeout = 30_000
         conn.connect()
 
-        // Follow redirects (GitHub releases redirect to CDN)
         var redirects = 0
         while (conn.responseCode in 300..399 && redirects++ < 5) {
             val location = conn.getHeaderField("Location") ?: break
@@ -165,7 +253,7 @@ object PiperDownloadManager {
         }
 
         if (conn.responseCode != 200) {
-            throw Exception("HTTP ${conn.responseCode}")
+            throw Exception("HTTP ${conn.responseCode} for $urlStr")
         }
 
         val totalBytes = conn.contentLengthLong.takeIf { it > 0 } ?: -1L
@@ -192,27 +280,39 @@ object PiperDownloadManager {
         }
     }
 
-    /**
-     * Extract tar.bz2 and rename the inner directory to voiceId.
-     *
-     * sherpa-onnx archives extract to "vits-piper-{voiceId}/" but we
-     * store as "{voiceId}/" for cleaner paths.
-     */
-    private fun extract(tarBz2: File, destDir: File, voiceId: String) {
-        val archiveDir = PiperVoices.archiveDirName(voiceId)
-        val targetDir = File(destDir, voiceId)
-        targetDir.mkdirs()
+    private fun extractTarGz(archive: File, destDir: File) {
+        archive.inputStream().buffered().use { raw ->
+            GZIPInputStream(raw).use { gz ->
+                TarArchiveInputStream(gz).use { tar ->
+                    var entry = tar.nextTarEntry
+                    while (entry != null) {
+                        val outFile = File(destDir, entry.name)
+                        if (entry.isDirectory) {
+                            outFile.mkdirs()
+                        } else {
+                            outFile.parentFile?.mkdirs()
+                            outFile.outputStream().use { out ->
+                                tar.copyTo(out, bufferSize = 32 * 1024)
+                            }
+                        }
+                        entry = tar.nextTarEntry
+                    }
+                }
+            }
+        }
+    }
 
-        tarBz2.inputStream().buffered().use { raw ->
+    /**
+     * Extract only entries matching targetName from a tar.bz2 archive.
+     */
+    private fun extractTarBz2Selective(archive: File, destDir: File, targetName: String) {
+        archive.inputStream().buffered().use { raw ->
             BZip2CompressorInputStream(raw).use { bz2 ->
                 TarArchiveInputStream(bz2).use { tar ->
                     var entry = tar.nextTarEntry
                     while (entry != null) {
-                        // Strip the archive directory prefix
-                        val relativePath = entry.name.removePrefix("$archiveDir/")
-                            .removePrefix(archiveDir)
-                        if (relativePath.isNotBlank()) {
-                            val outFile = File(targetDir, relativePath)
+                        if (entry.name.contains(targetName)) {
+                            val outFile = File(destDir, entry.name)
                             if (entry.isDirectory) {
                                 outFile.mkdirs()
                             } else {
@@ -226,6 +326,43 @@ object PiperDownloadManager {
                     }
                 }
             }
+        }
+    }
+
+    private fun findFile(dir: File, name: String): File? {
+        if (!dir.isDirectory) return null
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name == name) return f
+            if (f.isDirectory) {
+                val found = findFile(f, name)
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun findDir(dir: File, name: String): File? {
+        if (!dir.isDirectory) return null
+        dir.listFiles()?.forEach { f ->
+            if (f.isDirectory && f.name == name) return f
+            if (f.isDirectory) {
+                val found = findDir(f, name)
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun copyFileIfMissing(src: File, dest: File) {
+        if (!dest.exists() && src.exists()) {
+            dest.parentFile?.mkdirs()
+            src.copyTo(dest, overwrite = false)
+        }
+    }
+
+    private fun copyDirIfMissing(src: File, dest: File) {
+        if (!dest.exists() && src.isDirectory) {
+            src.copyRecursively(dest, overwrite = false)
         }
     }
 }

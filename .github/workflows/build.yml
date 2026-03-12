@@ -77,20 +77,34 @@ jobs:
           echo ""
           echo "All TTS assets verified ✓"
 
-      # Decode signing keystore from GitHub secret (base64-encoded)
-      # If KEYSTORE_BASE64 secret is not set, the build produces an unsigned APK
-      - name: Decode keystore
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
+      # If KEYSTORE_BASE64 secret is set, decode it. Otherwise generate a
+      # temporary debug-signing keystore so the APK is always installable.
+      # To use your own keystore, set these repository secrets:
+      #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+      - name: Prepare signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Using keystore from repository secrets"
+            echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+          else
+            echo "No KEYSTORE_BASE64 secret — generating CI signing key"
+            keytool -genkeypair -v \
+              -keystore keystore.jks \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias echolibrium \
+              -storepass echolibrium \
+              -keypass echolibrium \
+              -dname "CN=Echolibrium CI, O=Echolibrium, L=CI, ST=CI, C=US"
+          fi
 
       - run: chmod +x gradlew
       - name: Build release APK
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'echolibrium' }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'echolibrium' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'echolibrium' }}
         run: ./gradlew assembleRelease
 
       # Verify the APK contains the native library

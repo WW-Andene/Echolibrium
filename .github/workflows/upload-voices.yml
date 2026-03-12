@@ -27,15 +27,24 @@ jobs:
             -o "$STAGING/sherpa_onnx.aar"
           echo "✓ sherpa_onnx.aar ($(du -h "$STAGING/sherpa_onnx.aar" | cut -f1))"
 
-          # ── Piper tokens.txt + all 44 voices ──
+          # ── Piper tokens.txt + espeak-ng-data + all 44 voices ──
           echo ""
-          echo "═══ Piper tokens.txt ═══"
+          echo "═══ Piper tokens.txt + espeak-ng-data ═══"
           curl -fL $RETRY \
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
             -o piper-pkg.tar.bz2
           mkdir -p tmp-piper
           tar -xjf piper-pkg.tar.bz2 -C tmp-piper
           find tmp-piper -name "tokens.txt" -exec cp {} "$STAGING/piper-tokens.txt" \;
+          # Package espeak-ng-data directory (required by Piper for phonemization)
+          ESPEAK_SRC=$(find tmp-piper -type d -name "espeak-ng-data" | head -1)
+          if [ -n "$ESPEAK_SRC" ]; then
+            tar -czf "$STAGING/espeak-ng-data.tar.gz" -C "$(dirname "$ESPEAK_SRC")" espeak-ng-data
+            echo "✓ espeak-ng-data.tar.gz ($(du -h "$STAGING/espeak-ng-data.tar.gz" | cut -f1))"
+          else
+            echo "✗ espeak-ng-data not found in piper package!"
+            exit 1
+          fi
           rm -rf tmp-piper piper-pkg.tar.bz2
           echo "✓ piper-tokens.txt"
 

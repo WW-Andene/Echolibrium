@@ -40,14 +40,14 @@ download() {
 # ── 1. Sherpa-onnx AAR ──────────────────────────────────────────────────────
 
 echo ""
-echo "═══ Step 1/2: sherpa-onnx AAR ═══"
+echo "═══ Step 1/4: sherpa-onnx AAR ═══"
 mkdir -p "$LIBS_DIR"
 download "$RELEASE_BASE/sherpa_onnx.aar" "$LIBS_DIR/sherpa_onnx.aar"
 
 # ── 2. Core Piper voices (bundled in APK) ────────────────────────────────────
 
 echo ""
-echo "═══ Step 2/2: Core Piper voices (bundled in APK) ═══"
+echo "═══ Step 2/4: Core Piper voices (bundled in APK) ═══"
 mkdir -p "$PIPER_DIR"
 
 # Shared tokens.txt
@@ -85,10 +85,29 @@ done
 echo ""
 echo "  Bundled voices: $TOTAL total, $FAILED failed"
 
-# ── 3. Optimize models (ORT format) ─────────────────────────────────────────
+# ── 3. espeak-ng-data (required by Piper for phonemization) ───────────────
 
 echo ""
-echo "═══ Step 3/3: Optimize bundled models (ORT format) ═══"
+echo "═══ Step 3/4: espeak-ng-data (phonemization) ═══"
+ESPEAK_DIR="$PIPER_DIR/espeak-ng-data"
+if [ -d "$ESPEAK_DIR" ] && [ "$(ls -A "$ESPEAK_DIR" 2>/dev/null)" ]; then
+    echo "  ✓ espeak-ng-data already exists — skipping"
+else
+    echo "  ↓ Downloading espeak-ng-data.tar.gz…"
+    curl -fL $RETRY "$RELEASE_BASE/espeak-ng-data.tar.gz" -o "$PIPER_DIR/espeak-ng-data.tar.gz" || {
+        echo "  ✗ FAILED to download espeak-ng-data.tar.gz"
+        echo "  ✗ Piper TTS will not work without espeak-ng-data!"
+        exit 1
+    }
+    tar -xzf "$PIPER_DIR/espeak-ng-data.tar.gz" -C "$PIPER_DIR"
+    rm -f "$PIPER_DIR/espeak-ng-data.tar.gz"
+    echo "  ✓ espeak-ng-data extracted ($(du -sh "$ESPEAK_DIR" 2>/dev/null | cut -f1))"
+fi
+
+# ── 4. Optimize models (ORT format) ─────────────────────────────────────────
+
+echo ""
+echo "═══ Step 4/4: Optimize bundled models (ORT format) ═══"
 
 if command -v python3 &>/dev/null && python3 -c "import onnxruntime" 2>/dev/null; then
     python3 "$SCRIPT_DIR/optimize-models.py"

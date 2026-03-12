@@ -19,7 +19,8 @@ task downloadTtsModels(type: Exec) {
     onlyIf {
         def aar = file("${projectDir}/libs/sherpa_onnx.aar")
         def tokens = file("${projectDir}/src/main/assets/piper-models/tokens.txt")
-        def missing = !aar.exists() || !tokens.exists()
+        def espeak = file("${projectDir}/src/main/assets/piper-models/espeak-ng-data")
+        def missing = !aar.exists() || !tokens.exists() || !espeak.exists() || !espeak.isDirectory()
         if (missing) {
             logger.lifecycle("TTS models missing — running download-models.sh")
         }

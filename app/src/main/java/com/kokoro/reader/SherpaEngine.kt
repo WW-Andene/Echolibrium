@@ -1004,6 +1004,21 @@ object SherpaEngine {
         var crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
         val lastCrashTime = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
 
+        // Reset crash counter on app update — new code deserves a fresh chance
+        val currentVersion = getAppVersionCode(ctx)
+        val lastVersion = initPrefs.getInt("last_init_version", 0)
+        if (currentVersion != lastVersion) {
+            plog("warmUp: app updated ($lastVersion → $currentVersion) — resetting crash state")
+            Log.i(TAG, "App version changed ($lastVersion → $currentVersion) — resetting init crash state")
+            crashCount = 0
+            initPrefs.edit()
+                .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                .putBoolean(KEY_SKIP_ORT, false)
+                .putInt("last_init_version", currentVersion)
+                .apply()
+        }
+
         // If the previous init was still "in progress" when the process died, check WHY.
         // On Android 11+, ApplicationExitInfo tells us if it was a native crash (SIGSEGV)
         // or the OS killing the process (HyperOS aggressive battery management).

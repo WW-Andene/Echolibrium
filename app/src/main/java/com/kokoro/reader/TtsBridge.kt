@@ -2,6 +2,11 @@ package com.kokoro.reader
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 
@@ -20,6 +25,8 @@ object TtsBridge {
     const val ACTION_VOICE_CMD_START = "com.kokoro.reader.action.VOICE_CMD_START"
     const val ACTION_VOICE_CMD_STOP  = "com.kokoro.reader.action.VOICE_CMD_STOP"
     const val ACTION_RETRY_INIT      = "com.kokoro.reader.action.RETRY_INIT"
+    const val ACTION_DUMP_DEBUG_LOG  = "com.kokoro.reader.action.DUMP_DEBUG_LOG"
+    const val ACTION_DUMP_PROCESS_LOG = "com.kokoro.reader.action.DUMP_PROCESS_LOG"
 
     private const val STATUS_FILE = "tts_status.json"
 
@@ -64,6 +71,48 @@ object TtsBridge {
         ctx.sendBroadcast(intent)
     }
 
+    fun dumpDebugLog(ctx: Context) {
+        val intent = Intent(ACTION_DUMP_DEBUG_LOG)
+        intent.setPackage(ctx.packageName)
+        ctx.sendBroadcast(intent)
+    }
+
+    /**
+     * Requests the :tts process to write its in-memory process log to a shared file.
+     * The UI can then read it via [readProcessLog].
+     */
+    fun requestProcessLog(ctx: Context) {
+        val intent = Intent(ACTION_DUMP_PROCESS_LOG)
+        intent.setPackage(ctx.packageName)
+        ctx.sendBroadcast(intent)
+    }
+
+    private const val PROCESS_LOG_FILE = "process_log.txt"
+
+    /**
+     * Writes the process log content to a file in filesDir (called from :tts process).
+     */
+    fun writeProcessLog(ctx: Context, content: String) {
+        try {
+            val file = File(ctx.filesDir, PROCESS_LOG_FILE)
+            val tmp = File(ctx.filesDir, "$PROCESS_LOG_FILE.tmp")
+            tmp.writeText(content)
+            if (!tmp.renameTo(file)) {
+                tmp.copyTo(file, overwrite = true)
+                tmp.delete()
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Reads the process log written by the :tts process. Returns empty string if unavailable.
+     */
+    fun readProcessLog(ctx: Context): String {
+        return try {
+            File(ctx.filesDir, PROCESS_LOG_FILE).readText()
+        } catch (_: Throwable) { "" }
+    }
+
     // ── Status (written by TTS process, read by UI process) ──────────────────
 
     data class EngineStatus(
@@ -77,10 +126,11 @@ object TtsBridge {
     )
 
     fun readStatus(ctx: Context): EngineStatus {
-        val file = File(ctx.filesDir, STATUS_FILE)
-        if (!file.exists()) return EngineStatus()
         return try {
-            val json = JSONObject(file.readText())
+            // Read directly — avoid exists() + readText() TOCTOU race where
+            // the :tts process could be mid-rename between the two calls.
+            val text = File(ctx.filesDir, STATUS_FILE).readText()
+            val json = JSONObject(text)
             EngineStatus(
                 ready = json.optBoolean("ready"),
                 status = json.optString("status", "idle"),
@@ -123,9 +173,149 @@ object TtsBridge {
             val file = File(ctx.filesDir, STATUS_FILE)
             val tmp = File(ctx.filesDir, "$STATUS_FILE.tmp")
             tmp.writeText(json.toString())
-            tmp.renameTo(file)
+            if (!tmp.renameTo(file)) {
+                // renameTo can silently fail on some Android filesystems — fall back to copy
+                tmp.copyTo(file, overwrite = true)
+                tmp.delete()
+            }
         } catch (_: Throwable) {
             // Best-effort — don't crash the TTS process over status reporting
         }
+    }
+
+    // ── TTS process staleness detection ──────────────────────────────────────
+
+    /** Max age (ms) of the status timestamp before the TTS process is considered stale/dead. */
+    private const val STALENESS_THRESHOLD_MS = 30_000L  // 30 seconds
+
+    /**
+     * Checks if the TTS process is alive by comparing the status file timestamp
+     * to the current time. If the timestamp is older than [STALENESS_THRESHOLD_MS],
+     * the process is likely dead or hung (killed by MIUI/HyperOS, OOM, etc.).
+     *
+     * @return true if the TTS process appears healthy, false if stale/dead
+     */
+    fun isTtsProcessHealthy(ctx: Context): Boolean {
+        return try {
+            val text = File(ctx.filesDir, STATUS_FILE).readText()
+            val json = JSONObject(text)
+            val ts = json.optLong("ts", 0)
+            if (ts == 0L) return false
+            val age = System.currentTimeMillis() - ts
+            age < STALENESS_THRESHOLD_MS
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Returns the age in ms of the last TTS status update, or -1 if unknown.
+     */
+    fun getTtsProcessAgeMs(ctx: Context): Long {
+        return try {
+            val text = File(ctx.filesDir, STATUS_FILE).readText()
+            val json = JSONObject(text)
+            val ts = json.optLong("ts", 0)
+            if (ts == 0L) -1L else System.currentTimeMillis() - ts
+        } catch (_: Throwable) {
+            -1L
+        }
+    }
+
+    // ── Battery optimization exemption (Xiaomi/MIUI/HyperOS) ──────────────────
+
+    private const val TAG = "TtsBridge"
+
+    /**
+     * Checks if this app is exempt from battery optimizations.
+     * On Xiaomi MIUI/HyperOS, battery optimization aggressively kills background
+     * processes including our :tts process. Requesting exemption tells the OS to not kill us.
+     */
+    fun isBatteryOptimized(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+        return !pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    }
+
+    /**
+     * Requests battery optimization exemption via system dialog.
+     * This is the only way to get exemption without being a system app.
+     * The system shows a dialog — no scary permission prompt.
+     *
+     * Call this from an Activity context (won't work from a Service).
+     */
+    fun requestBatteryExemption(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (!isBatteryOptimized(ctx)) {
+            Log.d(TAG, "Already exempt from battery optimization")
+            return
+        }
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${ctx.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            Log.i(TAG, "Requested battery optimization exemption")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to request battery exemption: ${e.message}")
+        }
+    }
+
+    // ── Xiaomi AutoStart permission ─────────────────────────────────────────────
+
+    /**
+     * Checks if this is a Xiaomi device (Xiaomi, Redmi, POCO).
+     */
+    fun isXiaomiDevice(): Boolean {
+        val mfr = Build.MANUFACTURER.lowercase()
+        return mfr.contains("xiaomi") || mfr.contains("redmi") || mfr.contains("poco")
+    }
+
+    /**
+     * Attempts to open Xiaomi's AutoStart settings page so the user can allow
+     * our app to auto-start. Without this, MIUI/HyperOS will prevent the :tts
+     * process from restarting after being killed.
+     *
+     * Tries multiple known activity paths because Xiaomi changes these across
+     * MIUI versions and HyperOS.
+     *
+     * @return true if an AutoStart settings page was successfully launched
+     */
+    fun requestAutoStart(ctx: Context): Boolean {
+        if (!isXiaomiDevice()) return false
+
+        val intents = listOf(
+            // HyperOS / MIUI 14+
+            Intent().setClassName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            ),
+            // Older MIUI
+            Intent().setClassName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.permissions.PermissionsEditorActivity"
+            ),
+            // Fallback: open app info page where user can find AutoStart
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${ctx.packageName}")
+            }
+        )
+
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(ctx.packageManager) != null) {
+                    ctx.startActivity(intent)
+                    Log.i(TAG, "Opened Xiaomi AutoStart settings: ${intent.component ?: intent.action}")
+                    return true
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "AutoStart intent failed: ${e.message}")
+            }
+        }
+
+        Log.w(TAG, "Could not open any Xiaomi AutoStart settings page")
+        return false
     }
 }

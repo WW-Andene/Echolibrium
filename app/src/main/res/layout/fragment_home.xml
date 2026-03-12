@@ -33,6 +33,40 @@
         <TextView android:id="@+id/log_path_text" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
             android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/text_hint"
+            android:layout_marginBottom="4dp"/>
+
+        <Button android:id="@+id/btn_dump_debug" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="Dump debug log"
+            android:backgroundTint="@color/surface" android:textColor="@color/text_dim"
+            android:fontFamily="monospace" android:textSize="11sp"
+            android:layout_marginBottom="2dp"/>
+
+        <Button android:id="@+id/btn_show_init_logs" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="▶ Show init logs"
+            android:backgroundTint="@color/surface" android:textColor="@color/status_info"
+            android:fontFamily="monospace" android:textSize="11sp"
+            android:layout_marginBottom="0dp"/>
+
+        <ScrollView android:id="@+id/init_log_panel" android:layout_width="match_parent"
+            android:layout_height="300dp" android:background="#0a0a0a"
+            android:padding="8dp" android:layout_marginBottom="0dp"
+            android:visibility="gone" android:fillViewport="false">
+            <TextView android:id="@+id/init_log_content" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:fontFamily="monospace"
+                android:textSize="9sp" android:textColor="@color/text_dim"
+                android:text="(loading…)" android:textIsSelectable="true"/>
+        </ScrollView>
+
+        <Button android:id="@+id/btn_copy_init_logs" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="Copy full logs to clipboard"
+            android:backgroundTint="#1a1a1a" android:textColor="@color/status_info"
+            android:fontFamily="monospace" android:textSize="11sp"
+            android:layout_marginBottom="2dp" android:visibility="gone"/>
+
+        <Button android:id="@+id/btn_force_report" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="Report to GitHub"
+            android:backgroundTint="@color/surface" android:textColor="@color/status_warning"
+            android:fontFamily="monospace" android:textSize="11sp"
             android:layout_marginBottom="8dp"/>
 
         <!-- Permission instructions — updates based on current permission state -->

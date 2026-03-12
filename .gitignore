@@ -15,3 +15,7 @@ local.properties
 app/libs/
 app/src/main/assets/kokoro-model/
 app/src/main/assets/piper-models/
+
+# Signing keystore (never commit)
+*.jks
+*.keystore

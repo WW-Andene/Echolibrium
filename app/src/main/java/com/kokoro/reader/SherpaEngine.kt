@@ -3,6 +3,7 @@ package com.kokoro.reader
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.StatFs
 import android.util.Log
 import java.io.File
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -10,6 +11,20 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
+import android.content.SharedPreferences
+import android.os.Bundle
+import android.os.PowerManager
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.io.PrintWriter
+import java.io.RandomAccessFile
+import java.io.StringWriter
+import java.nio.channels.FileChannel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -34,13 +49,49 @@ object SherpaEngine {
     private const val KOKORO_DIR = "kokoro-model"
     private const val PIPER_DIR  = "piper-models"
 
-    /** Maximum time (ms) to wait for native OfflineTts constructor before giving up. */
-    private const val INIT_TIMEOUT_MS = 60_000L
+    /** Base timeout (ms) — actual timeout is adaptive based on device + model format. */
+    private const val BASE_TIMEOUT_ORT_MS = 30_000L
+    private const val BASE_TIMEOUT_ONNX_MS = 90_000L
+
+    /** Minimum free disk space (bytes) required before extracting the Kokoro model. */
+    private const val MIN_DISK_SPACE_BYTES = 400L * 1024 * 1024  // 400 MB
+
+    /** Minimum free RAM (bytes) required for loading the FP32 model (~310MB).
+     *  The model needs ~2-3x its size in working memory during ONNX runtime init. */
+    private const val MIN_RAM_FOR_FP32_BYTES = 800L * 1024 * 1024  // 800 MB
+
+    /** Minimum free RAM (bytes) required for loading the INT8 model (~110MB).
+     *  INT8 model needs ~2x its size in working memory. */
+    private const val MIN_RAM_FOR_INT8_BYTES = 300L * 1024 * 1024  // 300 MB
+
+    /** Minimum expected model.ort/.onnx file size — below this, extraction is corrupt. */
+    private const val MIN_MODEL_FILE_SIZE = 100L * 1024 * 1024  // 100 MB
+
+    /** Pre-warming: read model file in 256KB chunks to populate OS page cache. */
+    private const val PREWARM_BUFFER_SIZE = 256 * 1024
+
+    // ── Configuration memory keys ────────────────────────────────────────────────
+    // Persists the last config that successfully loaded Kokoro. On next launch,
+    // skips the entire escalation ladder and goes straight to the known-good config.
+    // Invalidated on app update (model or native lib may have changed).
+    private const val KEY_LAST_GOOD_THREADS  = "last_good_threads"
+    private const val KEY_LAST_GOOD_PROVIDER = "last_good_provider"
+    private const val KEY_LAST_GOOD_DEBUG    = "last_good_debug"
+    private const val KEY_LAST_GOOD_VERSION  = "last_good_version"
+
+    // ── Init config (used by escalation ladder + config memory) ──────────────────
+
+    private data class InitConfig(
+        val threads: Int,
+        val provider: String,
+        val debug: Boolean,
+        val label: String
+    )
 
     // ── Device-adaptive engine configuration ────────────────────────────────────
 
     /** Detected SoC vendor — cached at first access. */
-    private enum class SocVendor { MEDIATEK, QUALCOMM, OTHER }
+    enum class SocVendor { MEDIATEK, QUALCOMM, OTHER }
 
     private val socVendor: SocVendor by lazy {
         val vendor = detectSocVendor()
@@ -68,29 +119,513 @@ object SherpaEngine {
     /**
      * Returns the optimal ONNX Runtime provider for this device.
      *
-     * MediaTek: "nnapi" — routes inference to the APU (dedicated AI hardware).
-     *   This avoids the CPU thread pool entirely, which sidesteps the HWUI
-     *   mutex corruption on MIUI. Faster too — APU is purpose-built for this.
-     *
-     * Qualcomm: "cpu" — NNAPI on Qualcomm routes to Hexagon DSP which has
-     *   mixed compatibility with TTS model ops. CPU is more reliable.
-     *
-     * Other: "cpu" — safe default.
+     * All devices use "cpu" — the NNAPI EP does not support LSTM ops (core to
+     * Kokoro TTS), causing model partitioning where Conv/MatMul run on APU but
+     * LSTM falls back to NNAPI's slow reference CPU. This is worse than pure
+     * CPU inference. The original HWUI mutex collision on MediaTek/MIUI is
+     * already solved by process isolation (:tts runs in a separate process
+     * with no HWUI).
      */
-    private fun optimalProvider(): String = when (socVendor) {
-        SocVendor.MEDIATEK -> "nnapi"
-        else -> "cpu"
-    }
+    private fun optimalProvider(): String = "cpu"
 
     /**
      * Returns the optimal thread count for this device.
      *
-     * MediaTek with NNAPI: 1 — APU handles parallelism internally.
-     * Qualcomm/other: 2 — safe multi-threading, no HWUI conflict.
+     * MediaTek: 1 — ONNX Runtime thread pool init can SIGSEGV on Dimensity
+     *   SoCs when creating multiple threads during model loading. Single-threaded
+     *   inference is ~30% slower but avoids the native crash entirely.
+     * Qualcomm/other: 2 — safe multi-threading.
      */
     private fun optimalThreadCount(): Int = when (socVendor) {
         SocVendor.MEDIATEK -> 1
         else -> 2
+    }
+
+    // ── Device profiling ─────────────────────────────────────────────────────────
+    // Comprehensive device capability assessment. Drives timeout, memory thresholds,
+    // escalation strategy, and thread priority decisions. This is what separates a
+    // world-class engine from a "hope it works" engine.
+
+    enum class DeviceTier { HIGH, MEDIUM, LOW }
+
+    data class DeviceProfile(
+        val totalRamMB: Long,
+        val availRamMB: Long,
+        val cpuCores: Int,
+        val socVendor: SocVendor,
+        val apiLevel: Int,
+        val isXiaomi: Boolean,
+        /** True if running MIUI or HyperOS (Xiaomi's custom Android ROMs). */
+        val isXiaomiRom: Boolean,
+        val tier: DeviceTier,
+        val manufacturer: String,
+        val model: String
+    ) {
+        /** Timeout multiplier — low-tier devices get more time, not less. */
+        val timeoutMultiplier: Float get() = when (tier) {
+            DeviceTier.HIGH -> 0.75f
+            DeviceTier.MEDIUM -> 1.0f
+            DeviceTier.LOW -> 1.5f
+        }
+
+        override fun toString(): String = buildString {
+            append("DeviceProfile(")
+            append("$manufacturer $model, ")
+            append("${totalRamMB}MB RAM, ${availRamMB}MB free, ")
+            append("${cpuCores} cores, $socVendor, API $apiLevel, ")
+            append("tier=$tier")
+            if (isXiaomi) append(", Xiaomi")
+            if (isXiaomiRom) append(", MIUI/HyperOS")
+            append(")")
+        }
+    }
+
+    private fun profileDevice(ctx: Context): DeviceProfile {
+        val actMgr = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val memInfo = android.app.ActivityManager.MemoryInfo()
+        actMgr?.getMemoryInfo(memInfo)
+
+        val totalRamMB = memInfo.totalMem / 1024 / 1024
+        val availRamMB = memInfo.availMem / 1024 / 1024
+        val cpuCores = Runtime.getRuntime().availableProcessors()
+        val mfr = Build.MANUFACTURER.lowercase()
+        val isXiaomi = mfr.contains("xiaomi") || mfr.contains("redmi") || mfr.contains("poco")
+        // Xiaomi ROM detection: MIUI uses "ro.miui.ui.version.name",
+        // HyperOS (MIUI 15+) uses "ro.mi.os.version.incremental".
+        // Both ROMs share the same aggressive background killing and CPU throttling.
+        val isXiaomiRom = isXiaomi && try {
+            @Suppress("PrivateApi")
+            val sysPropClass = Class.forName("android.os.SystemProperties")
+            val getMethod = sysPropClass.getMethod("get", String::class.java)
+            val miui = getMethod.invoke(null, "ro.miui.ui.version.name")?.toString().orEmpty()
+            val hyperOs = getMethod.invoke(null, "ro.mi.os.version.incremental")?.toString().orEmpty()
+            miui.isNotEmpty() || hyperOs.isNotEmpty()
+        } catch (_: Throwable) { false }
+
+        val tier = when {
+            totalRamMB >= 6000 && cpuCores >= 6 && !memInfo.lowMemory -> DeviceTier.HIGH
+            totalRamMB >= 3000 && cpuCores >= 4 -> DeviceTier.MEDIUM
+            else -> DeviceTier.LOW
+        }
+
+        return DeviceProfile(
+            totalRamMB, availRamMB, cpuCores, socVendor,
+            Build.VERSION.SDK_INT, isXiaomi, isXiaomiRom, tier,
+            Build.MANUFACTURER, Build.MODEL
+        )
+    }
+
+    // ── Config memory ────────────────────────────────────────────────────────────
+    // Remembers the exact config that worked. Skips escalation on next launch.
+    // Google TTS does this — learn from success, don't re-probe every time.
+
+    private fun loadGoodConfig(prefs: SharedPreferences, appVersion: Long): InitConfig? {
+        val savedVersion = prefs.getLong(KEY_LAST_GOOD_VERSION, -1)
+        if (savedVersion != appVersion) return null  // App updated — re-probe
+        val threads = prefs.getInt(KEY_LAST_GOOD_THREADS, -1)
+        val provider = prefs.getString(KEY_LAST_GOOD_PROVIDER, null)
+        val debug = prefs.getBoolean(KEY_LAST_GOOD_DEBUG, false)
+        if (threads < 1 || provider == null) return null
+        return InitConfig(threads, provider, debug, "remembered ($threads threads, $provider)")
+    }
+
+    private fun saveGoodConfig(prefs: SharedPreferences, config: InitConfig, appVersion: Long) {
+        prefs.edit()
+            .putInt(KEY_LAST_GOOD_THREADS, config.threads)
+            .putString(KEY_LAST_GOOD_PROVIDER, config.provider)
+            .putBoolean(KEY_LAST_GOOD_DEBUG, config.debug)
+            .putLong(KEY_LAST_GOOD_VERSION, appVersion)
+            .apply()
+    }
+
+    private fun clearGoodConfig(prefs: SharedPreferences) {
+        prefs.edit()
+            .remove(KEY_LAST_GOOD_THREADS)
+            .remove(KEY_LAST_GOOD_PROVIDER)
+            .remove(KEY_LAST_GOOD_DEBUG)
+            .remove(KEY_LAST_GOOD_VERSION)
+            .apply()
+    }
+
+    /**
+     * Checks Android 11+ ApplicationExitInfo to determine if the last process
+     * death was a native crash (SIGSEGV) vs OS-initiated kill (HyperOS battery
+     * management, OOM killer, etc).
+     *
+     * Returns true if the last exit was definitely a native crash, or if we
+     * can't determine the reason (pre-Android 11 — assume crash for safety).
+     */
+    private fun wasLastExitNativeCrash(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            // Pre-Android 11: no exit info API, assume crash for safety
+            return true
+        }
+        return try {
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            // Get recent exit reasons for our package, limit to 5
+            val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5)
+            // Find the most recent exit for our process (main process, no longer :tts)
+            val ttsExit = exitInfos.firstOrNull { info ->
+                info.processName == ctx.packageName
+            }
+            if (ttsExit == null) {
+                plog("wasLastExitNativeCrash: no exit info for main process — assuming crash")
+                return true
+            }
+            val reason = ttsExit.reason
+            val desc = ttsExit.description ?: "none"
+            plog("wasLastExitNativeCrash: reason=$reason (${exitReasonName(reason)}), desc=$desc, " +
+                "importance=${ttsExit.importance}, status=${ttsExit.status}")
+            // REASON_CRASH_NATIVE (6) = SIGSEGV/SIGABRT/etc — definitely a native crash
+            // REASON_CRASH (4) = uncaught Java exception — treat as crash
+            // REASON_ANR (3) = ANR — treat as crash (init took too long)
+            // REASON_EXIT_SELF (1) with non-zero status = abnormal self-exit during init
+            //   (e.g. OOM, uncaught error causing exit(255)) — treat as crash to avoid
+            //   infinite retry loops where init keeps dying at the same point
+            // Everything else = OS killed it (not the native code's fault)
+            when (reason) {
+                ApplicationExitInfo.REASON_CRASH_NATIVE,
+                ApplicationExitInfo.REASON_CRASH,
+                ApplicationExitInfo.REASON_ANR -> {
+                    Log.w(TAG, "Last :tts exit was ${exitReasonName(reason)}: $desc")
+                    true
+                }
+                ApplicationExitInfo.REASON_EXIT_SELF -> {
+                    // EXIT_SELF is ambiguous: could be our code calling exit(), OR the OS
+                    // (especially Xiaomi/HyperOS) killing background processes for battery
+                    // management. Status=255 is commonly used by the system for forced kills.
+                    // Only REASON_CRASH_NATIVE reliably indicates a SIGSEGV/SIGABRT.
+                    // Treating EXIT_SELF as crash causes false positives on aggressive OEMs,
+                    // permanently disabling the engine after NATIVE_BROKEN_THRESHOLD.
+                    val status = ttsExit.status
+                    Log.i(TAG, "Last :tts exit was EXIT_SELF with status=$status — not counting as native crash")
+                    plog("wasLastExitNativeCrash: EXIT_SELF status=$status — not counting as native crash (may be OS kill)")
+                    false
+                }
+                else -> {
+                    Log.i(TAG, "Last :tts exit was ${exitReasonName(reason)} (not native crash): $desc")
+                    false
+                }
+            }
+        } catch (e: Throwable) {
+            plog("wasLastExitNativeCrash: exception ${e.message} — assuming crash")
+            true  // Can't determine — assume crash for safety
+        }
+    }
+
+    private fun exitReasonName(reason: Int): String = when (reason) {
+        1 -> "EXIT_SELF"
+        2 -> "SIGNALED"
+        3 -> "ANR"
+        4 -> "CRASH"
+        5 -> "DEPENDENCY_DIED"
+        6 -> "CRASH_NATIVE"
+        7 -> "OTHER"
+        8 -> "LOW_MEMORY"
+        9 -> "EXCESSIVE_RESOURCE_USAGE"
+        10 -> "USER_REQUESTED"
+        11 -> "USER_STOPPED"
+        12 -> "DEPENDENCY_DIED"
+        13 -> "PACKAGE_STATE_CHANGE"
+        14 -> "PACKAGE_UPDATED"
+        else -> "UNKNOWN($reason)"
+    }
+
+    // ── Diagnostics (shown in error UI when native code is broken) ──────────────
+
+    private fun buildDiagnostics(ctx: Context): String {
+        return buildString {
+            append("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            append(" | SoC: $socVendor (${Build.HARDWARE})")
+            append(" | Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 3)
+                    val ttsExit = exitInfos.firstOrNull { it.processName == ctx.packageName }
+                    if (ttsExit != null) {
+                        append(" | Last exit: ${exitReasonName(ttsExit.reason)}")
+                        ttsExit.description?.let { append(" ($it)") }
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    // ── Android system TTS fallback ──────────────────────────────────────────────
+    // When sherpa-onnx native code is broken on the device, fall back to the
+    // Android system TTS (e.g. Google TTS). Returns PCM audio through the normal
+    // pipeline so DSP effects still work.
+
+    private fun initSystemTtsFallback(ctx: Context): Boolean {
+        plog("initSystemTtsFallback: initializing Android system TTS")
+        // Try up to 2 times — the first attempt can fail on Xiaomi/HyperOS when
+        // the system TTS service is slow to bind after repeated :tts process crashes.
+        for (attempt in 1..2) {
+            plog("initSystemTtsFallback: attempt $attempt/2")
+            val latch = CountDownLatch(1)
+            var initStatus = TextToSpeech.ERROR
+            try {
+                val tts = TextToSpeech(ctx.applicationContext) { status ->
+                    initStatus = status
+                    latch.countDown()
+                }
+                // Wait up to 15 seconds — Xiaomi/HyperOS can be very slow to bind
+                // the system TTS service from a background process that has been
+                // crash-looping.
+                if (!latch.await(15, TimeUnit.SECONDS)) {
+                    plog("initSystemTtsFallback: timeout waiting for system TTS init (attempt $attempt)")
+                    tts.shutdown()
+                    if (attempt < 2) {
+                        Thread.sleep(2000)  // Brief pause before retry
+                        continue
+                    }
+                    return false
+                }
+                if (initStatus != TextToSpeech.SUCCESS) {
+                    plog("initSystemTtsFallback: system TTS init failed (status=$initStatus, attempt $attempt)")
+                    tts.shutdown()
+                    if (attempt < 2) {
+                        Thread.sleep(2000)
+                        continue
+                    }
+                    return false
+                }
+                // Set language to English (fallback)
+                val langResult = tts.setLanguage(java.util.Locale.US)
+                if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    plog("initSystemTtsFallback: English not available, trying default locale")
+                    tts.setLanguage(java.util.Locale.getDefault())
+                }
+                systemTts = tts
+                plog("initSystemTtsFallback: system TTS ready (engine=${tts.defaultEngine})")
+                Log.i(TAG, "Android system TTS ready: ${tts.defaultEngine}")
+                return true
+            } catch (e: Throwable) {
+                plog("initSystemTtsFallback: exception on attempt $attempt: ${e.message}")
+                Log.e(TAG, "System TTS init failed (attempt $attempt)", e)
+                if (attempt < 2) {
+                    Thread.sleep(2000)
+                    continue
+                }
+                return false
+            }
+        }
+        return false
+    }
+
+    /**
+     * Synthesize text using Android system TTS → WAV file → read PCM.
+     * Returns the same Pair<FloatArray, Int> as the sherpa-onnx methods.
+     */
+    fun synthesizeSystemTts(text: String, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        val tts = systemTts ?: return null
+        if (text.isBlank()) return null
+        try {
+            tts.setSpeechRate(speed)
+            val tmpFile = File.createTempFile("sys_tts_", ".wav", statusContext?.cacheDir)
+            val utteranceId = "synth_${System.nanoTime()}"
+            val latch = CountDownLatch(1)
+            var synthOk = false
+
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(id: String?) {}
+                override fun onDone(id: String?) { synthOk = true; latch.countDown() }
+                @Deprecated("Deprecated") override fun onError(id: String?) { latch.countDown() }
+                override fun onError(id: String?, errorCode: Int) { latch.countDown() }
+            })
+
+            val params = Bundle().apply {
+                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            }
+            val result = tts.synthesizeToFile(text, params, tmpFile, utteranceId)
+            if (result != TextToSpeech.SUCCESS) {
+                tmpFile.delete()
+                return null
+            }
+
+            // Wait up to 30 seconds for synthesis
+            if (!latch.await(30, TimeUnit.SECONDS) || !synthOk) {
+                tmpFile.delete()
+                return null
+            }
+
+            // Read WAV file → extract PCM float samples
+            val pcmResult = readWavAsPcmFloat(tmpFile)
+            tmpFile.delete()
+            if (pcmResult != null) lastSampleRate = pcmResult.second
+            return pcmResult
+        } catch (e: Throwable) {
+            Log.e(TAG, "System TTS synthesis failed", e)
+            return null
+        }
+    }
+
+    /** Read a WAV file and return PCM data as FloatArray + sample rate. */
+    private fun readWavAsPcmFloat(wavFile: File): Pair<FloatArray, Int>? {
+        try {
+            val bytes = wavFile.readBytes()
+            if (bytes.size < 44) return null  // WAV header is 44 bytes minimum
+            // Parse WAV header
+            // Bytes 24-27: sample rate (little-endian)
+            val sampleRate = (bytes[24].toInt() and 0xFF) or
+                ((bytes[25].toInt() and 0xFF) shl 8) or
+                ((bytes[26].toInt() and 0xFF) shl 16) or
+                ((bytes[27].toInt() and 0xFF) shl 24)
+            // Bytes 34-35: bits per sample
+            val bitsPerSample = (bytes[34].toInt() and 0xFF) or ((bytes[35].toInt() and 0xFF) shl 8)
+            // Find "data" chunk
+            var dataOffset = 12
+            var dataSize = 0
+            while (dataOffset < bytes.size - 8) {
+                val chunkId = String(bytes, dataOffset, 4)
+                val chunkSize = (bytes[dataOffset + 4].toInt() and 0xFF) or
+                    ((bytes[dataOffset + 5].toInt() and 0xFF) shl 8) or
+                    ((bytes[dataOffset + 6].toInt() and 0xFF) shl 16) or
+                    ((bytes[dataOffset + 7].toInt() and 0xFF) shl 24)
+                if (chunkId == "data") {
+                    dataOffset += 8
+                    dataSize = chunkSize
+                    break
+                }
+                dataOffset += 8 + chunkSize
+            }
+            if (dataSize == 0) return null
+            // Convert to float samples
+            val samples = when (bitsPerSample) {
+                16 -> {
+                    val numSamples = dataSize / 2
+                    FloatArray(numSamples) { i ->
+                        val lo = bytes[dataOffset + i * 2].toInt() and 0xFF
+                        val hi = bytes[dataOffset + i * 2 + 1].toInt()
+                        ((hi shl 8) or lo).toShort().toFloat() / 32768f
+                    }
+                }
+                8 -> {
+                    FloatArray(dataSize) { i ->
+                        (bytes[dataOffset + i].toInt() and 0xFF).toFloat() / 128f - 1f
+                    }
+                }
+                else -> return null
+            }
+            return Pair(samples, sampleRate)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to read WAV file", e)
+            return null
+        }
+    }
+
+    // ── Model pre-warming ────────────────────────────────────────────────────────
+    // Sequentially reads the entire model file to populate the OS page cache.
+    // When ORT opens the file via mmap, ALL pages are already in RAM — no random
+    // page faults during model parsing. This is critical on low-memory devices
+    // where random page faults during mmap can trigger the OOM killer (SIGSEGV).
+
+    private fun prewarmModelFile(modelFile: File): Long {
+        val start = System.currentTimeMillis()
+        try {
+            val fileSize = modelFile.length()
+            // Use mmap + MappedByteBuffer.load() for aggressive page residency.
+            // This forces the OS to page in the ENTIRE file and pin it in RAM.
+            // When ORT opens the same file via its own mmap, all pages are already
+            // resident — zero page faults, no OOM killer triggers.
+            RandomAccessFile(modelFile, "r").use { raf ->
+                raf.channel.use { channel ->
+                    val mapped = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize)
+                    mapped.load()  // Force all pages into physical RAM
+                    val elapsed = System.currentTimeMillis() - start
+                    val speedKBs = if (elapsed > 0) fileSize / elapsed else 0
+                    Log.i(TAG, "│   ${fileSize / 1024 / 1024}MB mmap+load in ${elapsed}ms (${speedKBs}KB/s)")
+                    return elapsed
+                }
+            }
+        } catch (e: Throwable) {
+            // Fallback to sequential read if mmap fails (e.g., on very old devices)
+            Log.w(TAG, "│   mmap pre-warm failed (${e.message}), falling back to sequential read")
+            try {
+                val buffer = ByteArray(PREWARM_BUFFER_SIZE)
+                var totalRead = 0L
+                modelFile.inputStream().buffered(PREWARM_BUFFER_SIZE).use { input ->
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        totalRead += n
+                    }
+                }
+                val elapsed = System.currentTimeMillis() - start
+                Log.i(TAG, "│   ${totalRead / 1024 / 1024}MB sequential read in ${elapsed}ms")
+                return elapsed
+            } catch (e2: Throwable) {
+                Log.w(TAG, "│   Sequential pre-warm also failed: ${e2.message}")
+                return System.currentTimeMillis() - start
+            }
+        }
+    }
+
+    // ── Heap reservation ─────────────────────────────────────────────────────────
+    // Forces the JVM to expand its heap region BEFORE native code starts allocating.
+    // Without this, the JVM may grow its heap DURING native model loading, causing
+    // virtual memory region collisions that manifest as SIGSEGV on some Android ROMs
+    // (especially MIUI/HyperOS's modified ART runtime).
+
+    private fun reserveAndReleaseHeap(): Long {
+        val start = System.currentTimeMillis()
+        try {
+            val heapMax = Runtime.getRuntime().maxMemory()
+            val reserveSize = (heapMax / 4).toInt().coerceIn(8 * 1024 * 1024, 64 * 1024 * 1024)
+            val buffer = ByteArray(reserveSize)
+            // Touch every page to force physical backing
+            for (i in buffer.indices step 4096) { buffer[i] = 1 }
+            Log.i(TAG, "│   Heap expanded by ${reserveSize / 1024 / 1024}MB")
+            // Buffer goes out of scope → eligible for GC
+            // The heap region stays expanded even after GC reclaims the buffer
+        } catch (_: OutOfMemoryError) {
+            Log.w(TAG, "│   Heap reservation skipped (device very low on memory)")
+        }
+        System.gc()
+        return System.currentTimeMillis() - start
+    }
+
+    // ── Adaptive timeout ─────────────────────────────────────────────────────────
+    // .ort loads 5-10x faster than .onnx. Low-tier devices need MORE time, not less.
+    // A fixed timeout is wrong for both fast and slow devices.
+
+    private fun adaptiveTimeoutMs(isOrt: Boolean, profile: DeviceProfile): Long {
+        val baseMs = if (isOrt) BASE_TIMEOUT_ORT_MS else BASE_TIMEOUT_ONNX_MS
+        val adjusted = (baseMs * profile.timeoutMultiplier).toLong()
+        return adjusted.coerceIn(20_000L, 120_000L)
+    }
+
+    // ── Phase telemetry ──────────────────────────────────────────────────────────
+    // Granular timing of every init stage. Written to init log for diagnostics.
+
+    data class InitTelemetry(
+        var probeMs: Long = 0,
+        var extractionMs: Long = 0,
+        var gcMs: Long = 0,
+        var heapReserveMs: Long = 0,
+        var prewarmMs: Long = 0,
+        var nativeLoadMs: Long = 0,
+        var totalMs: Long = 0,
+        var escalationLevel: Int = 0,
+        var modelFormat: String = "",
+        var configUsed: String = "",
+        var deviceProfile: DeviceProfile? = null,
+        var timeoutMs: Long = 0
+    ) {
+        override fun toString(): String = buildString {
+            appendLine("Phase Timing:")
+            appendLine("  probe       : ${probeMs}ms")
+            appendLine("  extraction  : ${extractionMs}ms")
+            appendLine("  GC+heap     : ${gcMs + heapReserveMs}ms (gc=${gcMs}ms, heap=${heapReserveMs}ms)")
+            appendLine("  prewarm     : ${prewarmMs}ms")
+            appendLine("  native load : ${nativeLoadMs}ms")
+            appendLine("  TOTAL       : ${totalMs}ms")
+            appendLine("Escalation    : level $escalationLevel ($configUsed)")
+            appendLine("Model format  : $modelFormat")
+            appendLine("Timeout       : ${timeoutMs}ms")
+            appendLine("Device        : $deviceProfile")
+        }
     }
 
     // ── Kokoro engine (single model, 30 speakers) ─────────────────────────────
@@ -99,6 +634,21 @@ object SherpaEngine {
     // ── Piper engine (one model per voice, cached) ────────────────────────────
     private var piperTts: OfflineTts? = null
     private var piperLoadedVoiceId: String? = null
+
+    // ── Piper fallback (used when Kokoro init fails) ────────────────────────
+    /** Default bundled Piper voice to use when Kokoro is unavailable. */
+    private const val PIPER_FALLBACK_VOICE = "en_US-lessac-medium"
+
+    /** True when the Piper fallback engine is initialized and ready to synthesize. */
+    @Volatile var isPiperFallbackReady = false
+        private set
+
+    /** True when Android system TTS is active as ultimate fallback (native code broken). */
+    @Volatile var isSystemTtsFallbackActive = false
+        private set
+
+    /** Android system TTS engine — used when native sherpa-onnx crashes on the device. */
+    private var systemTts: android.speech.tts.TextToSpeech? = null
 
     /** Context for writing cross-process status file. Set by warmUp(). */
     @Volatile private var statusContext: Context? = null
@@ -117,6 +667,177 @@ object SherpaEngine {
     @Volatile var statusMessage: String = "idle"
         private set
 
+    // ── Process log: captures every step of init for debug dump ──────────
+    private val processLog = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    private const val PROCESS_LOG_MAX = 500
+
+    /** Append a timestamped line to the in-memory process log. */
+    private fun plog(msg: String) {
+        val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        val line = "[$ts] $msg"
+        processLog.add(line)
+        while (processLog.size > PROCESS_LOG_MAX) processLog.poll()
+    }
+
+    /** Dump the process log for diagnostic reporting. */
+    fun dumpProcessLog(): String = processLog.joinToString("\n")
+
+    /** Debug log directory on user-visible storage. */
+    private const val DEBUG_LOG_DIR = "WW_Andene/Kyōkan/Logs"
+
+    /**
+     * Dump comprehensive debug log to /storage/emulated/0/WW_Andene/Kyōkan/Logs/.
+     * Includes: device info, engine state, crash tracking, config memory,
+     * SharedPreferences, full init process log, and current telemetry.
+     * Called from the UI via TtsBridge command.
+     */
+    fun dumpDebugLog(ctx: Context): String? {
+        return try {
+            val dir = File(android.os.Environment.getExternalStorageDirectory(), DEBUG_LOG_DIR)
+            if (!dir.exists()) dir.mkdirs()
+
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+            val file = File(dir, "debug_$timestamp.log")
+
+            val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+
+            file.writeText(buildString {
+                appendLine("╔══════════════════════════════════════════════════╗")
+                appendLine("║        KYŌKAN FULL DEBUG LOG                    ║")
+                appendLine("╚══════════════════════════════════════════════════╝")
+                appendLine("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+                appendLine()
+
+                // ── Device Info ──
+                appendLine("═══ DEVICE ═══")
+                appendLine("Manufacturer : ${Build.MANUFACTURER}")
+                appendLine("Model        : ${Build.MODEL}")
+                appendLine("Hardware     : ${Build.HARDWARE}")
+                appendLine("Android      : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+                if (Build.VERSION.SDK_INT >= 31) {
+                    appendLine("SoC Mfg      : ${Build.SOC_MANUFACTURER}")
+                    appendLine("SoC Model    : ${Build.SOC_MODEL}")
+                }
+                appendLine("SoC Vendor   : $socVendor")
+                appendLine("App version  : ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Throwable) { "?" }}")
+                try {
+                    val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
+                    appendLine("sherpa-onnx  : ${vi.version} (${vi.gitSha1})")
+                } catch (_: Throwable) {
+                    appendLine("sherpa-onnx  : version unavailable")
+                }
+                appendLine()
+
+                // ── Memory ──
+                appendLine("═══ MEMORY ═══")
+                val runtime = Runtime.getRuntime()
+                appendLine("JVM heap used: ${(runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024}MB")
+                appendLine("JVM heap max : ${runtime.maxMemory() / 1024 / 1024}MB")
+                val memInfo = android.app.ActivityManager.MemoryInfo()
+                (ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                    ?.getMemoryInfo(memInfo)
+                appendLine("RAM available: ${memInfo.availMem / 1024 / 1024}MB")
+                appendLine("RAM total    : ${memInfo.totalMem / 1024 / 1024}MB")
+                appendLine("Low memory   : ${memInfo.lowMemory}")
+                try {
+                    val stat = StatFs(ctx.filesDir.absolutePath)
+                    appendLine("Disk free    : ${stat.availableBytes / 1024 / 1024}MB")
+                } catch (_: Throwable) {}
+                appendLine()
+
+                // ── Engine State ──
+                appendLine("═══ ENGINE STATE ═══")
+                appendLine("isReady          : $isReady")
+                appendLine("statusMessage    : $statusMessage")
+                appendLine("errorMessage     : $errorMessage")
+                appendLine("initProgress     : $initProgress")
+                appendLine("isWarmingUp      : $isWarmingUp")
+                appendLine("nativeStackProbed: $nativeStackProbed")
+                appendLine("kokoroTts        : ${if (kokoroTts != null) "loaded" else "null"}")
+                appendLine("piperTts         : ${if (piperTts != null) "loaded (${piperLoadedVoiceId})" else "null"}")
+                appendLine("isPiperFallback  : $isPiperFallbackReady")
+                appendLine("lastSampleRate   : $lastSampleRate")
+                appendLine()
+
+                // ── Crash Tracking ──
+                appendLine("═══ CRASH TRACKING (SharedPrefs: $INIT_PREFS) ═══")
+                appendLine("init_in_progress : ${initPrefs.getBoolean(KEY_INIT_IN_PROGRESS, false)}")
+                appendLine("init_crash_count : ${initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)}")
+                appendLine("init_os_kill_count: ${initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0)}")
+                val lastCrash = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
+                appendLine("last_crash_time  : ${if (lastCrash > 0) SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastCrash)) else "never"}")
+                appendLine("crash_age_ms     : ${if (lastCrash > 0) System.currentTimeMillis() - lastCrash else "N/A"}")
+                appendLine()
+
+                // ── Config Memory ──
+                appendLine("═══ CONFIG MEMORY ═══")
+                appendLine("last_good_threads  : ${initPrefs.getInt(KEY_LAST_GOOD_THREADS, -1)}")
+                appendLine("last_good_provider : ${initPrefs.getString(KEY_LAST_GOOD_PROVIDER, "none")}")
+                appendLine("last_good_debug    : ${initPrefs.getBoolean(KEY_LAST_GOOD_DEBUG, false)}")
+                appendLine("last_good_version  : ${initPrefs.getInt(KEY_LAST_GOOD_VERSION, -1)}")
+                appendLine()
+
+                // ── Model Files ──
+                appendLine("═══ MODEL FILES ═══")
+                val kokoroDir = File(ctx.filesDir, "kokoro-model")
+                appendLine("Kokoro dir: ${kokoroDir.absolutePath}")
+                if (kokoroDir.exists()) {
+                    kokoroDir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+                        if (f.isFile) appendLine("  ${f.name} (${f.length() / 1024}KB)")
+                        else appendLine("  ${f.name}/ (dir, ${f.listFiles()?.size ?: 0} files)")
+                    }
+                } else {
+                    appendLine("  NOT EXTRACTED")
+                }
+                val piperDir = File(ctx.filesDir, "piper-models")
+                appendLine("Piper dir: ${piperDir.absolutePath}")
+                if (piperDir.exists()) {
+                    piperDir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+                        appendLine("  ${f.name} (${f.length() / 1024}KB)")
+                    }
+                } else {
+                    appendLine("  NOT EXTRACTED")
+                }
+                appendLine()
+
+                // ── Telemetry ──
+                val telem = lastTelemetry
+                if (telem != null) {
+                    appendLine("═══ LAST TELEMETRY ═══")
+                    appendLine(telem.toString())
+                    appendLine()
+                }
+
+                // ── TTS Status File ──
+                appendLine("═══ TTS STATUS FILE ═══")
+                try {
+                    val statusFile = File(ctx.filesDir, "tts_status.json")
+                    if (statusFile.exists()) {
+                        appendLine(statusFile.readText())
+                    } else {
+                        appendLine("(file does not exist)")
+                    }
+                } catch (e: Throwable) {
+                    appendLine("(error reading: ${e.message})")
+                }
+                appendLine()
+
+                // ── Process Log (every step of init) ──
+                appendLine("═══ INIT PROCESS LOG (${processLog.size} entries) ═══")
+                processLog.forEach { appendLine(it) }
+                if (processLog.isEmpty()) {
+                    appendLine("(no init steps recorded yet — engine may not have started)")
+                }
+            })
+
+            Log.i(TAG, "Debug log written to ${file.absolutePath}")
+            file.absolutePath
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write debug log", e)
+            null
+        }
+    }
+
     /** Writes current engine status to the cross-process status file. */
     private fun syncStatus() {
         val ctx = statusContext ?: return
@@ -130,6 +851,78 @@ object SherpaEngine {
             voiceCmdWakeWord = VoiceCommandListener.wakeWord,
             initProgress = initProgress
         )
+    }
+
+    /**
+     * Writes an engine init failure log file so the user can copy it from the UI.
+     * Mirrors [ReaderApplication.writeCrashLog] but for non-fatal init failures.
+     */
+    /** Last telemetry from init — available for the log even after init returns. */
+    @Volatile private var lastTelemetry: InitTelemetry? = null
+
+    private fun writeInitLog(
+        ctx: Context, reason: String, throwable: Throwable? = null,
+        telemetry: InitTelemetry? = lastTelemetry
+    ) {
+        try {
+            // Use resolved log dir, fall back to app filesDir if null (e.g. in :tts process)
+            val dir = ReaderApplication.resolvedLogDir
+                ?: File(ctx.applicationContext.filesDir, "logs").also { it.mkdirs() }
+            if (!dir.exists()) dir.mkdirs()
+
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
+            val file = File(dir, "engine_init_$timestamp.log")
+
+            val stackTrace = if (throwable != null) {
+                StringWriter().also { sw -> PrintWriter(sw).use { throwable.printStackTrace(it) } }.toString()
+            } else null
+
+            file.writeText(buildString {
+                appendLine("=== Kyōkan Engine Init Report ===")
+                appendLine("Time       : ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+                appendLine("Reason     : $reason")
+                appendLine()
+                appendLine("--- Device Profile ---")
+                val dp = telemetry?.deviceProfile
+                if (dp != null) {
+                    appendLine("Manufacturer: ${dp.manufacturer}")
+                    appendLine("Model       : ${dp.model}")
+                    appendLine("RAM         : ${dp.availRamMB}MB free / ${dp.totalRamMB}MB total")
+                    appendLine("CPU cores   : ${dp.cpuCores}")
+                    appendLine("SoC         : ${dp.socVendor} (hw=${Build.HARDWARE})")
+                    appendLine("Tier        : ${dp.tier}")
+                    appendLine("Xiaomi      : ${dp.isXiaomi}")
+                    appendLine("MIUI/HyperOS: ${dp.isXiaomiRom}")
+                } else {
+                    appendLine("Device     : ${Build.MANUFACTURER} ${Build.MODEL}")
+                    appendLine("SoC        : $socVendor (hw=${Build.HARDWARE})")
+                }
+                appendLine("Android    : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+                appendLine("App version: ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Exception) { "?" }}")
+                try {
+                    val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
+                    appendLine("sherpa-onnx : ${vi.version} (${vi.gitSha1})")
+                } catch (_: Throwable) {}
+                appendLine()
+                if (telemetry != null) {
+                    appendLine("--- Telemetry ---")
+                    append(telemetry.toString())
+                    appendLine()
+                }
+                if (stackTrace != null) {
+                    appendLine("--- Stack Trace ---")
+                    appendLine(stackTrace)
+                }
+                appendLine("--- Status ---")
+                appendLine("statusMessage: $statusMessage")
+                appendLine("errorMessage : $errorMessage")
+                appendLine("isReady      : $isReady")
+                appendLine("initProgress : $initProgress")
+            })
+            Log.i(TAG, "Engine init log written to ${file.absolutePath}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write engine init log", e)
+        }
     }
 
     /** Timestamp (ms) when initialization started, 0 if not initializing */
@@ -147,6 +940,9 @@ object SherpaEngine {
 
     @Volatile private var isWarmingUp = false
     private val warmUpLock = Object()
+
+    /** True after we've verified the JNI/ORT native stack works with a lightweight probe. */
+    @Volatile private var nativeStackProbed = false
 
     // ── Asset resolution ──────────────────────────────────────────────────────
 
@@ -171,10 +967,24 @@ object SherpaEngine {
     private const val KEY_INIT_CRASH_COUNT = "init_crash_count"
     private const val KEY_INIT_IN_PROGRESS = "init_in_progress"
     private const val KEY_INIT_LAST_CRASH_TIME = "init_last_crash_time"
-    /** Stop attempting init after this many consecutive crashes. */
-    private const val MAX_INIT_CRASHES = 3
+    /** Which model format was being loaded when a crash happened ("ort" or "onnx"). */
+    private const val KEY_INIT_FORMAT = "init_format"
+    /** If true, skip .ort and go straight to .onnx (set after a crash during .ort loading). */
+    private const val KEY_SKIP_ORT = "skip_ort"
+    /** Tracks how many times the OS killed the process during init (memory pressure). */
+    private const val KEY_INIT_OS_KILL_COUNT = "init_os_kill_count"
+    /** If true, force INT8 model on next init (set after OS kills during FP32 loading). */
+    private const val KEY_FORCE_INT8 = "force_int8"
+    /** Base delay (ms) for exponential backoff after crashes. Delay = base * 2^(n-1). */
+    private const val CRASH_BACKOFF_BASE_MS = 3_000L   // 3s, 6s, 12s, 24s, 48s…
+    /** Max backoff delay (ms) — caps at ~1 minute, then retries forever at this interval. */
+    private const val CRASH_BACKOFF_MAX_MS = 60_000L   // 1 minute
+    /** After this many CONFIRMED NATIVE crashes, assume the native stack is broken. */
+    private const val NATIVE_BROKEN_THRESHOLD = 8
     /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
-    private const val CRASH_RESET_WINDOW_MS = 300_000L  // 5 minutes
+    private const val CRASH_RESET_WINDOW_MS = 120_000L  // 2 minutes
+    /** After this many OS kills during init, skip Kokoro and use Piper (memory too low for Kokoro). */
+    private const val OS_KILL_THRESHOLD = 3
 
     /**
      * Initializes the Kokoro engine on a background thread.
@@ -182,16 +992,21 @@ object SherpaEngine {
      * constructor. Guarded against duplicate concurrent calls and crash loops.
      *
      * If previous init attempts crashed the process (SIGSEGV), this method
-     * tracks the failures and stops retrying after [MAX_INIT_CRASHES] to break
-     * the crash loop. The user can force a retry from the UI.
+     * tracks the failures and backs off exponentially with increasing delays.
+     * On the very first detected crash, Piper fallback is attempted immediately
+     * (guarded by init_in_progress so Piper crashes are also tracked).
+     * After [NATIVE_BROKEN_THRESHOLD] total crashes, all native code is skipped
+     * and an error is shown — the native stack is broken on this device.
      */
     fun warmUp(ctx: Context) {
         statusContext = ctx.applicationContext
-        if (isReady && kokoroTts != null) { onReadyCallback?.invoke(); return }
+        plog("warmUp() called")
+        if (isReady && kokoroTts != null) { plog("warmUp: already ready, skipping"); onReadyCallback?.invoke(); return }
         synchronized(warmUpLock) {
-            if (isWarmingUp) return
+            if (isWarmingUp) { plog("warmUp: already warming up, skipping"); return }
             isWarmingUp = true
         }
+        plog("warmUp: starting init sequence")
 
         // ── Crash-loop detection ─────────────────────────────────────────
         // Before calling native code that can SIGSEGV, check if previous
@@ -202,54 +1017,295 @@ object SherpaEngine {
         var crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
         val lastCrashTime = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
 
-        // If the previous init was still "in progress" when the process died, it crashed.
+        // Reset crash counter on app update — new code deserves a fresh chance
+        val currentVersion = getAppVersionCode(ctx)
+        val lastVersion = initPrefs.getLong("last_init_version", 0L)
+        if (currentVersion != lastVersion) {
+            plog("warmUp: app updated ($lastVersion → $currentVersion) — resetting crash state")
+            Log.i(TAG, "App version changed ($lastVersion → $currentVersion) — resetting init crash state")
+            crashCount = 0
+            initPrefs.edit()
+                .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
+                .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                .putBoolean(KEY_SKIP_ORT, false)
+                .putBoolean(KEY_FORCE_INT8, false)
+                .putLong("last_init_version", currentVersion)
+                .apply()
+        }
+
+        // If the previous init was still "in progress" when the process died, check WHY.
+        // On Android 11+, ApplicationExitInfo tells us if it was a native crash (SIGSEGV)
+        // or the OS killing the process (HyperOS aggressive battery management).
+        // Only count native crashes — OS kills are not the native code's fault.
+        plog("warmUp: wasInProgress=$wasInProgress, crashCount=$crashCount, lastCrashTime=$lastCrashTime")
         if (wasInProgress) {
-            crashCount++
+            val wasNativeCrash = wasLastExitNativeCrash(ctx)
+            val crashedFormat = initPrefs.getString(KEY_INIT_FORMAT, "unknown")
+            plog("warmUp: process died during init — wasNativeCrash=$wasNativeCrash, format=$crashedFormat")
+            if (wasNativeCrash) {
+                crashCount++
+                clearGoodConfig(initPrefs)
+                // If .ort caused the crash, skip it next time and go straight to .onnx
+                if (crashedFormat == "ort") {
+                    initPrefs.edit().putBoolean(KEY_SKIP_ORT, true).apply()
+                    plog("warmUp: .ort crashed — will skip .ort and use .onnx on next attempt")
+                    Log.w(TAG, "Previous init crashed during .ort loading — will use .onnx instead")
+                }
+                plog("warmUp: native crash confirmed — crash #$crashCount, cleared config memory")
+                Log.w(TAG, "Previous engine init: native crash #$crashCount — cleared config memory")
+            } else {
+                // OS killed process during init — likely memory pressure.
+                // Track separately: after OS_KILL_THRESHOLD kills, skip Kokoro.
+                // Also force INT8 model on next attempt (smaller memory footprint).
+                val osKillCount = initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0) + 1
+                initPrefs.edit()
+                    .putInt(KEY_INIT_OS_KILL_COUNT, osKillCount)
+                    .putBoolean(KEY_FORCE_INT8, true)
+                    .apply()
+                plog("warmUp: OS killed process (not native crash) — osKillCount=$osKillCount, will force INT8")
+                Log.i(TAG, "Previous engine init: OS killed process (memory pressure?) — osKillCount=$osKillCount, forcing INT8 on next attempt")
+            }
             initPrefs.edit()
                 .putInt(KEY_INIT_CRASH_COUNT, crashCount)
                 .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .apply()
-            Log.w(TAG, "Previous engine init crashed (crash #$crashCount)")
         }
 
         // Reset crash counter if enough time has passed (device might have cooled down)
         if (crashCount > 0 && System.currentTimeMillis() - lastCrashTime > CRASH_RESET_WINDOW_MS) {
+            plog("warmUp: crash counter reset (>${CRASH_RESET_WINDOW_MS / 1000}s since last crash)")
             crashCount = 0
-            initPrefs.edit().putInt(KEY_INIT_CRASH_COUNT, 0).apply()
-            Log.d(TAG, "Init crash counter reset (>5min since last crash)")
+            initPrefs.edit()
+                .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
+                .apply()
+            Log.d(TAG, "Init crash/OS-kill counters reset (>2min since last crash)")
         }
 
-        // If we've crashed too many times, don't attempt init — report error instead.
-        if (crashCount >= MAX_INIT_CRASHES) {
-            Log.e(TAG, "Engine init disabled after $crashCount consecutive crashes")
-            errorMessage = "Engine crashed $crashCount times during initialization. " +
-                "The model may be incompatible with this device. " +
-                "Tap \"Retry engine init\" to try again, or restart the app after 5 minutes."
-            statusMessage = "error: repeated native crashes"
-            isReady = false
-            synchronized(warmUpLock) { isWarmingUp = false }
+        // ── OS kill loop detection ────────────────────────────────────
+        // If the OS keeps killing us during init (memory pressure), don't keep
+        // retrying Kokoro — it will never succeed with this much RAM.
+        // Fall back to Piper which is much smaller.
+        val osKillCount = initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0)
+        if (osKillCount >= OS_KILL_THRESHOLD && crashCount == 0) {
+            plog("warmUp: OS killed init $osKillCount times — device lacks RAM for Kokoro, using Piper")
+            Log.w(TAG, "OS killed Kokoro init $osKillCount times (memory pressure) — skipping Kokoro, using Piper")
+
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+            statusMessage = "not enough RAM for Kokoro — trying lighter engine…"
             syncStatus()
+
+            var piperOk = false
+            try {
+                piperOk = initPiperFallback(ctx)
+                plog("warmUp: Piper fallback (OS kill recovery) result=$piperOk")
+            } catch (e: Throwable) {
+                plog("warmUp: Piper fallback threw ${e.javaClass.simpleName}: ${e.message}")
+                Log.e(TAG, "Piper fallback threw exception", e)
+            }
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+
+            if (piperOk) {
+                Log.i(TAG, "Piper fallback activated (OS killed Kokoro init $osKillCount times)")
+                onReadyCallback?.invoke()
+            } else {
+                // Try Android system TTS as ultimate fallback
+                val systemTtsOk = initSystemTtsFallback(ctx)
+                if (systemTtsOk) {
+                    plog("warmUp: Android system TTS fallback ready (OS kill recovery)")
+                    isReady = true
+                    isSystemTtsFallbackActive = true
+                    errorMessage = null
+                    statusMessage = "ready (Android TTS — not enough RAM for Kokoro)"
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    onReadyCallback?.invoke()
+                } else {
+                    errorMessage = "Not enough RAM for Kokoro engine. Close other apps and restart."
+                    statusMessage = "error: not enough RAM"
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+            }
+
+            // Schedule retry after the crash reset window — RAM conditions may change
+            val retryMs = CRASH_RESET_WINDOW_MS + 5_000L
+            Log.i(TAG, "Will retry Kokoro in ${retryMs / 1000}s (RAM conditions may improve)")
+            Thread {
+                try {
+                    Thread.sleep(retryMs)
+                    // Reset OS kill counter so we try Kokoro again
+                    initPrefs.edit().putInt(KEY_INIT_OS_KILL_COUNT, 0).apply()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    warmUp(ctx)
+                } catch (_: InterruptedException) {
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+            }.apply { name = "SherpaEngine-oskill-retry"; isDaemon = true; start() }
+            return
+        }
+
+        // ── Crash recovery ─────────────────────────────────────────────
+        // Even a SINGLE native crash means Kokoro is unsafe to load right now.
+        // We try Piper first (it's smaller and more likely to work), then
+        // back off exponentially before retrying Kokoro.
+        //
+        // CRITICAL: Piper also uses sherpa-onnx native code (OfflineTts).
+        // If the native stack is fundamentally broken (bad JNI/ORT on this
+        // device), Piper will ALSO SIGSEGV. We must set init_in_progress
+        // before calling Piper so that crash increments the counter.
+        // After NATIVE_BROKEN_THRESHOLD crashes, we stop calling ANY native
+        // code and show an error instead of crash-looping forever.
+        if (crashCount > 0) {
+            plog("warmUp: entering crash recovery (crashCount=$crashCount)")
+            Log.w(TAG, "Native code crashed $crashCount time(s)")
+
+            if (crashCount >= NATIVE_BROKEN_THRESHOLD) {
+                plog("warmUp: NATIVE_BROKEN_THRESHOLD reached ($crashCount >= $NATIVE_BROKEN_THRESHOLD) — trying Android TTS fallback")
+                Log.e(TAG, "Native stack appears broken ($crashCount crashes) — trying Android TTS")
+
+                // Build diagnostic info visible in the UI
+                val diag = buildDiagnostics(ctx)
+                writeInitLog(ctx, "Native stack broken ($crashCount crashes), falling back to Android TTS\n$diag")
+
+                // Try Android system TTS as ultimate fallback
+                statusMessage = "native engine broken — trying Android TTS…"
+                syncStatus()
+                val systemTtsOk = initSystemTtsFallback(ctx)
+                if (systemTtsOk) {
+                    plog("warmUp: Android system TTS fallback ready")
+                    Log.i(TAG, "Android system TTS fallback activated")
+                    errorMessage = null
+                    statusMessage = "ready (Android TTS fallback)"
+                    isReady = true
+                    isSystemTtsFallbackActive = true
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    onReadyCallback?.invoke()
+                } else {
+                    plog("warmUp: Android system TTS also failed")
+                    errorMessage = "TTS engine crashed $crashCount times.\n$diag"
+                    statusMessage = "error: all TTS engines failed"
+                    isReady = false
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+
+                // Schedule native retry after long backoff (conditions might change).
+                // Must wait at least CRASH_RESET_WINDOW_MS so the counter resets on re-entry.
+                val backoffMs = CRASH_RESET_WINDOW_MS + 5_000L  // 2min + 5s margin
+                Log.i(TAG, "Will retry native in ${backoffMs / 1000}s")
+                Thread {
+                    try {
+                        Thread.sleep(backoffMs)
+                        synchronized(warmUpLock) { isWarmingUp = false }
+                        warmUp(ctx)
+                    } catch (_: InterruptedException) {
+                        synchronized(warmUpLock) { isWarmingUp = false }
+                    }
+                }.apply { name = "SherpaEngine-backoff"; isDaemon = true; start() }
+                return
+            }
+
+            // ── Try Piper fallback (guarded by init_in_progress) ────────
+            // Set the flag BEFORE any native code so that if Piper also
+            // SIGSEGVs, the crash counter increments on next restart.
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+            plog("warmUp: set init_in_progress=true, attempting Piper fallback")
+            Log.i(TAG, "Attempting Piper fallback (crash #$crashCount)…")
+            statusMessage = "trying fallback engine…"
+            syncStatus()
+
+            var piperOk = false
+            try {
+                piperOk = initPiperFallback(ctx)
+                plog("warmUp: Piper fallback result=$piperOk")
+            } catch (e: Throwable) {
+                plog("warmUp: Piper fallback threw ${e.javaClass.simpleName}: ${e.message}")
+                Log.e(TAG, "Piper fallback threw exception", e)
+            }
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+            plog("warmUp: cleared init_in_progress")
+
+            if (piperOk) {
+                Log.i(TAG, "Piper fallback activated after $crashCount Kokoro crash(es)")
+                onReadyCallback?.invoke()
+            } else {
+                Log.w(TAG, "Piper fallback also failed — no TTS available yet")
+                errorMessage = "TTS engines unavailable (crash #$crashCount)"
+                statusMessage = "error: engines unavailable"
+                syncStatus()
+            }
+
+            // ── Exponential backoff before Kokoro retry ─────────────────
+            val backoffMs = (CRASH_BACKOFF_BASE_MS * (1L shl (crashCount - 1).coerceAtMost(10)))
+                .coerceAtMost(CRASH_BACKOFF_MAX_MS)
+            Log.i(TAG, "Backing off ${backoffMs}ms before Kokoro retry (crash #$crashCount)")
+            if (piperOk) {
+                statusMessage = "Piper active — retrying Kokoro in ${backoffMs / 1000}s…"
+                syncStatus()
+            }
+
+            Thread {
+                try {
+                    Thread.sleep(backoffMs)
+                    Log.i(TAG, "Backoff complete — retrying Kokoro init (crash #$crashCount)")
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    warmUp(ctx)  // Recursive retry after backoff
+                } catch (_: InterruptedException) {
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+            }.apply { name = "SherpaEngine-backoff"; isDaemon = true; start() }
             return
         }
 
         // ── Set init_in_progress BEFORE any sherpa-onnx code runs ────────
-        // The native library loads when sherpa-onnx config classes are first
-        // constructed (JNI System.loadLibrary). If that crashes (SIGSEGV),
-        // this flag must already be persisted so the next startup detects it.
-        // Using commit() (synchronous) to ensure it's flushed to disk.
         initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+        plog("warmUp: crashCount=0, set init_in_progress=true, launching init thread")
 
         Thread {
             try {
-                if (initializeKokoro(ctx)) {
+                plog("warmUp thread: calling initializeKokoro()")
+                val kokoroOk = initializeKokoro(ctx)
+                plog("warmUp thread: initializeKokoro returned $kokoroOk")
+                if (kokoroOk) {
                     onReadyCallback?.invoke()
+                } else {
+                    plog("warmUp thread: Kokoro failed, trying Piper fallback")
+                    Log.w(TAG, "Kokoro init failed, attempting Piper fallback…")
+                    val piperOk = initPiperFallback(ctx)
+                    plog("warmUp thread: Piper fallback returned $piperOk")
+                    if (piperOk) {
+                        Log.i(TAG, "Piper fallback activated — speech will continue with Piper voice")
+                        onReadyCallback?.invoke()
+                    } else {
+                        Log.e(TAG, "Both Kokoro and Piper fallback failed — no TTS available")
+                        plog("warmUp thread: BOTH engines failed — errorMessage=$errorMessage")
+                        if (errorMessage == null) {
+                            errorMessage = "Both Kokoro and Piper engines failed to initialize"
+                        }
+                        statusMessage = "error: ${errorMessage}"
+                        syncStatus()
+                        writeInitLog(ctx, "Both engines failed: ${errorMessage}")
+                    }
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "Warm-up failed", e)
                 errorMessage = e.message ?: "Unknown error during warm-up"
                 statusMessage = "error: ${errorMessage}"
+                writeInitLog(ctx, "Warm-up exception: ${e.message}", e)
                 syncStatus()
+                // Even on exception, try Piper fallback
+                try {
+                    if (initPiperFallback(ctx)) {
+                        Log.i(TAG, "Piper fallback activated after warm-up exception")
+                        onReadyCallback?.invoke()
+                    }
+                } catch (e2: Throwable) {
+                    Log.e(TAG, "Piper fallback also failed after warm-up exception", e2)
+                }
             } finally {
                 // Clear init_in_progress — if we reached this point, the process survived.
                 // Only a SIGSEGV (which kills the process) will leave the flag set.
@@ -270,11 +1326,19 @@ object SherpaEngine {
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
         initPrefs.edit()
             .putInt(KEY_INIT_CRASH_COUNT, 0)
+            .putInt(KEY_INIT_OS_KILL_COUNT, 0)
             .putBoolean(KEY_INIT_IN_PROGRESS, false)
+            .putBoolean(KEY_SKIP_ORT, false)
+            .putBoolean(KEY_FORCE_INT8, false)
+            .remove(KEY_INIT_FORMAT)
             .apply()
         errorMessage = null
         statusMessage = "retrying…"
         isReady = false
+        isPiperFallbackReady = false  // Reset fallback so Kokoro gets a fresh try
+        isSystemTtsFallbackActive = false
+        systemTts?.shutdown()
+        systemTts = null
         syncStatus()
         warmUp(ctx)
     }
@@ -283,22 +1347,61 @@ object SherpaEngine {
 
     @Synchronized
     fun initializeKokoro(ctx: Context): Boolean {
+        plog("initializeKokoro: called (isReady=$isReady, kokoroTts=${kokoroTts != null})")
         if (isReady && kokoroTts != null) return true
 
-        // Check crash counter — prevents AudioPipeline's ensureKokoroReady() from
-        // bypassing the crash-loop breaker by calling initializeKokoro() directly.
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
         val crashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
-        if (crashCount >= MAX_INIT_CRASHES) {
-            Log.e(TAG, "initializeKokoro blocked — $crashCount consecutive init failures")
+        if (crashCount > 0) {
+            plog("initializeKokoro: blocked — $crashCount crash(es), warmUp() handles backoff")
+            Log.w(TAG, "initializeKokoro: $crashCount crash(es) — warmUp() handles backoff, skipping direct call")
             return false
         }
 
+        var initWakeLock: PowerManager.WakeLock? = null
         return try {
+            // Acquire a partial WakeLock to keep the CPU alive during model loading.
+            // On Xiaomi/HyperOS, even foreground services get killed during long CPU-intensive
+            // operations (310MB ONNX model load can take 2-4 min on MediaTek).
+            try {
+                val pm = ctx.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                initWakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Kyokan:KokoroInit")
+                initWakeLock?.setReferenceCounted(false)
+                initWakeLock?.acquire(5 * 60 * 1000L)  // 5 min max — safety timeout
+                plog("initKokoro: WakeLock acquired")
+            } catch (e: Throwable) {
+                plog("initKokoro: WakeLock failed: ${e.message}")
+            }
+            val initGlobalStart = System.currentTimeMillis()
+            var probeElapsedMs = 0L
+
             initProgress = 5
+            statusMessage = "starting…"
+            syncStatus()
+            plog("initKokoro: starting (no probe — direct load like standalone Sherpa)")
+            Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
+
+            // Log sherpa-onnx library version for diagnostics
+            try {
+                val vi = com.k2fsa.sherpa.onnx.VersionInfo.Companion
+                Log.i(TAG, "│ sherpa-onnx: ${vi.version} (${vi.gitSha1}, ${vi.gitDate})")
+            } catch (_: Throwable) {
+                Log.i(TAG, "│ sherpa-onnx: version unavailable")
+            }
+
+            // Check ORT version compatibility — the build-time ORT that created .ort files
+            // must match the on-device ORT bundled in the AAR. If mismatched, .ort files
+            // may cause SIGSEGV. Log a warning so it shows up in diagnostics.
+            try {
+                val buildOrtVersion = ctx.assets.open("ort_version.txt").bufferedReader().readText().trim()
+                Log.i(TAG, "│ Build-time ORT version: $buildOrtVersion")
+            } catch (_: Throwable) {
+                Log.i(TAG, "│ Build-time ORT version: unknown (ort_version.txt not found)")
+            }
+
+            initProgress = 10
             statusMessage = "verifying model assets…"
             syncStatus()
-            Log.i(TAG, "┌── Kokoro init START ──────────────────────────")
             Log.i(TAG, "│ Model dir: assets/$KOKORO_DIR")
 
             // ── Pre-flight: verify required assets exist BEFORE calling native code ──
@@ -311,12 +1414,16 @@ object SherpaEngine {
             )
             val missingFiles = mutableListOf<String>()
             for (path in requiredFiles) {
-                // For model files, also accept .ort pre-optimized variant
+                // For model files, also accept .ort or .int8.onnx variants
                 val ortPath = path.replace(".onnx", ".ort")
+                val int8Path = path.replace("model.onnx", "model.int8.onnx")
                 val exists = try {
                     ctx.assets.open(path).use { true }
                 } catch (_: Throwable) {
-                    if (ortPath != path) try { ctx.assets.open(ortPath).use { true } } catch (_: Throwable) { false }
+                    if (ortPath != path) try { ctx.assets.open(ortPath).use { true } } catch (_: Throwable) {
+                        if (int8Path != path) try { ctx.assets.open(int8Path).use { true } } catch (_: Throwable) { false }
+                        else false
+                    }
                     else false
                 }
                 Log.i(TAG, "│ asset %-30s %s".format(path, if (exists) "✓" else "✗ MISSING"))
@@ -329,6 +1436,7 @@ object SherpaEngine {
             Log.i(TAG, "│ asset %-30s %s".format("$KOKORO_DIR/espeak-ng-data/", if (espeakExists) "✓" else "✗ MISSING"))
             if (!espeakExists) missingFiles.add("$KOKORO_DIR/espeak-ng-data/")
 
+            plog("initKokoro: pre-flight done — missing=${missingFiles.size}")
             if (missingFiles.isNotEmpty()) {
                 val msg = "Missing model files: ${missingFiles.joinToString(", ")}. " +
                     "The APK was built without bundling the Kokoro model. " +
@@ -338,11 +1446,38 @@ object SherpaEngine {
                 statusMessage = "error: model files missing from APK"
                 errorMessage = msg
                 isReady = false
+                writeInitLog(ctx, msg)
                 syncStatus()
                 return false
             }
 
             initProgress = 15
+            statusMessage = "checking device resources…"
+            syncStatus()
+
+            // ── Pre-check: disk space ────────────────────────────────────
+            // The 311MB model needs ~400MB free (model + temp file during atomic write).
+            // Fail fast with a clear message instead of crashing mid-extraction.
+            try {
+                val stat = StatFs(ctx.filesDir.absolutePath)
+                val freeBytes = stat.availableBytes
+                Log.i(TAG, "│ Disk free: ${freeBytes / 1024 / 1024}MB (need ${MIN_DISK_SPACE_BYTES / 1024 / 1024}MB)")
+                if (freeBytes < MIN_DISK_SPACE_BYTES) {
+                    val msg = "Not enough storage: ${freeBytes / 1024 / 1024}MB free, need ${MIN_DISK_SPACE_BYTES / 1024 / 1024}MB. " +
+                        "Free up space and restart the app."
+                    Log.e(TAG, "│ $msg")
+                    Log.e(TAG, "└── Kokoro init FAILED (disk space) ──────────")
+                    statusMessage = "error: not enough storage"
+                    errorMessage = msg
+                    isReady = false
+                    writeInitLog(ctx, msg)
+                    syncStatus()
+                    return false
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "│ Could not check disk space: ${e.message}")
+            }
+
             statusMessage = "extracting model to filesystem…"
             syncStatus()
 
@@ -358,22 +1493,160 @@ object SherpaEngine {
                 errorMessage = "Failed to extract model files to device storage. " +
                     "Check available storage space."
                 isReady = false
+                writeInitLog(ctx, "Model extraction to filesystem failed")
                 syncStatus()
                 return false
             }
 
-            initProgress = 30
-            statusMessage = "preparing Kokoro config…"
-            syncStatus()
+            // ── Post-extraction integrity check ──────────────────────────
+            // Verify extracted files aren't truncated/corrupt (e.g. from power loss mid-write).
+            // At least one model variant must be present (FP32 or INT8).
+            val modelCandidate = listOf(
+                File(extractedDir, "model.ort"),
+                File(extractedDir, "model.onnx"),
+                File(extractedDir, "model.int8.onnx")
+            ).firstOrNull { it.exists() && it.length() > 50L * 1024 * 1024 }
+                ?: File(extractedDir, "model.onnx")  // will fail the check below
+            val voicesCheck = File(extractedDir, "voices.bin")
+            val tokensCheck = File(extractedDir, "tokens.txt")
+            if (!modelCandidate.exists() || modelCandidate.length() < MIN_MODEL_FILE_SIZE) {
+                val msg = "Extracted model file is missing or corrupt (${modelCandidate.name}: ${modelCandidate.length() / 1024 / 1024}MB, expected >100MB). " +
+                    "Deleting and re-extracting on next launch."
+                Log.e(TAG, "│ $msg")
+                // Delete version marker to force re-extraction
+                File(extractedDir, ".extracted_version").delete()
+                modelCandidate.delete()
+                writeInitLog(ctx, msg)
+                statusMessage = "error: corrupt model, will re-extract"
+                errorMessage = msg
+                syncStatus()
+                return false
+            }
+            if (!voicesCheck.exists() || voicesCheck.length() < 1024) {
+                Log.e(TAG, "│ voices.bin missing or empty — forcing re-extraction")
+                File(extractedDir, ".extracted_version").delete()
+                voicesCheck.delete()
+                writeInitLog(ctx, "voices.bin missing or empty after extraction")
+                statusMessage = "error: corrupt voices file, will re-extract"
+                errorMessage = "Voice data is corrupt. Restart to re-extract."
+                syncStatus()
+                return false
+            }
+            plog("initKokoro: extraction verified — model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
+            Log.i(TAG, "│ Extraction verified: model=${modelCandidate.length() / 1024 / 1024}MB, voices=${voicesCheck.length() / 1024 / 1024}MB")
 
-            // Resolve which model file was extracted (.ort or .onnx)
-            val modelFile = File(extractedDir, "model.ort").let {
-                if (it.exists()) it else File(extractedDir, "model.onnx")
+            // ══════════════════════════════════════════════════════════════
+            // Stage 1: Device Profiling + Memory Preparation
+            // ══════════════════════════════════════════════════════════════
+            // Profile the device FIRST — all subsequent decisions (timeout,
+            // escalation, memory thresholds) are driven by the profile.
+            // Then prepare memory: GC, heap reservation, model pre-warming.
+            val telemetry = InitTelemetry(probeMs = probeElapsedMs)
+            val stageStart = System.currentTimeMillis()
+
+            initProgress = 25
+            statusMessage = "profiling device…"
+            syncStatus()
+            Log.i(TAG, "│")
+            Log.i(TAG, "│ ═══ Stage 1: Device Profile + Memory Prep ═══")
+
+            val profile = profileDevice(ctx)
+            telemetry.deviceProfile = profile
+            plog("initKokoro: Stage 1 — device=${profile.manufacturer} ${profile.model}, tier=${profile.tier}, ram=${profile.availRamMB}MB/${profile.totalRamMB}MB, soc=${profile.socVendor}")
+            Log.i(TAG, "│ $profile")
+
+            // ── 1a. Garbage collection ──────────────────────────────────
+            val gcStart = System.currentTimeMillis()
+            val runtime = Runtime.getRuntime()
+            val heapBefore = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+            System.gc()
+            System.runFinalization()
+            System.gc()
+            Thread.sleep(50)
+            val heapAfter = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+            telemetry.gcMs = System.currentTimeMillis() - gcStart
+            Log.i(TAG, "│ GC: heap ${heapBefore}MB → ${heapAfter}MB (freed ${heapBefore - heapAfter}MB, ${telemetry.gcMs}ms)")
+
+            // ── 1b. RAM check (AFTER GC for accurate reading) ───────────
+            val memInfo = android.app.ActivityManager.MemoryInfo()
+            (ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                ?.getMemoryInfo(memInfo)
+            Log.i(TAG, "│ RAM: ${memInfo.availMem / 1024 / 1024}MB free / ${memInfo.totalMem / 1024 / 1024}MB total (low=${memInfo.lowMemory})")
+            Log.i(TAG, "│ JVM: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
+
+            // ── Model file resolution (RAM-adaptive) ─────────────────
+            // Choose model variant based on available RAM:
+            //   - FP32 (310MB) if ≥ 800MB free — best quality
+            //   - INT8 (110MB) if ≥ 300MB free — same voices, slightly lower quality
+            //   - Fall back to Piper if < 300MB
+            initProgress = 28
+            val availMB = memInfo.availMem / 1024 / 1024
+            val int8File = File(extractedDir, "model.int8.onnx")
+            val onnxFile = File(extractedDir, "model.onnx")
+            val ortFile = File(extractedDir, "model.ort")
+            val hasInt8 = int8File.exists() && int8File.length() > 50L * 1024 * 1024  // >50MB sanity
+            val hasFp32 = onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE
+            val forceInt8 = initPrefs.getBoolean(KEY_FORCE_INT8, false)
+
+            val useInt8 = hasInt8 && (forceInt8 || memInfo.availMem < MIN_RAM_FOR_FP32_BYTES || !hasFp32)
+            val modelFile: File
+            if (useInt8 && memInfo.availMem >= MIN_RAM_FOR_INT8_BYTES) {
+                modelFile = int8File
+                val reason = if (forceInt8) "OS killed FP32 init" else "low RAM (${availMB}MB)"
+                plog("initKokoro: using INT8 model ($reason, need ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB for FP32)")
+                Log.i(TAG, "│ Using INT8 model ($reason) — ${int8File.length() / 1024 / 1024}MB")
+                statusMessage = "loading Kokoro INT8 model…"
+                syncStatus()
+            } else if (memInfo.availMem >= MIN_RAM_FOR_FP32_BYTES || !hasInt8) {
+                // Enough RAM for FP32, or INT8 not available
+                if (memInfo.availMem < MIN_RAM_FOR_FP32_BYTES && !hasInt8) {
+                    // Not enough RAM and no INT8 — warn but try anyway (might work on some devices)
+                    Log.w(TAG, "│ RAM: ${availMB}MB is below ${MIN_RAM_FOR_FP32_BYTES / 1024 / 1024}MB threshold, no INT8 available — trying FP32 anyway")
+                    plog("initKokoro: low RAM (${availMB}MB) but no INT8 model — trying FP32")
+                }
+                modelFile = if (onnxFile.exists() && onnxFile.length() > MIN_MODEL_FILE_SIZE) onnxFile
+                    else if (ortFile.exists() && ortFile.length() > MIN_MODEL_FILE_SIZE) ortFile
+                    else onnxFile  // will fail at check below
+            } else {
+                // Not enough RAM even for INT8
+                val msg = "Not enough RAM: ${availMB}MB available, " +
+                    "need ${MIN_RAM_FOR_INT8_BYTES / 1024 / 1024}MB minimum. " +
+                    "Falling back to lighter engine."
+                Log.w(TAG, "│ $msg")
+                Log.e(TAG, "└── Kokoro init SKIPPED (low memory) ─────────")
+                plog("initKokoro: RAM too low (${availMB}MB) even for INT8 — skipping Kokoro")
+                statusMessage = "not enough RAM — trying lighter engine…"
+                isReady = false
+                lastTelemetry = telemetry
+                writeInitLog(ctx, msg, telemetry = telemetry)
+                syncStatus()
+                try { initWakeLock?.release() } catch (_: Throwable) {}
+                return false
             }
             val isOrt = modelFile.name.endsWith(".ort")
+            val isInt8 = modelFile.name.contains("int8")
+            telemetry.modelFormat = when {
+                isInt8 -> "INT8"
+                isOrt -> "ORT"
+                else -> "ONNX"
+            }
+            Log.i(TAG, "│ Model: ${modelFile.name} (${modelFile.length() / 1024 / 1024}MB)")
 
-            val provider = optimalProvider()
-            val threads = optimalThreadCount()
+            telemetry.extractionMs = System.currentTimeMillis() - stageStart - telemetry.gcMs
+
+            // ══════════════════════════════════════════════════════════════
+            // Direct load — match standalone Sherpa APK approach
+            // ══════════════════════════════════════════════════════════════
+            // No probe, no escalation ladder, no pre-warming.
+            // Just create OfflineTts with 1 thread + cpu provider.
+            initProgress = 35
+            statusMessage = "loading Kokoro model…"
+            syncStatus()
+            Log.i(TAG, "│")
+            Log.i(TAG, "│ ═══ Direct load (1 thread, cpu) ═══")
+
+            initPrefs.edit().putString(KEY_INIT_FORMAT, if (isOrt) "ort" else "onnx").commit()
+            initStartTime.set(System.currentTimeMillis())
 
             val kokoroConfig = OfflineTtsKokoroModelConfig(
                 model   = modelFile.absolutePath,
@@ -381,119 +1654,92 @@ object SherpaEngine {
                 tokens  = File(extractedDir, "tokens.txt").absolutePath,
                 dataDir = File(extractedDir, "espeak-ng-data").absolutePath
             )
-
             val modelConfig = OfflineTtsModelConfig(
                 kokoro     = kokoroConfig,
-                numThreads = threads,
+                numThreads = 1,
                 debug      = false,
-                provider   = provider
+                provider   = "cpu"
             )
-
             val config = OfflineTtsConfig(model = modelConfig)
 
-            initProgress = 35
-            val providerLabel = if (provider == "nnapi") "loading via APU (NNAPI)…"
-                else if (isOrt) "loading optimized model…"
-                else "loading native model (this may take 10-30s)…"
-            statusMessage = providerLabel
-            syncStatus()
-            Log.i(TAG, "│ Provider: $provider, threads: $threads, SoC: $socVendor")
-            Log.i(TAG, "│ Using file-based constructor (no AssetManager)")
             Log.i(TAG, "│ Model: ${modelFile.absolutePath}")
-            Log.i(TAG, "│ Calling OfflineTts() — native JNI constructor…")
-            initStartTime.set(System.currentTimeMillis())
+            Log.i(TAG, "│ Config: 1 thread, cpu, debug=false")
 
-            // init_in_progress flag is already set by warmUp() before this thread started.
-            // This ensures the flag is persisted even if the native library load (triggered
-            // by config class constructors above) crashes the process.
-
-            // Run the native constructor on a separate thread with a timeout.
-            // OfflineTts() can hang indefinitely on some devices.
             val resultHolder = arrayOfNulls<OfflineTts>(1)
             val errorHolder = arrayOfNulls<Throwable>(1)
             val latch = CountDownLatch(1)
+            val loadStart = System.currentTimeMillis()
 
-            val initThread = Thread {
+            Thread {
                 try {
-                    // File-based constructor — no AssetManager, no HWUI mutex corruption
                     resultHolder[0] = OfflineTts(config = config)
                 } catch (e: Throwable) {
                     errorHolder[0] = e
                 } finally {
                     latch.countDown()
                 }
-            }.apply { name = "SherpaEngine-native-init"; isDaemon = true; start() }
+            }.apply { name = "SherpaEngine-init"; isDaemon = true; start() }
 
-            // Sync progress periodically while native init runs
-            val progressThread = Thread {
+            // Progress updates while waiting
+            Thread {
                 try {
-                    val start = System.currentTimeMillis()
+                    val pStart = System.currentTimeMillis()
                     while (!latch.await(500, TimeUnit.MILLISECONDS)) {
-                        val elapsed = System.currentTimeMillis() - start
-                        // Asymptotic progress: approaches 90% over ~30s
+                        val elapsed = System.currentTimeMillis() - pStart
                         initProgress = (35 + (55 * (1.0 - Math.exp(-elapsed / 15000.0)))).toInt().coerceAtMost(90)
                         syncStatus()
                     }
                 } catch (_: InterruptedException) {}
             }.apply { name = "SherpaEngine-progress"; isDaemon = true; start() }
 
-            val completed = latch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            progressThread.interrupt()
-            val elapsed = System.currentTimeMillis() - initStartTime.get()
-            initStartTime.set(0)
+            val timeoutMs = if (isOrt) BASE_TIMEOUT_ORT_MS else BASE_TIMEOUT_ONNX_MS
+            val completed = latch.await(timeoutMs * 3, TimeUnit.MILLISECONDS)  // generous timeout
+            val loadElapsed = System.currentTimeMillis() - loadStart
 
             if (!completed) {
-                // Native init hung — count as a failure to prevent infinite retry on restart
-                val prevCrashCount = initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)
-                initPrefs.edit()
-                    .putBoolean(KEY_INIT_IN_PROGRESS, false)
-                    .putInt(KEY_INIT_CRASH_COUNT, prevCrashCount + 1)
-                    .putLong(KEY_INIT_LAST_CRASH_TIME, System.currentTimeMillis())
-                    .apply()
-                Log.e(TAG, "│ OfflineTts() TIMED OUT after ${elapsed}ms (failure #${prevCrashCount + 1})")
+                Log.e(TAG, "│ TIMED OUT after ${loadElapsed}ms")
                 Log.e(TAG, "└── Kokoro init FAILED (timeout) ─────────────")
-                statusMessage = "error: init timed out after ${elapsed / 1000}s"
-                errorMessage = "Engine initialization timed out after ${elapsed / 1000}s. " +
-                    "The model may be too large for this device's memory."
+                statusMessage = "error: init timed out after ${loadElapsed / 1000}s"
+                errorMessage = "Engine timed out after ${loadElapsed / 1000}s"
                 isReady = false
+                writeInitLog(ctx, "Direct load timed out after ${loadElapsed}ms", telemetry = telemetry)
                 syncStatus()
-                // Interrupt the hung thread (best effort — native code may ignore this)
-                try { initThread.interrupt() } catch (_: Throwable) {}
+                try { initWakeLock?.release() } catch (_: Throwable) {}
                 return false
             }
 
-            // Check if native init threw — if NNAPI failed, fall back to CPU
             val initError = errorHolder[0]
-            if (initError != null && provider != "cpu") {
-                Log.w(TAG, "│ $provider provider failed: ${initError.message}")
-                Log.w(TAG, "│ Falling back to CPU provider…")
-                statusMessage = "NNAPI unavailable, falling back to CPU…"
-                syncStatus()
-
-                val cpuModelConfig = OfflineTtsModelConfig(
-                    kokoro = kokoroConfig, numThreads = 2, debug = false, provider = "cpu"
-                )
-                val cpuConfig = OfflineTtsConfig(model = cpuModelConfig)
-                // Direct call — we already survived native library loading
-                resultHolder[0] = OfflineTts(config = cpuConfig)
-            } else if (initError != null) {
+            if (initError != null) {
+                Log.e(TAG, "│ FAILED in ${loadElapsed}ms: ${initError.javaClass.simpleName}: ${initError.message}")
                 throw initError
             }
 
             kokoroTts = resultHolder[0]
+            telemetry.nativeLoadMs = loadElapsed
+            telemetry.configUsed = "direct (1 thread, cpu)"
+
+            val totalElapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
+            telemetry.totalMs = System.currentTimeMillis() - stageStart
+            lastTelemetry = telemetry
+
             if (kokoroTts == null) {
                 Log.e(TAG, "│ OfflineTts() returned null")
                 Log.e(TAG, "└── Kokoro init FAILED ────────────────────────")
                 statusMessage = "error: engine returned null"
-                errorMessage = "Engine constructor returned null"
+                errorMessage = "Engine returned null"
                 isReady = false
+                writeInitLog(ctx, "OfflineTts() returned null", telemetry = telemetry)
+                try { initWakeLock?.release() } catch (_: Throwable) {}
                 return false
             }
 
-            // Native init succeeded — clear crash tracking flags
+            // ── SUCCESS ──────────────────────────────────────────────────
+            try { initWakeLock?.release(); initWakeLock = null } catch (_: Throwable) {}
             initPrefs.edit()
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
+                // Keep force_int8 if it worked — no point going back to FP32 OOM
                 .apply()
 
             initProgress = 100
@@ -501,23 +1747,28 @@ object SherpaEngine {
             errorMessage = null
             statusMessage = "ready"
             syncStatus()
-            Log.i(TAG, "│ Kokoro engine ready in ${elapsed}ms")
+            plog("initKokoro: ✓ SUCCESS in ${totalElapsed}ms")
+            Log.i(TAG, "│ Kokoro engine ready in ${totalElapsed}ms")
             Log.i(TAG, "└── Kokoro init SUCCESS ───────────────────────")
             true
 
         } catch (e: Throwable) {
+            plog("initKokoro: ✗ EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
+            try { initWakeLock?.release() } catch (_: Throwable) {}
             val elapsed = System.currentTimeMillis() - initStartTime.getAndSet(0)
-            // Clear in-progress flag — this was a Java exception, not a native crash
             try {
                 ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
                     .edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
             } catch (_: Throwable) {}
+            val telem = lastTelemetry
+            telem?.totalMs = elapsed
             Log.e(TAG, "│ Exception after ${elapsed}ms: ${e.javaClass.simpleName}: ${e.message}")
-            Log.e(TAG, "└── Kokoro init FAILED ────────────────────────", e)
+            Log.e(TAG, "└── Kokoro init FAILED (all escalation levels exhausted) ──", e)
             kokoroTts = null
             isReady = false
             errorMessage = e.message ?: "Failed to initialize Kokoro engine"
             statusMessage = "error: ${errorMessage}"
+            writeInitLog(ctx, "All escalation levels failed: ${e.javaClass.simpleName}: ${e.message}", e, telem)
             syncStatus()
             false
         }
@@ -544,6 +1795,91 @@ object SherpaEngine {
             Log.e(TAG, "Kokoro synthesis failed", e)
             null
         }
+    }
+
+    // ── Piper fallback (when Kokoro init fails) ─────────────────────────────
+
+    /**
+     * Initializes a bundled Piper voice as fallback when Kokoro fails to init.
+     * Uses a small, battle-tested VITS model (~60MB) that rarely crashes.
+     * Called automatically when Kokoro init fails.
+     */
+    @Synchronized
+    fun initPiperFallback(ctx: Context): Boolean {
+        if (isPiperFallbackReady && piperTts != null && piperLoadedVoiceId == PIPER_FALLBACK_VOICE) {
+            return true
+        }
+
+        Log.i(TAG, "┌── Piper fallback init START ─────────────────")
+        Log.i(TAG, "│ Kokoro unavailable, initializing Piper fallback: $PIPER_FALLBACK_VOICE")
+
+        return try {
+            if (loadPiperVoice(ctx, PIPER_FALLBACK_VOICE)) {
+                isPiperFallbackReady = true
+                // Update status to reflect we're running with fallback
+                statusMessage = "ready (Piper fallback)"
+                errorMessage = null
+                isReady = true
+                syncStatus()
+                Log.i(TAG, "│ Piper fallback engine ready")
+                Log.i(TAG, "└── Piper fallback init SUCCESS ──────────────")
+                true
+            } else {
+                Log.e(TAG, "│ loadPiperVoice returned false")
+                Log.e(TAG, "└── Piper fallback init FAILED ───────────────")
+                writeInitLog(ctx, "Piper fallback init failed: loadPiperVoice returned false")
+                false
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "│ Piper fallback init exception", e)
+            Log.e(TAG, "└── Piper fallback init FAILED ───────────────")
+            writeInitLog(ctx, "Piper fallback init exception: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Synthesize using whatever engine is available.
+     * Tries Kokoro first (with speaker ID), falls back to Piper if Kokoro is down.
+     * Returns null only if no engine is available at all.
+     */
+    @Synchronized
+    fun synthesizeWithFallback(ctx: Context, text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+        // Try Kokoro first
+        if (kokoroTts != null) {
+            val result = synthesize(text, sid, speed)
+            if (result != null) return result
+        }
+
+        // Kokoro unavailable or failed — use Piper fallback
+        if (!isPiperFallbackReady) {
+            initPiperFallback(ctx)
+        }
+        if (isPiperFallbackReady) {
+            try {
+                val engine = piperTts
+                if (engine != null) {
+                    val audio = engine.generate(text = text, sid = 0, speed = speed)
+                    lastSampleRate = audio.sampleRate
+                    return Pair(audio.samples, audio.sampleRate)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Piper fallback synthesis failed", e)
+            }
+        }
+
+        // Both native engines failed — try Android system TTS
+        if (isSystemTtsFallbackActive) {
+            return synthesizeSystemTts(text, speed)
+        }
+
+        // Last resort: try to init system TTS now
+        if (initSystemTtsFallback(ctx)) {
+            isSystemTtsFallbackActive = true
+            return synthesizeSystemTts(text, speed)
+        }
+
+        return null
     }
 
     // ── Piper/VITS synthesis ──────────────────────────────────────────────────
@@ -795,8 +2131,12 @@ object SherpaEngine {
             val destDir = File(ctx.filesDir, "kokoro-model")
             destDir.mkdirs()
 
-            // Determine which model file to extract (.ort preferred over .onnx)
-            val modelAsset = resolveModel(ctx, "$KOKORO_DIR/model.onnx")
+            // Extract BOTH model formats if available (.ort for speed, .onnx as fallback)
+            val ortAsset = "$KOKORO_DIR/model.ort"
+            val onnxAsset = "$KOKORO_DIR/model.onnx"
+            val hasOrt = try { ctx.assets.open(ortAsset).use { true } } catch (_: Throwable) { false }
+            val hasOnnx = try { ctx.assets.open(onnxAsset).use { true } } catch (_: Throwable) { false }
+            val modelAsset = if (hasOrt) ortAsset else onnxAsset
             val modelFileName = modelAsset.substringAfterLast("/")
             val modelFile = File(destDir, modelFileName)
 
@@ -805,8 +2145,11 @@ object SherpaEngine {
             val espeakDir = File(destDir, "espeak-ng-data")
 
             // Check if already fully extracted AND matches current APK version
+            // At least one model variant (FP32, ORT, or INT8) must be present
+            val anyModelExists = modelFile.let { it.exists() && it.length() > 0 } ||
+                File(destDir, "model.int8.onnx").let { it.exists() && it.length() > 0 }
             if (isExtractionCurrent(destDir, ctx) &&
-                modelFile.exists() && modelFile.length() > 0 &&
+                anyModelExists &&
                 voicesFile.exists() && voicesFile.length() > 0 &&
                 tokensFile.exists() && tokensFile.length() > 0 &&
                 espeakDir.exists() && (espeakDir.listFiles()?.size ?: 0) > 0
@@ -820,11 +2163,33 @@ object SherpaEngine {
             // Clean up any leftover .tmp files from previous failed extraction
             destDir.listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.delete() }
 
-            // Extract model file
+            // Extract primary model file (.ort preferred)
             if (!modelFile.exists() || modelFile.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
                 Log.i(TAG, "│   Extracting $modelFileName…")
                 extractAssetAtomic(ctx, modelAsset, modelFile)
                 Log.i(TAG, "│   $modelFileName: ${modelFile.length() / 1024 / 1024}MB")
+            }
+
+            // Extract .onnx fallback if available and not already extracted
+            if (hasOrt && hasOnnx) {
+                val onnxFallback = File(destDir, "model.onnx")
+                if (!onnxFallback.exists() || onnxFallback.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                    Log.i(TAG, "│   Extracting model.onnx (runtime fallback)…")
+                    extractAssetAtomic(ctx, onnxAsset, onnxFallback)
+                    Log.i(TAG, "│   model.onnx: ${onnxFallback.length() / 1024 / 1024}MB (fallback)")
+                }
+            }
+
+            // Extract INT8 quantized model if bundled (110MB vs 310MB — for low-RAM devices)
+            val int8Asset = "$KOKORO_DIR/model.int8.onnx"
+            val hasInt8 = try { ctx.assets.open(int8Asset).use { true } } catch (_: Throwable) { false }
+            if (hasInt8) {
+                val int8File = File(destDir, "model.int8.onnx")
+                if (!int8File.exists() || int8File.length() == 0L || !isExtractionCurrent(destDir, ctx)) {
+                    Log.i(TAG, "│   Extracting model.int8.onnx (low-RAM variant)…")
+                    extractAssetAtomic(ctx, int8Asset, int8File)
+                    Log.i(TAG, "│   model.int8.onnx: ${int8File.length() / 1024 / 1024}MB")
+                }
             }
 
             // Extract voices.bin

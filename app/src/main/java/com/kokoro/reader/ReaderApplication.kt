@@ -1,10 +1,15 @@
 package com.kokoro.reader
 
+import android.app.ActivityManager
 import android.app.Application
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.service.notification.NotificationListenerService
 import android.util.Log
 import java.io.File
 import java.io.PrintWriter
@@ -57,13 +62,22 @@ class ReaderApplication : Application() {
         super.onCreate()
         resolvedLogDir = resolveLogDirectory()
         installUncaughtExceptionHandler()
-        detectPreviousCrash()
-        markSessionActive()
+
+        // Only run crash detection/recovery in the main (UI) process.
+        // The :tts process has no Activity to show CrashReportActivity.
+        if (isMainProcess()) {
+            detectPreviousCrash()
+            markSessionActive()
+            startTtsWatchdog()
+
+            // Auto-report engine errors to GitHub Issues after 30s
+            GitHubReporter.scheduleAutoReport(this, 30_000L)
+            // Check for remote config / instructions from repo owner
+            GitHubReporter.checkRemoteConfig(this)
+        }
 
         // Engine warm-up is handled by NotificationReaderService.onCreate()
-        // in the :tts process. Do NOT call warmUp() here — it races with the
-        // Service's warmUp(), and if the crash-loop breaker fires, the Service's
-        // TtsBridge.writeStatus("starting") overwrites the error status.
+        // in the :tts process.
     }
 
     override fun onTrimMemory(level: Int) {
@@ -75,8 +89,47 @@ class ReaderApplication : Application() {
     }
 
     /** Returns true if running in the main app process (not :tts). */
-    private fun isMainProcess(): Boolean =
-        getProcessName() == packageName
+    private fun isMainProcess(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return Application.getProcessName() == packageName
+        }
+        val myPid = android.os.Process.myPid()
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
+        return am.runningAppProcesses?.find { it.pid == myPid }?.processName == packageName
+    }
+
+    // ── TTS process watchdog ────────────────────────────────────────────────
+
+    private val WATCHDOG_INTERVAL_MS = 15_000L
+    private val WATCHDOG_INITIAL_DELAY_MS = 30_000L
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    private var watchdogRunnable: Runnable? = null
+
+    private fun startTtsWatchdog() {
+        watchdogRunnable = object : Runnable {
+            override fun run() {
+                checkAndReviveTtsProcess()
+                watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+            }
+        }
+        watchdogHandler.postDelayed(watchdogRunnable!!, WATCHDOG_INITIAL_DELAY_MS)
+        Log.d(TAG, "TTS watchdog started (interval=${WATCHDOG_INTERVAL_MS}ms)")
+    }
+
+    private fun checkAndReviveTtsProcess() {
+        try {
+            val healthy = TtsBridge.isTtsProcessHealthy(this)
+            if (healthy) return
+
+            val age = TtsBridge.getTtsProcessAgeMs(this)
+            Log.w(TAG, "TTS process appears stale (age=${age}ms) — requesting rebind")
+
+            val cn = ComponentName(this, NotificationReaderService::class.java)
+            NotificationListenerService.requestRebind(cn)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Watchdog rebind failed: ${e.message}")
+        }
+    }
 
     // ── Session crash detection ──────────────────────────────────────────────
 
@@ -187,19 +240,14 @@ class ReaderApplication : Application() {
      */
     private fun captureLogcat(): String? {
         return try {
+            // Use tag filter for crash-related messages — PID won't match the
+            // previous process, so a broad tag filter is the only reliable approach.
             val process = Runtime.getRuntime().exec(arrayOf(
-                "logcat", "-d",        // dump and exit
-                "-t", "200",           // last 200 lines
-                "--pid=${android.os.Process.myPid()}" // won't match old PID, so use broader filter
-            ))
-            // The PID changed, so get all recent crash-related lines instead
-            val broadProcess = Runtime.getRuntime().exec(arrayOf(
                 "logcat", "-d", "-t", "300",
-                "-s", "DEBUG:*", "AndroidRuntime:*", "FATAL:*", "libc:*", "ReaderApplication:*"
+                "-s", "AndroidRuntime:*", "FATAL:*", "libc:*", "ReaderApplication:*"
             ))
+            val output = process.inputStream.bufferedReader().readText()
             process.destroy()
-            val output = broadProcess.inputStream.bufferedReader().readText()
-            broadProcess.destroy()
 
             if (output.isBlank()) return null
 

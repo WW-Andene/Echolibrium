@@ -1,0 +1,377 @@
+# Kyōkan Issue & Fix Log
+
+> Chronological record of every issue encountered and fixed, for continuity between Claude sessions.
+> Most recent fixes are at the top.
+
+---
+
+## Session: March 12, 2026 (claude/fix-ci-cd-workflow-tBMek)
+
+Focus: Matching standalone Sherpa APK behavior to fix engine init on Xiaomi 13T / Dimensity 8200 / HyperOS 2.0.
+
+### Issue 16: Stale crash counter blocks new init code from running
+**Commit:** `7f107b5`
+**Symptom:** After installing the simplified init build, engine immediately reports "Native stack broken (8 crashes)" and falls back to Android system TTS (which also fails). The new init code never executes.
+**Root cause:** SharedPreferences persists across app updates. The `init_crash_count` of 8 accumulated from previous builds' `:tts` process deaths was still present. Since 8 >= `NATIVE_BROKEN_THRESHOLD`, `warmUp()` skipped directly to the broken-native path without ever attempting the new simplified init.
+**Fix:** Added version-based crash counter reset in `warmUp()`. On app version change (tracked via `last_init_version` in SharedPreferences), all crash state is cleared: `init_crash_count`, `init_in_progress`, `skip_ort`. Bumped version code from 4 to 5 to trigger the reset.
+**Lesson:** When changing init strategy, stale crash-tracking state from previous versions must be invalidated. Always version-gate crash counters.
+
+### Issue 15: Simplify engine init to match standalone Sherpa APK
+**Commit:** `8cdfb23`
+**Symptom:** Engine repeatedly crashes in `:tts` process (EXIT_SELF status=255). The standalone sherpa-onnx APK (PR #16) works perfectly on the same device.
+**Root cause:** Echolibrium's init had three major differences from the standalone app:
+1. **Piper probe phase** — loaded a 60MB VITS model before attempting Kokoro. This either crashed itself or left corrupt native state (unreleased ORT allocator regions, stale thread-local storage) that made the subsequent Kokoro load fail.
+2. **Escalation ladder** — tried multiple thread/provider configs with timeouts, creating repeated native load attempts. Each attempt could leave partial native state.
+3. **Heap reservation + model pre-warming** — the standalone app does neither.
+
+**Fix:** Stripped init down to match standalone behavior:
+- Removed Stage 0 Piper probe entirely (biggest change)
+- Removed escalation ladder — single attempt with 1 thread + cpu provider
+- Removed heap reservation and model pre-warming
+- Prefer `.onnx` over `.ort` (avoids ORT flatbuffer version mismatch)
+- Restored `:tts` process isolation as safety net (UI survives native crashes)
+- Restored watchdog, `isMainProcess()`, `extractNativeLibs="true"`
+- Disabled R8/ProGuard to eliminate minification as a variable
+
+**Lesson:** Defensive measures can become the problem. The probe phase was designed to detect broken native stacks early, but it was itself causing the breakage. When a simpler approach (standalone APK) works, match it first, then add defenses incrementally.
+
+### Attempted fix: Remove R8 minification
+**Commit:** `7f3d7db`
+**Symptom:** Investigating whether R8/ProGuard was stripping JNI-related classes or methods needed by sherpa-onnx native code.
+**Fix:** Set `minifyEnabled false`, `shrinkResources false`, removed proguard rules. Kept as part of final solution to eliminate minification as a variable.
+
+### Attempted fix: Match standalone extractNativeLibs setting
+**Commit:** `a81b1ca`
+**Symptom:** Standalone Sherpa APK uses `extractNativeLibs="false"` (mmap from APK). Echolibrium used `extractNativeLibs="true"` (extract to filesystem).
+**Fix:** Changed to `extractNativeLibs="false"`, removed `useLegacyPackaging=true`.
+**Result:** Did not fix the engine crash. Later reverted to `true` since `:tts` process isolation was restored and filesystem extraction is more reliable.
+
+### Attempted fix: Remove `:tts` process isolation
+**Commit:** `6b81b83`
+**Symptom:** Standalone Sherpa APK runs everything in one process. Echolibrium splits TTS into `:tts` process.
+**Fix:** Removed `android:process=":tts"` from service and receiver. Removed watchdog and `isMainProcess()` check.
+**Result:** App crashed entirely when engine init failed (SIGSEGV in main process kills UI). Reverted — process isolation is needed as a safety net.
+
+---
+
+## Session: March 2026 (claude/review-kyokan-docs-0kSrs)
+
+Focus: HyperOS compatibility, OEM background kill prevention, self-healing watchdog, Android system TTS fallback, auto-reporting, and SIGSEGV-surviving format fallback.
+
+### Cleanup: Remove Shizuku dependency
+**Commit:** `2672fbb`
+**Problem:** Shizuku required users to install a separate app for shell-level access. The hidden API binder reflection also broke on HyperOS (changed signatures).
+**Fix:** Removed Shizuku entirely. Everything it did has standard Android equivalents already in `OemProtection.kt` — battery exemption dialog, OEM AutoStart intents, foreground service. Better UX: one-time system dialog vs requiring a separate app.
+**Deleted:** `XiaomiProtection.kt`, all Shizuku dependencies/proguard/manifest entries.
+
+### Issue 14: Revert speculative packaging workarounds
+**Commit:** `9166a10`
+**Symptom:** `useLegacyPackaging=true` and `extractNativeLibs=true` were added to fix SIGSEGV but were never the actual fix.
+**Root cause:** Analysis of Sherpa_base*.zip (standalone sherpa-onnx APK that works on the same Xiaomi 13T / Dimensity 8200 / HyperOS 2.0) showed it uses `extractNativeLibs=false` (mmap from APK) with no issues. The real crash causes were ORT version mismatch and HyperOS killing the process.
+**Fix:** Reverted to `extractNativeLibs=false` + `useLegacyPackaging=false`. Raised `NATIVE_BROKEN_THRESHOLD` from 5 to 8 (only confirmed native crashes counted now). Reduced crash reset window from 5min to 2min. Reduced backoff max from 2.5min to 1min. Battery exemption now requested in `:tts` process before model loading.
+
+### Issue 13: .ort → .onnx fallback doesn't survive SIGSEGV
+**Commit:** `78cec15`
+**Symptom:** Engine crashes 5+ times then gives up, even though `.onnx` fallback files exist. The format fallback only worked for timeouts and Java exceptions.
+**Root cause:** When `.ort` loading caused SIGSEGV, the process died with no memory of what format was being loaded. On restart, it tried `.ort` again → crashed again → repeated until `NATIVE_BROKEN_THRESHOLD` → gave up. This was likely the root cause of the 5-crash loop: CI-generated `.ort` files incompatible with the AAR's bundled ORT 1.17.1.
+**Fix:** Track model format in SharedPreferences (`KEY_INIT_FORMAT`) before loading. On restart after `.ort` crash, set `KEY_SKIP_ORT=true` so next attempt goes straight to `.onnx`. `forceRetry()` resets the skip flag.
+**Lesson:** Any fallback mechanism must persist its state to disk to survive process death. In-memory state is useless against SIGSEGV.
+
+### Issue 12: Crash counter falsely counts HyperOS process kills
+**Commit:** `7397b0e`
+**Symptom:** "TTS engine crashed 5 times" error on Xiaomi HyperOS, even though the native code wasn't actually crashing.
+**Root cause:** HyperOS aggressively kills the `:tts` process during model loading (battery management). The `init_in_progress` flag is still `true` when this happens, so the restart path treats it as a SIGSEGV and increments the crash counter. After 5 OS kills, the app gives up.
+**Fix:** Use Android 11+ `ApplicationExitInfo` to check the actual exit reason. Only `REASON_CRASH_NATIVE`, `REASON_CRASH`, and `REASON_ANR` increment the crash counter. OS kills (`LOW_MEMORY`, `EXCESSIVE_RESOURCE_USAGE`, `OTHER`) don't.
+**Lesson:** Not all process deaths are native crashes. On aggressive OEMs, the OS kills processes for resource management — this must not be counted against the app.
+
+### Issue 11: HyperOS breaks MIUI detection
+**Commit:** `6075898`
+**Symptom:** Xiaomi-specific workarounds (WakeLock, battery exemption, thread limits) silently skipped on HyperOS 2.0 devices.
+**Root cause:** `isMIUI` checked `ro.miui.ui.version.name`, which doesn't exist on HyperOS. All Xiaomi workarounds gated behind this check were silently disabled.
+**Fix:** Renamed `isMIUI` → `isXiaomiRom`. Added HyperOS detection via `ro.mi.os.version.incremental`. Kept MIUI check as fallback. Updated `DeviceProfile`, `toString()`, and all debug logs.
+
+### Enhancement: Android system TTS as ultimate fallback
+**Commit:** `8f03d65`
+**Changes:**
+- When native sherpa-onnx crashes 5+ times (truly broken), instead of giving up, try Android's built-in TTS (Google TTS or whatever is installed) as a third-tier fallback
+- `synthesizeToFile()` → read WAV → return PCM through normal pipeline. DSP effects still work
+- Synthesis cascade: Kokoro → Piper → Android system TTS → error
+- Error UI now shows device diagnostics (device, SoC, Android version, last exit reason) for easy bug reporting without ADB
+- Fixed `writeInitLog`: was silently returning when `resolvedLogDir` was null in `:tts` process — now falls back to `ctx.filesDir`
+
+### Enhancement: Automatic GitHub issue reporting + remote config
+**Commit:** `7c0a80e`
+**New file:** `GitHubReporter.kt`
+**Changes:**
+- After 30s with a TTS error, auto-creates a GitHub Issue with full diagnostics: device info, SoC, Android version, init log, process log, crash exit reason
+- Token via `local.properties`: `github.issues.token=ghp_xxx`
+- Rate-limited: same error only reported once per hour per install
+- Remote config: fetches `remote-config.json` from repo every 6h. Supports `force_retry` (reset crash counter remotely), `message` (show text to user), `min_version` (suggest update)
+
+### Enhancement: All-OEM background kill prevention
+**Commits:** `7c0a80e`, `95ac270`
+**New file:** `OemProtection.kt`
+**Changes:**
+- Comprehensive OEM AutoStart intent database covering all major Android manufacturers: Xiaomi/Redmi/POCO, Samsung, Huawei/Honor, OnePlus, Oppo/Realme, Vivo/iQOO, Meizu, Asus, Lenovo, Nokia, Sony, Letv, Tecno, Infinix, HTC
+- Three-layer protection: standard battery exemption → OEM AutoStart intent → user guidance
+- `HomeFragment.promptOemProtections()` runs on ALL devices, not just Xiaomi
+
+### Enhancement: TTS process watchdog
+**Commit:** `0aaea0a`
+**Changes:**
+- Self-healing watchdog in `ReaderApplication` (main process) checks every 15s if `:tts` process is alive using existing staleness detection
+- When HyperOS/MIUI kills the process, watchdog calls `requestRebind()` to restart it automatically — no user action needed
+
+### Enhancement: Runtime .ort → .onnx format fallback
+**Commit:** `f5eb408`
+**Problem:** Issue 10 pinned the CI ORT version to match the AAR, but this is fragile. If the versions ever drift again, or if a device has ORT incompatibilities, the engine fails with no recovery path because `optimize-models.py` deleted the original `.onnx` files.
+**Fix (3 parts):**
+1. **Keep `.onnx` as fallback:** `optimize-models.py` no longer deletes original `.onnx` files after ORT conversion. Both formats ship in the APK.
+2. **Runtime format fallback:** SherpaEngine's escalation ladder now wraps in an outer model-format loop. If all configs fail with `.ort`, the engine retries the entire ladder with `.onnx`. Extraction now extracts both formats to filesystem. On success with `.onnx` fallback, telemetry records `"ONNX (fallback from ORT)"`.
+3. **ORT version tracking:** `optimize-models.py` writes `ort_version.txt` into assets with the build-time ORT version. SherpaEngine logs this at init for diagnostics.
+**Lesson:** Never delete the original format after optimization. Ship both and let the runtime fall back gracefully. Pin versions in CI AND have a runtime safety net.
+
+### Shizuku integration arc (added then removed)
+**Commits:** `286c122` → `aad2d23` → `7397b0e` → `57719e7` → `2672fbb`
+**Summary:** Attempted to use Shizuku for shell-level auto-configuration (Doze whitelist, appops, standby bucket). Hit multiple issues: deprecated API (`newProcess`), HyperOS changed hidden binder signatures, reflection needed for private API 13.1.5 methods. Ultimately removed entirely — standard Android APIs (battery exemption dialog + OEM intents) cover all the same use cases without requiring users to install a separate app.
+
+---
+
+## Session: March 2026 (claude/resume-after-crash-mZ6T1)
+
+Focus: Crash recovery reliability — making the engine resilient to native SIGSEGV on Xiaomi/MediaTek.
+
+### Issue 10: ORT format version mismatch — ROOT CAUSE of engine failures
+**Commit:** `d35477f`
+**Symptom:** Engine fails to initialize on device — SIGSEGV or silent failure during model loading. All crash recovery, error handling, and fallback mechanisms work correctly, but the engine itself never succeeds because the model files are corrupt from the device's perspective.
+**Root cause:** The CI build pipeline converts `.onnx` models to `.ort` (pre-optimized flatbuffer) using `pip install onnxruntime` which installs the latest version (1.23.x). But the sherpa-onnx 1.12.28 AAR bundles **onnxruntime 1.17.1** for Android. The `.ort` flatbuffer format from ORT 1.23.x is incompatible with ORT 1.17.1. When the device tries to load these `.ort` files, it either SIGSEGVs or fails to parse the model. Critically, `optimize-models.py` **deletes the original `.onnx` files** after conversion — so there's no fallback.
+**Fix:** Pin CI onnxruntime to `1.17.1` (`pip install onnxruntime==1.17.1`) to match the AAR's bundled ORT version. The `.ort` files produced will now be format-compatible with the on-device ORT.
+**Lesson:** When pre-optimizing models for a specific runtime, the optimization tool MUST use the same version as the target runtime. Version mismatches in flatbuffer formats cause silent corruption.
+
+### Issue 9: Silent engine failure — warmUp returns to "idle" without error
+**Commit:** `433d6b3`
+**Symptom:** Engine starts, gets stuck, and returns to "idle" status without showing any error message.
+**Root cause:** When both Kokoro and Piper fallback fail in the warmUp thread, the code logged the failure but didn't set `errorMessage` or `statusMessage` or call `syncStatus()`. The engine silently fell through to the finally block, cleared `isWarmingUp`, and the status remained stale.
+**Fix:** Added proper error state propagation when both engines fail. Added comprehensive process logger (`plog()`) capturing every init decision point with timestamps. Added debug dump button that writes full diagnostic info to `/storage/emulated/0/WW_Andene/Kyōkan/Logs/`.
+
+### Issue 8: Piper fallback SIGSEGV causes infinite crash loop with no backoff
+**Commit:** `b29b5d3`
+**Symptom:** On Xiaomi 2306EPN60G (MediaTek Dimensity), the engine stays stuck on "starting" indefinitely. Logcat shows the process restarting every ~23 seconds with "Previous session did not exit cleanly" but zero SherpaEngine output.
+**Root cause:** When Kokoro crashed (SIGSEGV), the recovery path called `initPiperFallback()` — but Piper uses the same sherpa-onnx native library (`OfflineTts` constructor). If the native stack is fundamentally broken on this device, Piper ALSO SIGSEGVs. Critically, the `init_in_progress` flag was NOT set before the Piper call, so the crash counter never incremented past the initial value. The app looped forever at `crashCount=1` with no escalation and no error shown.
+**Fix:**
+1. Set `init_in_progress=true` (with `commit()`) BEFORE calling `initPiperFallback()` in the crash-recovery path, so Piper SIGSEGVs properly increment the crash counter
+2. Write status (`"trying fallback engine…"`) before any native call so the UI never stays stuck on `"starting"`
+3. After 5+ total crashes (`NATIVE_BROKEN_THRESHOLD`), skip ALL native code entirely and show a clear error: `"native engine incompatible"`. Still retries after 2.5 min in case conditions change
+4. `forceRetry()` resets everything so the user can manually override
+
+### Issue 7: Piper fallback delayed until 3rd crash — 70s of no TTS
+**Commit:** `f57922d`
+**Symptom:** Users on Xiaomi/MediaTek devices where Kokoro SIGSEGVs had to wait through 3 crash-restart cycles (~70 seconds) with no TTS output before Piper kicked in.
+**Root cause:** `CRASH_PIPER_FIRST_THRESHOLD` was 3 — the old design required 3 consecutive crashes before activating Piper. This was overly conservative for deterministic failures.
+**Fix:** Activate Piper fallback on the very first detected crash (`crashCount > 0`). Kokoro retries continue in the background with exponential backoff (5s, 10s, 20s...). Removed `CRASH_PIPER_FIRST_THRESHOLD` constant.
+
+### Issue 6: `SocVendor` visibility causes compilation error
+**Commit:** `e2d9290`
+**Symptom:** Build fails: `'public' function exposes its 'private-in-class' parameter type SocVendor`
+**Root cause:** `SocVendor` was declared `private enum class` but used as a field type in the public `DeviceProfile` data class.
+**Fix:** Removed `private` modifier from `SocVendor` enum.
+
+### Issue 5: Missing `CRASH_RESET_WINDOW_MS` constant
+**Commit:** `1e00e21`
+**Symptom:** Build fails: `Unresolved reference: CRASH_RESET_WINDOW_MS`
+**Root cause:** The constant was accidentally removed when replacing the old crash limit system with exponential backoff. It was still referenced at line 555 for resetting the crash counter after 5 minutes.
+**Fix:** Re-added `CRASH_RESET_WINDOW_MS = 300_000L` alongside the new backoff constants. Updated stale KDoc reference from `MAX_INIT_CRASHES` to new backoff behavior.
+
+### Enhancement: Never-give-up init + WakeLock + mmap pre-warming
+**Commit:** `4a6380b`
+**Changes:**
+- Replace crash limit (`MAX_INIT_CRASHES=3`) with exponential backoff that never gives up
+- Add `PARTIAL_WAKE_LOCK` during Stage 2 native model loading to prevent MIUI CPU throttling
+- Upgrade model pre-warming from sequential read to mmap + `MappedByteBuffer.load()` for forced page residency
+- Add TTS process staleness detection in TtsBridge (timestamp-based health check)
+- Add battery optimization exemption utilities for Xiaomi/MIUI
+- Add `WAKE_LOCK` and `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` permissions
+
+---
+
+## Session: Earlier March 2026 (claude/project-review-zdqX6, merged)
+
+Focus: World-class engine initialization — device profiling, config memory, escalation ladder.
+
+### Enhancement: Device profiling, config memory, pre-warming, adaptive timeout
+**Commit:** `347e45e`
+**Changes:**
+- Comprehensive `DeviceProfile` with RAM, CPU cores, SoC vendor, Xiaomi/MIUI detection
+- Device tier scoring (HIGH/MEDIUM/LOW) drives all decisions
+- Config memory: persists exact config that successfully loaded Kokoro to SharedPreferences. Next launch skips escalation ladder and uses known-good config directly
+- Model pre-warming: sequentially reads entire model file into OS page cache before ORT opens it
+- Heap reservation: allocates 25% of max heap, touches every page, then releases — prevents VM region collisions
+- Adaptive timeout: .ort 30s base / .onnx 90s base × device tier multiplier
+- Thread priority elevation: `THREAD_PRIORITY_URGENT_AUDIO` during native model load
+- Granular phase telemetry with init log files
+
+### Enhancement: Staged probe, memory prep, auto-escalation
+**Commit:** `2a9cb89`
+**Changes:**
+- Stage 0: Native stack probe — loads tiny Piper model first to verify JNI/ORT works
+- Stage 1: Memory preparation — 2-pass GC + finalization before loading 311MB model
+- Stage 2: Auto-escalation — tries progressively safer ORT configs within a single init cycle (optimal → 1-thread/cpu → 1-thread/cpu/debug). No crash counter penalty for Java exceptions.
+
+### Issue 4: Disk/RAM pre-checks, integrity verification
+**Commit:** `1aea0af`
+**Problems:**
+1. No disk space check — model extraction could fail silently mid-write
+2. No RAM check — ONNX Runtime silently fails malloc() on low RAM → SIGSEGV
+3. No extraction integrity check — truncated files from power loss went undetected
+4. Timeouts incorrectly incremented crash counter (causing false lockouts)
+**Fixes:** Added 400MB disk check, 350MB RAM check, model >100MB integrity check, timeout no longer increments crash counter.
+
+### Issue 3: sherpa-onnx version and memory diagnostics missing
+**Commit:** `93f1032`
+**Fix:** Log sherpa-onnx library version and device memory state at init start. Written to engine_init_*.log files for user bug reports.
+
+### Enhancement: Automatic Piper fallback system
+**Commit:** `e4055e1`
+**Changes:**
+- When Kokoro fails, automatically falls back to bundled Piper voice (`en_US-lessac-medium`)
+- Three fallback levels: crash loop, warmUp() failure, synthesis-time failure
+- `synthesizeWithFallback()` routes to Piper if Kokoro is down
+- UI shows "TTS engine: ready (Piper fallback)" in warning color
+
+### Issue 2: Engine init failure logging
+**Commit:** `c4398a5`
+**Fix:** Write detailed log files (`engine_init_*.log`) on every init failure path. Tapping log path in UI copies content to clipboard.
+
+---
+
+## Session: February 2026 (claude/project-review-zdqX6, PR #48/#49)
+
+Focus: SIGSEGV on Xiaomi/MediaTek — the longest debugging saga.
+
+### Issue 1: SIGSEGV crash on Xiaomi/MediaTek during TTS model loading
+
+This was the original critical bug. It took **8 sequential fix attempts** to fully resolve, each peeling back a layer of the onion:
+
+#### Attempt 1: Delay engine init (❌ insufficient)
+**Commit:** `7566cbe`
+**Theory:** ONNX Runtime races with HWUI's CommonPool thread pool initialization.
+**Fix:** Delay `warmUp()` by 1.5s via `Handler.postDelayed()`.
+**Result:** Crash moved from T+2s to T+3.1s. Still crashed.
+
+#### Attempt 2: Post-first-frame init (❌ insufficient)
+**Commit:** `0c2b653`
+**Theory:** HWUI CommonPool is lazily initialized; need to wait for first frame render.
+**Fix:** Trigger warmUp via `window.decorView.post{}` after first layout+draw.
+**Result:** Still crashed. HWUI init timing was irrelevant.
+
+#### Attempt 3: Disable hardware acceleration (❌ MIUI ignores it)
+**Commit:** `d736042`
+**Theory:** No HWUI → no CommonPool mutex → no corruption.
+**Fix:** `android:hardwareAccelerated="false"` in manifest.
+**Result:** MIUI ignores this flag. Still crashed.
+
+#### Attempt 4: Process isolation (✅ core fix)
+**Commit:** `78e69ba`
+**Theory:** The crash is caused by ONNX Runtime corrupting HWUI's static mutex (libc++ ODR violation). Put TTS in a process with no HWUI at all.
+**Fix:** Run `NotificationReaderService` in `:tts` process. New `TtsBridge` for IPC, `TtsCommandReceiver` for commands.
+**Result:** SIGSEGV stopped in the :tts process. But new issues emerged...
+
+#### Attempt 5: Crash-loop breaker + retry button
+**Commit:** `684892e`
+**Problem:** When OfflineTts() constructor SIGSEGVs, Android auto-restarts the service → infinite crash loop. Engine appeared stuck at ~40%.
+**Fix:** SharedPreferences-based `init_in_progress` flag + crash counter. After 3 crashes, stop retrying and show error. Retry button in UI.
+
+#### Attempt 6: Three compounding bugs
+**Commit:** `1fe7b4a`
+**Problems:**
+1. Double `warmUp()` race — ReaderApplication and Service both called it; Service's `writeStatus("starting")` overwrote crash-loop error
+2. AudioPipeline bypass — `ensureKokoroReady()` called `initializeKokoro()` directly, bypassing crash-loop breaker
+3. Timeouts not counted — hanging inits (no SIGSEGV, just blocked) never incremented crash counter
+**Fixes:** Removed warmUp from ReaderApplication, added crash counter check in initializeKokoro, timeouts now increment counter.
+
+#### Attempt 7: init_in_progress flag set too late
+**Commit:** `0c70187`
+**Problem:** Flag was set inside `initializeKokoro()` AFTER config objects were constructed. Config constructors trigger `System.loadLibrary` (JNI). If native library load SIGSEGVs, flag never gets set → crash counter stays at 0 → infinite loop.
+**Fix:** Set flag in `warmUp()` on the main thread, BEFORE the init thread starts. Uses `commit()` for synchronous disk flush.
+
+#### Attempt 8: Force native lib extraction
+**Commit:** `f2989db`
+**Problem:** On API 23+, Android loads .so directly from APK via mmap. On MediaTek/Xiaomi, mmapping the ~50MB ONNX Runtime .so from the APK triggers SIGSEGV during dlopen.
+**Fix:** `useLegacyPackaging = true` in build.gradle (extract .so to filesystem at install time). `extractNativeLibs="true"` in manifest. `numThreads=1` on MediaTek.
+
+### Other fixes in this session:
+
+**Model extraction hardening** (`342e2c9`): Atomic tmp+rename for extraction, version marker for re-extraction on update, synchronized extraction lock.
+
+**Eliminate AssetManager constructors** (`305bbfd`, `2aa62ab`): All model loading switched from `OfflineTts(assetManager=)` to file-based `OfflineTts(config=)`. AssetManager-based constructors crash on some devices.
+
+**NNAPI → CPU provider** (`0ea3215`): NNAPI doesn't support LSTM ops (core to Kokoro model). Was causing model partitioning where Conv/MatMul ran on APU but LSTM fell back to slow reference CPU impl.
+
+**Device-adaptive SoC detection** (`c00d4ec`): Detect SoC vendor at runtime, route MediaTek to NNAPI (later reverted to CPU), Qualcomm to CPU.
+
+**Six IPC/concurrency bugs** (`84988c0`):
+1. Handler token mismatch — grouping timer cancellation was no-op
+2. postDelayed outside synchronized block — race condition
+3. Broken `isMainProcess()` — called non-existent method
+4. Crash recovery ran in both processes — SharedPreferences race
+5. Dead logcat process spawn — spawned then immediately destroyed
+6. TtsBridge TOCTOU race + silent renameTo failure
+
+**Permission button loop on Android 13+** (`c2a1ad0`): Button always sent to App Info, never to Notification Listener Settings. Infinite loop prevented service from starting.
+
+---
+
+## Session: Original Development
+
+### Feature: Chunked synthesis + conversation grouping
+**Commit:** `3e721b2`
+- Long texts split at sentence boundaries, first chunk plays while rest synthesize
+- Rapid messages from same sender buffered 1.5s and merged
+
+### Feature: On-demand voice download system
+**Commit:** `6760a4b`
+- Split Piper voices: 8 bundled in APK, 36 downloadable from GitHub Releases
+- Reduced APK from ~3.4GB to ~600MB
+
+### Feature: ORT pre-optimization
+**Commit:** `129f1c3`
+- Convert ONNX → ORT format at build time for 5-10x faster model loading
+
+### Feature: Crash reporting
+**Commit:** `cf5dd32`
+- Detect native crashes via SharedPreferences session tracking
+- Recover crash info from logcat
+- Show CrashReportActivity with "Report to GitHub" button
+
+### CI/Build fixes
+- `f8c2957`: Trigger build on `claude/*` branches
+- `a56a28c`: Crash-proof engine startup + CI asset/APK verification
+- `9368320`: Self-host all dependencies (AAR, models, voices) on GitHub Releases
+- `08e3197`: Fix APK exceeding 4GB ZIP32 limit (delete .onnx after ORT conversion)
+- `e3c3d9f`: Fix `download-models.sh` exit code 2 from pipefail + empty glob
+
+---
+
+## Recurring Themes
+
+1. **Xiaomi/MIUI/HyperOS is the #1 source of bugs.** Modified ART runtime, aggressive process killing, CPU throttling, ignored manifest flags, changed hidden API signatures. HyperOS 2.0 dropped the MIUI system property entirely — detection code must check both. Every fix needs Xiaomi testing.
+
+2. **Native SIGSEGV is not catchable in Java.** The only detection mechanism is the `init_in_progress` SharedPreferences flag. If it's not set before native code runs, the crash is invisible. Use `ApplicationExitInfo` (API 30+) to distinguish real native crashes from OS-initiated kills.
+
+3. **Both Kokoro AND Piper use the same native library.** If `libonnxruntime.so` or `libsherpa-onnx-jni.so` fails to load, ALL TTS is broken. The crash recovery system must account for this. Android system TTS (third fallback) bypasses native code entirely.
+
+4. **Cross-process IPC is fragile.** The status file can contain stale data if the :tts process crashes. The UI should always consider the timestamp. A watchdog in the main process auto-restarts the TTS process via `requestRebind()`.
+
+5. **Config constructors trigger native library loading.** Even creating `OfflineTtsVitsModelConfig()` in Kotlin can trigger `System.loadLibrary` → SIGSEGV. The `init_in_progress` flag must be set before ANY sherpa-onnx class is instantiated.
+
+6. **Fallback state must survive process death.** In-memory fallback logic (like .ort → .onnx format switching) is useless against SIGSEGV because the process dies. Persist fallback decisions to SharedPreferences before attempting the operation.
+
+7. **Not all process deaths are crashes.** On Xiaomi/HyperOS, the OS kills background processes for battery management. The crash counter must use `ApplicationExitInfo` to filter these — otherwise the app falsely reaches the broken threshold and gives up.
+
+8. **Don't require external apps.** Shizuku was technically powerful but requiring users to install a separate app is bad UX. Standard Android APIs (battery exemption dialog, OEM AutoStart intents) cover all critical use cases.
+
+9. **All OEMs kill background processes.** It's not just Xiaomi — Samsung, Huawei, OnePlus, Oppo, Vivo, and others all have proprietary background kill systems. `OemProtection.kt` maintains AutoStart intents for all major OEMs.
+
+10. **Defensive measures can become the attack surface.** The Piper probe (Stage 0) was designed to detect broken native stacks early, but it was itself causing native state corruption that broke subsequent Kokoro loading. The escalation ladder created multiple partial native loads. When a standalone APK with zero defenses works on the same device, the defenses are the problem.
+
+11. **Stale crash state poisons new code.** SharedPreferences crash counters persist across app updates. A new init strategy can be dead-on-arrival if old crash counts exceed thresholds. Always version-gate persistent crash tracking and reset on app update.

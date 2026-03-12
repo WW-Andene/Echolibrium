@@ -58,6 +58,7 @@ class NotificationReaderService : NotificationListenerService() {
         val sbn: android.service.notification.StatusBarNotification
     )
     private val groupBuffer = LinkedHashMap<String, MutableList<PendingMessage>>()
+    private val groupPendingFlush = HashMap<String, Runnable>()
     private val groupLock = Object()
     private val groupHandler = android.os.Handler(android.os.Looper.getMainLooper())
     /** How long to wait for more messages before flushing a group (ms). */
@@ -96,7 +97,15 @@ class NotificationReaderService : NotificationListenerService() {
             // even if warmUp() detects a crash loop and never starts the engine.
             TtsBridge.writeStatus(this, ready = false, status = "starting", error = null, alive = true)
 
-            // Eager engine init — safe in the :tts process (no HWUI to corrupt).
+            // Request battery optimization exemption BEFORE model loading.
+            // HyperOS aggressively kills background processes during the long
+            // model loading phase. Battery exemption + foreground service is the
+            // strongest protection against being killed mid-init.
+            if (OemProtection.isBatteryOptimized(this)) {
+                OemProtection.requestBatteryExemption(this)
+            }
+
+            // Eager engine init in the :tts process.
             updateForegroundText("Loading TTS engine…")
             SherpaEngine.onReadyCallback = {
                 updateForegroundText("Listening for notifications")
@@ -107,7 +116,7 @@ class NotificationReaderService : NotificationListenerService() {
             // actual engine state (loading, error, etc.). The "starting" above is just
             // a brief placeholder until warmUp's syncStatus runs.
 
-            // Start voice commands if enabled (must happen in :tts process)
+            // Start voice commands if enabled
             val voiceCmdEnabled = prefs.getBoolean("voice_commands_enabled", false)
             if (voiceCmdEnabled) {
                 VoiceCommandListener.start(this.applicationContext)
@@ -231,14 +240,14 @@ class NotificationReaderService : NotificationListenerService() {
         synchronized(groupLock) {
             val list = groupBuffer.getOrPut(groupKey) { mutableListOf() }
             list.add(pending)
-            // Remove any existing delayed flush and reschedule
-            groupHandler.removeCallbacksAndMessages(groupKey)
+            // Cancel any existing delayed flush for this group key
+            groupPendingFlush.remove(groupKey)?.let { groupHandler.removeCallbacks(it) }
+            // Schedule a new delayed flush — if no more messages arrive within
+            // GROUP_DELAY_MS, the group is flushed and read as a batch.
+            val flushRunnable = Runnable { flushGroup(groupKey) }
+            groupPendingFlush[groupKey] = flushRunnable
+            groupHandler.postDelayed(flushRunnable, GROUP_DELAY_MS)
         }
-        // Post a delayed flush — if no more messages arrive within GROUP_DELAY_MS,
-        // the group is flushed and read as a batch.
-        groupHandler.postDelayed({
-            flushGroup(groupKey)
-        }, GROUP_DELAY_MS)
     }
 
     /** Flush a pending group: read all buffered messages as a batch. */
@@ -246,6 +255,7 @@ class NotificationReaderService : NotificationListenerService() {
         val messages: List<PendingMessage>
         synchronized(groupLock) {
             messages = groupBuffer.remove(groupKey) ?: return
+            groupPendingFlush.remove(groupKey)?.let { groupHandler.removeCallbacks(it) }
         }
         if (messages.isEmpty()) return
 

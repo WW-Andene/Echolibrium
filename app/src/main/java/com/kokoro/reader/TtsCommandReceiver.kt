@@ -28,6 +28,15 @@ class TtsCommandReceiver : BroadcastReceiver() {
                     Log.d(TAG, "Retry engine init requested from UI")
                     SherpaEngine.forceRetry(context.applicationContext)
                 }
+                TtsBridge.ACTION_DUMP_DEBUG_LOG -> {
+                    Log.d(TAG, "Debug log dump requested from UI")
+                    val path = SherpaEngine.dumpDebugLog(context.applicationContext)
+                    Log.i(TAG, "Debug log written to: $path")
+                }
+                TtsBridge.ACTION_DUMP_PROCESS_LOG -> {
+                    val log = SherpaEngine.dumpProcessLog()
+                    TtsBridge.writeProcessLog(context.applicationContext, log)
+                }
                 else -> Log.w(TAG, "Unknown action: ${intent.action}")
             }
         } catch (e: Throwable) {

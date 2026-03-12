@@ -14,9 +14,13 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
 
-      # Install onnxruntime for ORT model optimization (faster load on device)
+      # Install onnxruntime for ORT model optimization (faster load on device).
+      # CRITICAL: Must match the ORT version bundled in the sherpa-onnx AAR.
+      # sherpa-onnx 1.12.28 builds with onnxruntime 1.17.1 for Android.
+      # Using a newer ORT version here produces .ort files with an incompatible
+      # flatbuffer format, causing SIGSEGV or silent load failure on device.
       - name: Install onnxruntime
-        run: pip install onnxruntime
+        run: pip install onnxruntime==1.17.1
 
       # Downloads sherpa-onnx AAR, Kokoro model, and 8 core Piper voices.
       # Then converts bundled models to ORT format (5-10x faster loading).
@@ -73,14 +77,53 @@ jobs:
           echo ""
           echo "All TTS assets verified ✓"
 
+      # If KEYSTORE_BASE64 secret is set, decode it. Otherwise generate a
+      # temporary debug-signing keystore so the APK is always installable.
+      # To use your own keystore, set these repository secrets:
+      #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Using keystore from repository secrets"
+            echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+          else
+            echo "No KEYSTORE_BASE64 secret — generating CI signing key"
+            keytool -genkeypair -v \
+              -keystore keystore.jks \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias echolibrium \
+              -storepass echolibrium \
+              -keypass echolibrium \
+              -dname "CN=Echolibrium CI, O=Echolibrium, L=CI, ST=CI, C=US"
+          fi
+
       - run: chmod +x gradlew
-      - run: ./gradlew assembleRelease
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'echolibrium' }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'echolibrium' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'echolibrium' }}
+        run: ./gradlew assembleRelease
 
       # Verify the APK contains the native library
       - name: Verify APK contents
         run: |
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          # Find the APK — signed builds go to app-release.apk, unsigned to app-release-unsigned.apk
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK" ]; then
+            APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          fi
+          echo "APK: $APK"
           echo "APK size: $(du -h "$APK" | cut -f1)"
+
+          # Check signing status
+          if jarsigner -verify -verbose -certs "$APK" 2>/dev/null | grep -q "jar verified"; then
+            echo "✓ APK is signed"
+          else
+            echo "⚠ APK is unsigned (set KEYSTORE_BASE64 secret to enable signing)"
+          fi
 
           # Check for native library
           if unzip -l "$APK" | grep -q "lib/arm64-v8a/.*\.so"; then
@@ -104,5 +147,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KokoroReader-v4
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30

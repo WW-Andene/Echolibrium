@@ -1348,6 +1348,13 @@ object SherpaEngine {
 
     @Synchronized
     fun initializeKokoro(ctx: Context): Boolean {
+        // TODO: Re-enable Kokoro when INT8 model is confirmed working on low-RAM devices
+        plog("initializeKokoro: DISABLED — skipping directly to Piper")
+        Log.i(TAG, "Kokoro disabled — using Piper only")
+        statusMessage = "using Piper engine…"
+        syncStatus()
+        return false
+
         plog("initializeKokoro: called (isReady=$isReady, kokoroTts=${kokoroTts != null})")
         if (isReady && kokoroTts != null) return true
 

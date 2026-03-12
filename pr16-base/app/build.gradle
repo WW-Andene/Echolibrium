@@ -14,7 +14,20 @@ android {
         // Only include arm64 — Dimensity 8200 is arm64, keeps APK small
         ndk { abiFilters "arm64-v8a" }
     }
-    buildTypes { release { minifyEnabled false } }
+    signingConfigs {
+        release {
+            storeFile file("${rootProject.projectDir}/keystore.jks")
+            storePassword "echolibrium123"
+            keyAlias "echolibrium"
+            keyPassword "echolibrium123"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

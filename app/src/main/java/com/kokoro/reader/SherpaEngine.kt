@@ -56,8 +56,9 @@ object SherpaEngine {
     /** Minimum free disk space (bytes) required before extracting the Kokoro model. */
     private const val MIN_DISK_SPACE_BYTES = 400L * 1024 * 1024  // 400 MB
 
-    /** Minimum free RAM (bytes) required before attempting native model loading. */
-    private const val MIN_RAM_FOR_INIT_BYTES = 350L * 1024 * 1024  // 350 MB
+    /** Minimum free RAM (bytes) required before attempting native model loading.
+     *  The 310MB model needs ~2-3x its size in working memory during ONNX runtime init. */
+    private const val MIN_RAM_FOR_INIT_BYTES = 800L * 1024 * 1024  // 800 MB
 
     /** Minimum expected model.ort/.onnx file size — below this, extraction is corrupt. */
     private const val MIN_MODEL_FILE_SIZE = 100L * 1024 * 1024  // 100 MB
@@ -758,6 +759,7 @@ object SherpaEngine {
                 appendLine("═══ CRASH TRACKING (SharedPrefs: $INIT_PREFS) ═══")
                 appendLine("init_in_progress : ${initPrefs.getBoolean(KEY_INIT_IN_PROGRESS, false)}")
                 appendLine("init_crash_count : ${initPrefs.getInt(KEY_INIT_CRASH_COUNT, 0)}")
+                appendLine("init_os_kill_count: ${initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0)}")
                 val lastCrash = initPrefs.getLong(KEY_INIT_LAST_CRASH_TIME, 0)
                 appendLine("last_crash_time  : ${if (lastCrash > 0) SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastCrash)) else "never"}")
                 appendLine("crash_age_ms     : ${if (lastCrash > 0) System.currentTimeMillis() - lastCrash else "N/A"}")
@@ -965,6 +967,8 @@ object SherpaEngine {
     private const val KEY_INIT_FORMAT = "init_format"
     /** If true, skip .ort and go straight to .onnx (set after a crash during .ort loading). */
     private const val KEY_SKIP_ORT = "skip_ort"
+    /** Tracks how many times the OS killed the process during init (memory pressure). */
+    private const val KEY_INIT_OS_KILL_COUNT = "init_os_kill_count"
     /** Base delay (ms) for exponential backoff after crashes. Delay = base * 2^(n-1). */
     private const val CRASH_BACKOFF_BASE_MS = 3_000L   // 3s, 6s, 12s, 24s, 48s…
     /** Max backoff delay (ms) — caps at ~1 minute, then retries forever at this interval. */
@@ -973,6 +977,8 @@ object SherpaEngine {
     private const val NATIVE_BROKEN_THRESHOLD = 8
     /** Reset crash counter after this much time (ms) — gives the device a chance to recover. */
     private const val CRASH_RESET_WINDOW_MS = 120_000L  // 2 minutes
+    /** After this many OS kills during init, skip Kokoro and use Piper (memory too low for Kokoro). */
+    private const val OS_KILL_THRESHOLD = 3
 
     /**
      * Initializes the Kokoro engine on a background thread.
@@ -1014,6 +1020,7 @@ object SherpaEngine {
             crashCount = 0
             initPrefs.edit()
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putBoolean(KEY_SKIP_ORT, false)
                 .putLong("last_init_version", currentVersion)
@@ -1041,8 +1048,12 @@ object SherpaEngine {
                 plog("warmUp: native crash confirmed — crash #$crashCount, cleared config memory")
                 Log.w(TAG, "Previous engine init: native crash #$crashCount — cleared config memory")
             } else {
-                plog("warmUp: OS killed process (not native crash) — not incrementing crash counter")
-                Log.i(TAG, "Previous engine init: OS killed process (not native crash) — crashCount stays at $crashCount")
+                // OS killed process during init — likely memory pressure.
+                // Track separately: after OS_KILL_THRESHOLD kills, skip Kokoro.
+                val osKillCount = initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0) + 1
+                initPrefs.edit().putInt(KEY_INIT_OS_KILL_COUNT, osKillCount).apply()
+                plog("warmUp: OS killed process (not native crash) — osKillCount=$osKillCount")
+                Log.i(TAG, "Previous engine init: OS killed process (memory pressure?) — osKillCount=$osKillCount, crashCount stays at $crashCount")
             }
             initPrefs.edit()
                 .putInt(KEY_INIT_CRASH_COUNT, crashCount)
@@ -1055,8 +1066,74 @@ object SherpaEngine {
         if (crashCount > 0 && System.currentTimeMillis() - lastCrashTime > CRASH_RESET_WINDOW_MS) {
             plog("warmUp: crash counter reset (>${CRASH_RESET_WINDOW_MS / 1000}s since last crash)")
             crashCount = 0
-            initPrefs.edit().putInt(KEY_INIT_CRASH_COUNT, 0).apply()
-            Log.d(TAG, "Init crash counter reset (>5min since last crash)")
+            initPrefs.edit()
+                .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
+                .apply()
+            Log.d(TAG, "Init crash/OS-kill counters reset (>2min since last crash)")
+        }
+
+        // ── OS kill loop detection ────────────────────────────────────
+        // If the OS keeps killing us during init (memory pressure), don't keep
+        // retrying Kokoro — it will never succeed with this much RAM.
+        // Fall back to Piper which is much smaller.
+        val osKillCount = initPrefs.getInt(KEY_INIT_OS_KILL_COUNT, 0)
+        if (osKillCount >= OS_KILL_THRESHOLD && crashCount == 0) {
+            plog("warmUp: OS killed init $osKillCount times — device lacks RAM for Kokoro, using Piper")
+            Log.w(TAG, "OS killed Kokoro init $osKillCount times (memory pressure) — skipping Kokoro, using Piper")
+
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, true).commit()
+            statusMessage = "not enough RAM for Kokoro — trying lighter engine…"
+            syncStatus()
+
+            var piperOk = false
+            try {
+                piperOk = initPiperFallback(ctx)
+                plog("warmUp: Piper fallback (OS kill recovery) result=$piperOk")
+            } catch (e: Throwable) {
+                plog("warmUp: Piper fallback threw ${e.javaClass.simpleName}: ${e.message}")
+                Log.e(TAG, "Piper fallback threw exception", e)
+            }
+            initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+
+            if (piperOk) {
+                Log.i(TAG, "Piper fallback activated (OS killed Kokoro init $osKillCount times)")
+                onReadyCallback?.invoke()
+            } else {
+                // Try Android system TTS as ultimate fallback
+                val systemTtsOk = initSystemTtsFallback(ctx)
+                if (systemTtsOk) {
+                    plog("warmUp: Android system TTS fallback ready (OS kill recovery)")
+                    isReady = true
+                    isSystemTtsFallbackActive = true
+                    errorMessage = null
+                    statusMessage = "ready (Android TTS — not enough RAM for Kokoro)"
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    onReadyCallback?.invoke()
+                } else {
+                    errorMessage = "Not enough RAM for Kokoro engine. Close other apps and restart."
+                    statusMessage = "error: not enough RAM"
+                    syncStatus()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+            }
+
+            // Schedule retry after the crash reset window — RAM conditions may change
+            val retryMs = CRASH_RESET_WINDOW_MS + 5_000L
+            Log.i(TAG, "Will retry Kokoro in ${retryMs / 1000}s (RAM conditions may improve)")
+            Thread {
+                try {
+                    Thread.sleep(retryMs)
+                    // Reset OS kill counter so we try Kokoro again
+                    initPrefs.edit().putInt(KEY_INIT_OS_KILL_COUNT, 0).apply()
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                    warmUp(ctx)
+                } catch (_: InterruptedException) {
+                    synchronized(warmUpLock) { isWarmingUp = false }
+                }
+            }.apply { name = "SherpaEngine-oskill-retry"; isDaemon = true; start() }
+            return
         }
 
         // ── Crash recovery ─────────────────────────────────────────────
@@ -1238,6 +1315,7 @@ object SherpaEngine {
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
         initPrefs.edit()
             .putInt(KEY_INIT_CRASH_COUNT, 0)
+            .putInt(KEY_INIT_OS_KILL_COUNT, 0)
             .putBoolean(KEY_INIT_IN_PROGRESS, false)
             .putBoolean(KEY_SKIP_ORT, false)
             .remove(KEY_INIT_FORMAT)
@@ -1477,13 +1555,17 @@ object SherpaEngine {
             Log.i(TAG, "│ JVM: ${runtime.freeMemory() / 1024 / 1024}MB free / ${runtime.maxMemory() / 1024 / 1024}MB max")
 
             if (memInfo.availMem < MIN_RAM_FOR_INIT_BYTES) {
-                val msg = "Not enough RAM: ${memInfo.availMem / 1024 / 1024}MB available, " +
-                    "need ${MIN_RAM_FOR_INIT_BYTES / 1024 / 1024}MB for Kokoro model. " +
-                    "Close other apps and retry."
-                Log.e(TAG, "│ $msg")
-                Log.e(TAG, "└── Kokoro init FAILED (low memory) ──────────")
-                statusMessage = "error: not enough RAM"
-                errorMessage = msg
+                val availMB = memInfo.availMem / 1024 / 1024
+                val needMB = MIN_RAM_FOR_INIT_BYTES / 1024 / 1024
+                val msg = "Not enough RAM: ${availMB}MB available, " +
+                    "need ${needMB}MB for Kokoro model. " +
+                    "Falling back to lighter engine."
+                Log.w(TAG, "│ $msg")
+                Log.w(TAG, "│ Will try Piper fallback (smaller model)")
+                Log.e(TAG, "└── Kokoro init SKIPPED (low memory) ─────────")
+                plog("initKokoro: RAM too low (${availMB}MB < ${needMB}MB) — skipping Kokoro")
+                statusMessage = "not enough RAM — trying lighter engine…"
+                // Don't set errorMessage — let the caller try Piper fallback
                 isReady = false
                 lastTelemetry = telemetry
                 writeInitLog(ctx, msg, telemetry = telemetry)
@@ -1611,6 +1693,7 @@ object SherpaEngine {
             initPrefs.edit()
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
+                .putInt(KEY_INIT_OS_KILL_COUNT, 0)
                 .apply()
 
             initProgress = 100

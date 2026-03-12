@@ -16,16 +16,20 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file("${rootProject.projectDir}/keystore.jks")
-            storePassword "echolibrium123"
-            keyAlias "echolibrium"
-            keyPassword "echolibrium123"
+            def ksFile = file("${rootProject.projectDir}/keystore.jks")
+            if (ksFile.exists()) {
+                storeFile ksFile
+                storePassword "echolibrium123"
+                keyAlias "echolibrium"
+                keyPassword "echolibrium123"
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            def ksFile = file("${rootProject.projectDir}/keystore.jks")
+            signingConfig ksFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
     compileOptions {

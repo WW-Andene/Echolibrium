@@ -248,11 +248,7 @@ class ProfilesFragment : Fragment() {
         val ctx = requireContext()
         val state = PiperDownloadManager.getState(ctx, v.id)
         val ready = state == PiperDownloadManager.State.READY
-        val bundled = state == PiperDownloadManager.State.BUNDLED
         val active = currentProfile.voiceName == v.id
-
-        // Bundled voices are selectable immediately — extraction happens on first synthesis
-        val selectable = ready || bundled
 
         val statusText: String
         val statusColor: Int
@@ -264,19 +260,9 @@ class ProfilesFragment : Fragment() {
                 statusColor = 0xFF446644.toInt()
                 statusClickable = false
             }
-            PiperDownloadManager.State.BUNDLED -> {
-                statusText = "bundled"
-                statusColor = 0xFF88ccff.toInt()
-                statusClickable = false
-            }
-            PiperDownloadManager.State.EXTRACTING -> {
-                statusText = "extracting..."
-                statusColor = 0xFFffcc00.toInt()
-                statusClickable = false
-            }
             PiperDownloadManager.State.DOWNLOADING -> {
                 val pct = PiperDownloadManager.getProgress(v.id)
-                statusText = if (pct < 0) "extracting..." else "$pct%"
+                statusText = if (pct < 0) "setting up..." else "$pct%"
                 statusColor = 0xFFffcc00.toInt()
                 statusClickable = false
             }
@@ -294,10 +280,10 @@ class ProfilesFragment : Fragment() {
 
         val card = buildVoiceCard(
             name = v.displayName, icon = v.genderIcon,
-            iconColor = if (selectable) v.genderColor else 0xFF444444.toInt(),
+            iconColor = if (ready) v.genderColor else 0xFF444444.toInt(),
             badge = "${v.flagEmoji} ${v.quality}", voiceId = v.id,
-            active = active, accent = 0xFF88ccff.toInt(), enabled = selectable,
-            onClick = if (selectable) {
+            active = active, accent = 0xFF88ccff.toInt(), enabled = ready,
+            onClick = if (ready) {
                 { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
             } else null
         )

@@ -27,22 +27,6 @@ jobs:
           curl -L "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar ($(du -h app/libs/sherpa_onnx.aar | cut -f1))"
 
-      # Download and bundle 9 Piper voices as APK assets
-      - name: Download Piper voices
-        run: |
-          chmod +x app/download-piper-voices.sh
-          bash app/download-piper-voices.sh
-
-      # Verify assets before build
-      - name: Verify Piper assets
-        run: |
-          VOICE_COUNT=$(ls -d app/src/main/assets/piper_voices/*/  2>/dev/null | wc -l)
-          echo "Piper voices bundled: $VOICE_COUNT"
-          if [ "$VOICE_COUNT" -lt 9 ]; then
-            echo "::warning::Expected 9 Piper voices but found $VOICE_COUNT"
-          fi
-          du -sh app/src/main/assets/piper_voices/ || true
-
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
 

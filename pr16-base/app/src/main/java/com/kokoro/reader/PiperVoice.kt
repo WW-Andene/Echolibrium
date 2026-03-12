@@ -6,10 +6,11 @@ package com.kokoro.reader
  * Each Piper voice is a single VITS model (.onnx) that also requires
  * shared assets: tokens.txt + espeak-ng-data/ for phonemization.
  *
- * Voice packages are downloaded from k2-fsa/sherpa-onnx GitHub releases
- * as tar.bz2 archives, each self-contained with model + shared assets.
+ * Voice .onnx files are downloaded on-demand from the repo's tts-assets-v1
+ * GitHub release. Shared assets (tokens + espeak-ng-data) are downloaded
+ * once and reused across all voices.
  *
- * Storage: filesDir/sherpa/piper/{voiceId}/model.onnx, tokens.txt, espeak-ng-data/
+ * Storage: filesDir/sherpa/piper/{voiceId}/{voiceId}.onnx, tokens.txt, espeak-ng-data/
  */
 data class PiperVoice(
     val id: String,           // e.g. "en_US-lessac-medium"
@@ -20,7 +21,6 @@ data class PiperVoice(
     val nationality: String,  // e.g. "American"
     val locale: String,       // e.g. "en_US"
     val quality: String,      // low | medium | high
-    val bundled: Boolean = false  // true = shipped inside APK assets
 ) {
     val genderIcon get() = when (gender) {
         "Female" -> "♀"
@@ -50,9 +50,13 @@ data class PiperVoice(
 
 object PiperVoices {
 
+    private const val REPO = "WW-Andene/Echolibrium"
+    private const val RELEASE_TAG = "tts-assets-v1"
+    private const val BASE_URL = "https://github.com/$REPO/releases/download/$RELEASE_TAG"
+
     private fun piper(
         name: String, gender: String, language: String, nationality: String,
-        locale: String, quality: String, bundled: Boolean = false
+        locale: String, quality: String
     ): PiperVoice {
         val id = "${locale}-${name}-${quality}"
         return PiperVoice(
@@ -62,31 +66,70 @@ object PiperVoices {
                 it.replaceFirstChar { c -> c.uppercase() }
             },
             gender = gender, language = language, nationality = nationality,
-            locale = locale, quality = quality, bundled = bundled
+            locale = locale, quality = quality
         )
     }
 
-    // ── English (US) — bundled in APK ─────────────────────────────────────
+    // ── English (US) ─────────────────────────────────────────────────────
     private val EN_US = listOf(
-        piper("lessac",  "Female", "English (US)", "American", "en_US", "medium", bundled = true),
-        piper("ljspeech","Female", "English (US)", "American", "en_US", "medium", bundled = true),
-        piper("kristin", "Female", "English (US)", "American", "en_US", "medium", bundled = true),
-        piper("ryan",    "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
-        piper("joe",     "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
-        piper("bryce",   "Male",   "English (US)", "American", "en_US", "medium", bundled = true),
+        piper("amy",            "Female", "English (US)", "American", "en_US", "low"),
+        piper("amy",            "Female", "English (US)", "American", "en_US", "medium"),
+        piper("arctic",         "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("bryce",          "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("danny",          "Male",   "English (US)", "American", "en_US", "low"),
+        piper("hfc_female",     "Female", "English (US)", "American", "en_US", "medium"),
+        piper("hfc_male",       "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("joe",            "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("john",           "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("kathleen",       "Female", "English (US)", "American", "en_US", "low"),
+        piper("kristin",        "Female", "English (US)", "American", "en_US", "medium"),
+        piper("kusal",          "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("l2arctic",       "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("lessac",         "Female", "English (US)", "American", "en_US", "low"),
+        piper("lessac",         "Female", "English (US)", "American", "en_US", "medium"),
+        piper("lessac",         "Female", "English (US)", "American", "en_US", "high"),
+        piper("libritts",       "Male",   "English (US)", "American", "en_US", "high"),
+        piper("libritts_r",     "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("ljspeech",       "Female", "English (US)", "American", "en_US", "medium"),
+        piper("ljspeech",       "Female", "English (US)", "American", "en_US", "high"),
+        piper("norman",         "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("reza_ibrahim",   "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("ryan",           "Male",   "English (US)", "American", "en_US", "low"),
+        piper("ryan",           "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("ryan",           "Male",   "English (US)", "American", "en_US", "high"),
+        piper("sam",            "Male",   "English (US)", "American", "en_US", "medium"),
     )
 
-    // ── English (UK) — bundled in APK ─────────────────────────────────────
+    // ── English (UK) ─────────────────────────────────────────────────────
     private val EN_GB = listOf(
-        piper("alba",  "Female", "English (UK)", "British", "en_GB", "medium", bundled = true),
-        piper("alan",  "Male",   "English (UK)", "British", "en_GB", "medium", bundled = true),
-        piper("cori",  "Female", "English (UK)", "British", "en_GB", "medium", bundled = true),
+        piper("alan",                     "Male",   "English (UK)", "British", "en_GB", "low"),
+        piper("alan",                     "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("alba",                     "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("aru",                      "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("cori",                     "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("cori",                     "Female", "English (UK)", "British", "en_GB", "high"),
+        piper("jenny_dioco",              "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("northern_english_male",    "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("semaine",                  "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("southern_english_female",  "Female", "English (UK)", "British", "en_GB", "low"),
+        piper("vctk",                     "Female", "English (UK)", "British", "en_GB", "medium"),
     )
 
-    val ALL: List<PiperVoice> = EN_US + EN_GB
+    // ── French ───────────────────────────────────────────────────────────
+    private val FR_FR = listOf(
+        piper("gilles",   "Male",   "French", "French", "fr_FR", "low"),
+        piper("mls",      "Male",   "French", "French", "fr_FR", "medium"),
+        piper("mls_1840", "Male",   "French", "French", "fr_FR", "low"),
+        piper("siwis",    "Female", "French", "French", "fr_FR", "low"),
+        piper("siwis",    "Female", "French", "French", "fr_FR", "medium"),
+        piper("tom",      "Male",   "French", "French", "fr_FR", "medium"),
+        piper("upmc",     "Male",   "French", "French", "fr_FR", "medium"),
+    )
+
+    val ALL: List<PiperVoice> = EN_US + EN_GB + FR_FR
 
     fun byId(id: String): PiperVoice? = ALL.find { it.id == id }
-    fun default(): PiperVoice = ALL.first()
+    fun default(): PiperVoice = ALL.first { it.id == "en_US-lessac-medium" }
 
     fun byGender(g: String) = if (g == "All") ALL else ALL.filter { it.gender == g }
     fun byLanguage(l: String) = if (l == "All") ALL else ALL.filter { it.language == l }
@@ -96,14 +139,16 @@ object PiperVoices {
     /** True if this voice ID belongs to a Piper voice (not Kokoro) */
     fun isPiperVoice(voiceId: String): Boolean = byId(voiceId) != null
 
-    /**
-     * Download URL for a Piper voice tar.bz2 from k2-fsa/sherpa-onnx releases.
-     * Pattern: vits-piper-{locale}-{name}-{quality}.tar.bz2
-     */
-    fun downloadUrl(voiceId: String): String {
-        return "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-$voiceId.tar.bz2"
-    }
+    /** Download URL for a voice .onnx from the repo's tts-assets-v1 release */
+    fun downloadUrl(voiceId: String): String = "$BASE_URL/$voiceId.onnx"
 
-    /** The directory name inside the tar.bz2 archive */
-    fun archiveDirName(voiceId: String): String = "vits-piper-$voiceId"
+    /** Download URL for the shared tokens.txt */
+    fun tokensUrl(): String = "$BASE_URL/piper-tokens.txt"
+
+    /** Download URL for the shared espeak-ng-data archive */
+    fun espeakUrl(): String = "$BASE_URL/espeak-ng-data.tar.gz"
+
+    /** Fallback URL for espeak-ng-data (from k2-fsa lessac archive) */
+    fun espeakFallbackUrl(): String =
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"
 }

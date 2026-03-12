@@ -1006,7 +1006,7 @@ object SherpaEngine {
 
         // Reset crash counter on app update — new code deserves a fresh chance
         val currentVersion = getAppVersionCode(ctx)
-        val lastVersion = initPrefs.getInt("last_init_version", 0)
+        val lastVersion = initPrefs.getLong("last_init_version", 0L)
         if (currentVersion != lastVersion) {
             plog("warmUp: app updated ($lastVersion → $currentVersion) — resetting crash state")
             Log.i(TAG, "App version changed ($lastVersion → $currentVersion) — resetting init crash state")
@@ -1015,7 +1015,7 @@ object SherpaEngine {
                 .putInt(KEY_INIT_CRASH_COUNT, 0)
                 .putBoolean(KEY_INIT_IN_PROGRESS, false)
                 .putBoolean(KEY_SKIP_ORT, false)
-                .putInt("last_init_version", currentVersion)
+                .putLong("last_init_version", currentVersion)
                 .apply()
         }
 

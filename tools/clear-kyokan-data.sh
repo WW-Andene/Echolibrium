@@ -5,7 +5,7 @@
 #
 # What it removes:
 #   - App data & cache (SharedPreferences, crash state, init flags)
-#   - Extracted models (kokoro-model, piper-models)
+#   - Extracted models (piper-models)
 #   - Log files (Kyokan/Logs)
 #   - Downloaded voices
 #   - Notification listener binding state

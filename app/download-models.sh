@@ -14,7 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 LIBS_DIR="libs"
-KOKORO_DIR="src/main/assets/kokoro-model"
 PIPER_DIR="src/main/assets/piper-models"
 
 # All assets live in a single GitHub Release
@@ -41,23 +40,14 @@ download() {
 # ── 1. Sherpa-onnx AAR ──────────────────────────────────────────────────────
 
 echo ""
-echo "═══ Step 1/3: sherpa-onnx AAR ═══"
+echo "═══ Step 1/4: sherpa-onnx AAR ═══"
 mkdir -p "$LIBS_DIR"
 download "$RELEASE_BASE/sherpa_onnx.aar" "$LIBS_DIR/sherpa_onnx.aar"
 
-# ── 2. Kokoro model ─────────────────────────────────────────────────────────
-# DISABLED: Kokoro is not bundled in the APK for now (causes RAM crashes on
-# low-RAM devices). Will be re-enabled when cloud TTS is ready.
-# The code and release assets are preserved — just not downloaded into the APK.
+# ── 2. Core Piper voices (bundled in APK) ────────────────────────────────────
 
 echo ""
-echo "═══ Step 2/3: Kokoro model ═══"
-echo "  ⏭ SKIPPED — Kokoro disabled (using Piper + future cloud TTS)"
-
-# ── 3. Core Piper voices (bundled in APK) ────────────────────────────────────
-
-echo ""
-echo "═══ Step 3/3: Core Piper voices (bundled in APK) ═══"
+echo "═══ Step 2/4: Core Piper voices (bundled in APK) ═══"
 mkdir -p "$PIPER_DIR"
 
 # Shared tokens.txt
@@ -95,6 +85,43 @@ done
 echo ""
 echo "  Bundled voices: $TOTAL total, $FAILED failed"
 
+# ── 3. espeak-ng-data (required by Piper for phonemization) ───────────────
+
+echo ""
+echo "═══ Step 3/4: espeak-ng-data (phonemization) ═══"
+ESPEAK_DIR="$PIPER_DIR/espeak-ng-data"
+if [ -d "$ESPEAK_DIR" ] && [ "$(ls -A "$ESPEAK_DIR" 2>/dev/null)" ]; then
+    echo "  ✓ espeak-ng-data already exists — skipping"
+else
+    # Try our release first, fall back to extracting from a Piper voice package
+    echo "  ↓ Downloading espeak-ng-data…"
+    if curl -fL $RETRY "$RELEASE_BASE/espeak-ng-data.tar.gz" -o "$PIPER_DIR/espeak-ng-data.tar.gz" 2>/dev/null; then
+        tar -xzf "$PIPER_DIR/espeak-ng-data.tar.gz" -C "$PIPER_DIR"
+        rm -f "$PIPER_DIR/espeak-ng-data.tar.gz"
+    else
+        echo "  ⚠ espeak-ng-data.tar.gz not in release — extracting from Piper voice package"
+        curl -fL $RETRY \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
+            -o "$PIPER_DIR/_piper-pkg.tar.bz2" || {
+            echo "  ✗ FAILED to download Piper voice package"
+            echo "  ✗ Piper TTS will not work without espeak-ng-data!"
+            exit 1
+        }
+        mkdir -p "$PIPER_DIR/_tmp-piper"
+        tar -xjf "$PIPER_DIR/_piper-pkg.tar.bz2" -C "$PIPER_DIR/_tmp-piper"
+        ESPEAK_SRC=$(find "$PIPER_DIR/_tmp-piper" -type d -name "espeak-ng-data" | head -1)
+        if [ -n "$ESPEAK_SRC" ]; then
+            cp -r "$ESPEAK_SRC" "$ESPEAK_DIR"
+        else
+            echo "  ✗ espeak-ng-data not found in Piper package!"
+            rm -rf "$PIPER_DIR/_tmp-piper" "$PIPER_DIR/_piper-pkg.tar.bz2"
+            exit 1
+        fi
+        rm -rf "$PIPER_DIR/_tmp-piper" "$PIPER_DIR/_piper-pkg.tar.bz2"
+    fi
+    echo "  ✓ espeak-ng-data extracted ($(du -sh "$ESPEAK_DIR" 2>/dev/null | cut -f1))"
+fi
+
 # ── 4. Optimize models (ORT format) ─────────────────────────────────────────
 
 echo ""
@@ -117,7 +144,6 @@ PIPER_ORT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 PIPER_COUNT=$((PIPER_ONNX + PIPER_ORT))
 ORT_COUNT=$(find "$PIPER_DIR" -maxdepth 1 -name '*.ort' 2>/dev/null | wc -l)
 echo "  AAR:    $(ls -lh "$LIBS_DIR/sherpa_onnx.aar" 2>/dev/null | awk '{print $5}' || echo 'MISSING')"
-echo "  Kokoro: DISABLED (cloud TTS planned)"
 echo "  Piper:  ${PIPER_COUNT} bundled voices ($(du -sh "$PIPER_DIR" 2>/dev/null | cut -f1 || echo '0'))"
 if [ "$ORT_COUNT" -gt 0 ]; then
     echo "  ORT:    ${ORT_COUNT} pre-optimized models (5-10x faster load)"

@@ -259,12 +259,12 @@ object SherpaEngine {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             // Get recent exit reasons for our package, limit to 5
             val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5)
-            // Find the most recent exit for the :tts process
+            // Find the most recent exit for our process (main process, no longer :tts)
             val ttsExit = exitInfos.firstOrNull { info ->
-                info.processName?.endsWith(":tts") == true
+                info.processName == ctx.packageName
             }
             if (ttsExit == null) {
-                plog("wasLastExitNativeCrash: no exit info for :tts — assuming crash")
+                plog("wasLastExitNativeCrash: no exit info for main process — assuming crash")
                 return true
             }
             val reason = ttsExit.reason
@@ -337,7 +337,7 @@ object SherpaEngine {
                 try {
                     val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                     val exitInfos = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 3)
-                    val ttsExit = exitInfos.firstOrNull { it.processName?.endsWith(":tts") == true }
+                    val ttsExit = exitInfos.firstOrNull { it.processName == ctx.packageName }
                     if (ttsExit != null) {
                         append(" | Last exit: ${exitReasonName(ttsExit.reason)}")
                         ttsExit.description?.let { append(" ($it)") }

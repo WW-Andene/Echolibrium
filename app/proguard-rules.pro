@@ -17,6 +17,10 @@
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
 
+# ONNX Runtime (direct ORT for Yatagami pipeline)
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
 # ML Kit Translation
 -keep class com.google.mlkit.** { *; }
 -dontwarn com.google.mlkit.**

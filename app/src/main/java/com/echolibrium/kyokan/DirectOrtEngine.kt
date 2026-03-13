@@ -1,5 +1,8 @@
 package com.echolibrium.kyokan
 
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
 import java.io.File
@@ -12,15 +15,6 @@ import java.nio.ByteOrder
  * Bypasses sherpa-onnx's high-level API to give direct access to model inputs/outputs.
  * We can manipulate the style vector, scales, and any other tensor before synthesis.
  *
- * DEPENDENCY: Requires onnxruntime-android in build.gradle:
- *   implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.0'
- *
- * NOTE: sherpa_onnx.aar bundles libonnxruntime.so. If you get duplicate native lib
- * errors, exclude ORT's native lib and rely on sherpa's bundled version:
- *   implementation('com.microsoft.onnxruntime:onnxruntime-android:1.17.0') {
- *       exclude group: 'com.microsoft.onnxruntime', module: 'onnxruntime-android'
- *   }
- *
  * MODEL PATHS: Uses the same model files as SherpaEngine:
  *   - Kokoro model: VoiceDownloadManager.getModelDir(ctx) / "model.onnx"
  *   - Voices:       VoiceDownloadManager.getModelDir(ctx) / "voices.bin"
@@ -30,12 +24,6 @@ import java.nio.ByteOrder
  *
  * FALLBACK: If direct ORT fails, SherpaEngine's existing cascade catches it.
  * The crash recovery in :tts process still applies.
- *
- * ──────────────────────────────────────────────────────────────────────────────
- * IMPORTANT: This file uses ai.onnxruntime.* which is NOT yet in build.gradle.
- * The ORT classes (OrtEnvironment, OrtSession, OnnxTensor) are commented out
- * to prevent compilation errors. Uncomment when the dependency is added.
- * ──────────────────────────────────────────────────────────────────────────────
  */
 class DirectOrtEngine(private val context: Context) {
 
@@ -45,10 +33,9 @@ class DirectOrtEngine(private val context: Context) {
 
     // ─── State ──────────────────────────────────────────────────────────
 
-    // Uncomment when onnxruntime-android dependency is added:
-    // private var ortEnv: OrtEnvironment? = null
-    // private var kokoroSession: OrtSession? = null
-    // private var piperSession: OrtSession? = null
+    private var ortEnv: OrtEnvironment? = null
+    private var kokoroSession: OrtSession? = null
+    private var piperSession: OrtSession? = null
 
     // Kokoro voices data (loaded from voices.bin)
     private var voicesData: FloatArray? = null
@@ -81,8 +68,6 @@ class DirectOrtEngine(private val context: Context) {
             loadVoices(voicesBinPath)
 
             // ── Load Kokoro model via ORT ──
-            // Uncomment when onnxruntime-android dependency is added:
-            /*
             ortEnv = OrtEnvironment.getEnvironment()
             val sessionOptions = OrtSession.SessionOptions().apply {
                 setIntraOpNumThreads(numThreads)
@@ -101,9 +86,8 @@ class DirectOrtEngine(private val context: Context) {
                 isPiperReady = true
                 Log.i(TAG, "Piper loaded via direct ORT")
             }
-            */
 
-            Log.i(TAG, "DirectOrtEngine initialized (voices loaded, ORT sessions pending dependency)")
+            Log.i(TAG, "DirectOrtEngine initialized")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Direct ORT init failed: ${e.message}", e)
@@ -145,8 +129,6 @@ class DirectOrtEngine(private val context: Context) {
         Log.i(TAG, "Loaded voices: $voiceCount voices, $tokensPerVoice token variants each")
     }
 
-    // Uncomment when onnxruntime-android dependency is added:
-    /*
     private fun validateKokoroInterface() {
         val session = kokoroSession ?: return
         val inputNames = session.inputNames.toList()
@@ -160,7 +142,6 @@ class DirectOrtEngine(private val context: Context) {
             }
         }
     }
-    */
 
     // ─── Kokoro Synthesis (with style sculpting) ────────────────────────
 
@@ -177,8 +158,6 @@ class DirectOrtEngine(private val context: Context) {
         sculptedStyle: FloatArray,
         speed: Float = 1.0f
     ): Pair<FloatArray, Int>? {
-        // Uncomment when onnxruntime-android dependency is added:
-        /*
         val session = kokoroSession ?: return null
         val env = ortEnv ?: return null
 
@@ -221,9 +200,6 @@ class DirectOrtEngine(private val context: Context) {
             Log.e(TAG, "Kokoro synthesis failed: ${e.message}", e)
             null
         }
-        */
-        Log.w(TAG, "synthesizeKokoro called but ORT dependency not yet added")
-        return null
     }
 
     // ─── Piper Synthesis (with mapped scales) ───────────────────────────
@@ -241,8 +217,6 @@ class DirectOrtEngine(private val context: Context) {
         scales: FloatArray,
         speakerId: Long = -1
     ): Pair<FloatArray, Int>? {
-        // Uncomment when onnxruntime-android dependency is added:
-        /*
         val session = piperSession ?: return null
         val env = ortEnv ?: return null
 
@@ -298,9 +272,6 @@ class DirectOrtEngine(private val context: Context) {
             Log.e(TAG, "Piper synthesis failed: ${e.message}", e)
             null
         }
-        */
-        Log.w(TAG, "synthesizePiper called but ORT dependency not yet added")
-        return null
     }
 
     // ─── Voice Data Access ──────────────────────────────────────────────
@@ -338,8 +309,6 @@ class DirectOrtEngine(private val context: Context) {
     // ─── Lifecycle ──────────────────────────────────────────────────────
 
     fun cleanup() {
-        // Uncomment when onnxruntime-android dependency is added:
-        /*
         try {
             kokoroSession?.close()
             piperSession?.close()
@@ -350,7 +319,6 @@ class DirectOrtEngine(private val context: Context) {
         kokoroSession = null
         piperSession = null
         ortEnv = null
-        */
         isKokoroReady = false
         isPiperReady = false
         voicesData = null

@@ -15,6 +15,13 @@
 -keep class com.echolibrium.kyokan.AppRule { *; }
 -keep class com.echolibrium.kyokan.GimmickConfig { *; }
 -keep class com.echolibrium.kyokan.MoodState { *; }
+-keep class com.echolibrium.kyokan.ExpressionCurve { *; }
+-keep class com.echolibrium.kyokan.ExpressionCurve$CurvePoint { *; }
+-keep class com.echolibrium.kyokan.ExpressionCurveSet { *; }
+-keep class com.echolibrium.kyokan.VoiceConfig { *; }
+-keep class com.echolibrium.kyokan.CommentaryPool { *; }
+-keep class com.echolibrium.kyokan.CommentaryCondition { *; }
+-keep class com.echolibrium.kyokan.PersonalitySensitivity { *; }
 
 # Keep Fragment classes (instantiated by FragmentManager via class name)
 -keep class com.echolibrium.kyokan.*Fragment { *; }

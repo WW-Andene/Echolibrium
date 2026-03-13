@@ -450,4 +450,37 @@ object AudioDsp {
         val n = (v / 100f).coerceIn(0f, 1f)
         return n * n
     }
+
+    // ── Public bridges for DspChain nodes ──────────────────────────────────────
+
+    fun applyBreathinessPublic(
+        pcm: FloatArray, sampleRate: Int, intensity: Int, landmarks: PhonicLandmarks?
+    ) {
+        val intensityScale = if (landmarks != null) {
+            lerp(0.6f, 1.2f, (landmarks.dynamicRange - 1f) / 5f)
+        } else 1.0f
+        applyBreathiness(pcm, sampleRate, intensity, landmarks, intensityScale)
+    }
+
+    fun applySpectralTiltPublic(pcm: FloatArray, sampleRate: Int, breathiness: Float) {
+        applySpectralTilt(pcm, sampleRate, breathiness)
+    }
+
+    fun applyJitterPublic(
+        pcm: FloatArray, sampleRate: Int, jitterAmount: Float, landmarks: PhonicLandmarks?
+    ) {
+        applyJitter(pcm, sampleRate, jitterAmount, landmarks)
+    }
+
+    fun applyVocalFryPublic(pcm: FloatArray, sampleRate: Int, landmarks: PhonicLandmarks?) {
+        applyVocalFry(pcm, sampleRate, landmarks)
+    }
+
+    fun applyTrailingOffPublic(pcm: FloatArray) {
+        applyTrailingOff(pcm, null)
+    }
+
+    fun applySoftLimiterPublic(pcm: FloatArray) {
+        applySoftLimiter(pcm)
+    }
 }

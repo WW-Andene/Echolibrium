@@ -55,6 +55,9 @@ object AudioPipeline {
     private var yatagamiSynthesizer: YatagamiSynthesizer? = null
     private var kokoroTokenizer: PhonemeTokenizer? = null
 
+    // ── Modular DSP pipeline (Section 6.2) ────────────────────────────────
+    private val dspChain: DspChain = DspChain.default()
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     fun start(ctx: Context) {
@@ -184,8 +187,14 @@ object AudioPipeline {
             null
         }
 
-        // ── Step 5: Apply DSP ─────────────────────────────────────────────
-        val dspPcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated, landmarks)
+        // ── Step 5: Apply DSP via modular DspChain ────────────────────────
+        val utteranceCtx = UtteranceContext(
+            modulated = item.modulated,
+            signal = item.signal,
+            landmarks = landmarks,
+            sampleRate = sampleRate
+        )
+        val dspPcm = dspChain.process(rawPcm, utteranceCtx)
 
         // ── Step 6: Pitch shift (resampling-based, preserves duration) ───
         val pcm = AudioDsp.pitchShift(dspPcm, item.modulated.pitch)

@@ -87,6 +87,30 @@
         </LinearLayout>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// TALK" style="@style/SectionLabel" android:layout_marginTop="20dp"/>
+        <EditText android:id="@+id/txt_user_talk"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:background="#111111" android:textColor="#cccccc"
+            android:fontFamily="monospace" android:textSize="13sp"
+            android:padding="12dp" android:layout_marginBottom="6dp"
+            android:hint="Type something to speak…"
+            android:textColorHint="#555555"
+            android:inputType="textMultiLine" android:minLines="2"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="20dp">
+            <Button android:id="@+id/btn_speak"
+                android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="▶ SPEAK"
+                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+                android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
+            <Button android:id="@+id/btn_stop_speak"
+                android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="■ STOP"
+                android:backgroundTint="#2a1a1a" android:textColor="#ff6666"
+                android:fontFamily="monospace"/>
+        </LinearLayout>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// BACKGROUND" style="@style/SectionLabel" android:layout_marginTop="20dp"/>
         <Button android:id="@+id/btn_battery" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="⚡ Disable Battery Optimization"

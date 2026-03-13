@@ -76,6 +76,25 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
 
+        // User Talk
+        val txtUserTalk = v.findViewById<EditText>(R.id.txt_user_talk)
+        val btnSpeak = v.findViewById<Button>(R.id.btn_speak)
+        val btnStopSpeak = v.findViewById<Button>(R.id.btn_stop_speak)
+
+        btnSpeak.setOnClickListener {
+            val text = txtUserTalk.text.toString().ifBlank { return@setOnClickListener }
+            val profiles = VoiceProfile.loadAll(prefs)
+            val activeId = prefs.getString("active_profile_id", "") ?: ""
+            val profile = profiles.find { it.id == activeId } ?: profiles.firstOrNull() ?: VoiceProfile()
+            val rules = loadWordingRules()
+            NotificationReaderService.instance?.testSpeak(text, profile, rules)
+                ?: Toast.makeText(context, "Service not running — grant permission first.", Toast.LENGTH_SHORT).show()
+        }
+
+        btnStopSpeak.setOnClickListener {
+            NotificationReaderService.instance?.stopSpeaking()
+        }
+
         // Battery optimization bypass
         val btnBattery = v.findViewById<Button>(R.id.btn_battery)
         val txtBatteryStatus = v.findViewById<TextView>(R.id.txt_battery_status)
@@ -142,6 +161,14 @@ class HomeFragment : Fragment() {
         } else {
             txt.text = "On Android 13+, sideloaded apps need restricted settings allowed"
         }
+    }
+
+    private fun loadWordingRules(): List<Pair<String, String>> {
+        val json = prefs.getString("wording_rules", null) ?: return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { val o = arr.getJSONObject(it); Pair(o.optString("find"), o.optString("replace")) }
+        } catch (e: Exception) { emptyList() }
     }
 
     private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {

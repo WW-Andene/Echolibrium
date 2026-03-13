@@ -31,7 +31,7 @@ This is the most important thing to understand. The app runs in **two separate O
 │  AppsFragment / RulesFragment   │    │  AudioPipeline                         │
 │  ReaderApplication              │    │  VoiceCommandListener                  │
 │    └─ TTS process watchdog      │    │  AudioDsp                              │
-│  OemProtection                  │    │                                        │
+│  OemProtection                  │    │  PhonicAnalyzer                        │
 │  GitHubReporter                 │    │                                        │
 │                                 │    │                                        │
 │  Reads tts_status.json ◄────────┼────┼── Writes tts_status.json               │
@@ -57,24 +57,24 @@ All source is in `app/src/main/java/com/kokoro/reader/`.
 | File | Role |
 |---|---|
 | `SherpaEngine.kt` | **Heart of the app.** Manages Kokoro (311MB), Piper (~60MB), and Android system TTS fallback. Crash recovery, device profiling, config memory, SIGSEGV-surviving format fallback, `ApplicationExitInfo`-based crash classification. ~2000 lines. |
-| `AudioPipeline.kt` | Single-threaded FIFO queue. Receives notification items, calls SherpaEngine for synthesis, applies DSP, plays via AudioTrack. Chunked synthesis for long texts. |
-| `AudioDsp.kt` | PCM audio effects (gain, speed adjustment) applied after synthesis. |
-| `NotificationReaderService.kt` | `NotificationListenerService` — captures notifications, filters (DnD, per-app rules, dedup), extracts signals, modulates voice, enqueues to AudioPipeline. Conversation grouping (1.5s buffer). |
+| `AudioPipeline.kt` | Single-threaded FIFO queue. Receives notification items, calls SherpaEngine for synthesis, applies DSP + pitch shift, plays via AudioTrack. Inter-clip crossfade (40ms) for smooth transitions between utterances. |
+| `AudioDsp.kt` | PCM audio effects chain: volume → soft saturation → formant smoothing → breathiness → spectral tilt → jitter → vocal fry → trailing off → soft limiter. Also handles resampling-based pitch shifting with OLA time-stretch. 30ms dry→wet ramp-in prevents abrupt effect onset. |
+| `PhonicAnalyzer.kt` | Analyzes synthesized PCM for context-aware DSP: voiced regions, phrase endings, energy contour, dynamic range, speech boundaries. |
+| `NotificationReaderService.kt` | `NotificationListenerService` — captures notifications, filters (DnD, per-app rules, dedup), extracts signals, modulates voice, enqueues to AudioPipeline. Conversation grouping (1.5s buffer). Also provides `testSpeak()` for the UI talk feature. |
 | `TtsCommandReceiver.kt` | `BroadcastReceiver` — receives commands from UI process and dispatches to SherpaEngine/AudioPipeline/VoiceCommandListener. |
 
 ### Voice & Personality System
 
 | File | Role |
 |---|---|
-| `SignalExtractor.kt` | Pattern-matching engine — detects urgency, emotion, stakes from notification text. No LLM. |
-| `SignalMap.kt` | Data class holding extracted signal strengths (urgency, distress, emotional, fake, raw). |
-| `VoiceModulator.kt` | Maps signal strengths → voice parameter adjustments (pitch, speed, breathiness, stutter, intonation). |
-| `VoiceTransform.kt` | Text preprocessing pipeline: wording rules → commentary → gimmicks → intonation → stutter → breathiness. |
-| `VoiceProfile.kt` | User-configurable voice personality (base pitch, speed, effects intensities). |
+| `SignalExtractor.kt` | Pattern-matching engine — detects urgency, emotion, stakes, sarcasm, emotion blends from notification text. Computes flood tier from daily notification count. No LLM. |
+| `SignalMap.kt` | Data class holding extracted signal strengths. Includes enums: `EmotionBlend` (NERVOUS_EXCITEMENT, SUPPRESSED_TENSION, etc.), `FloodTier` (CALM→OVERWHELMED), and all signal types (urgency, warmth, stakes, trajectory, register). |
+| `VoiceModulator.kt` | Maps signal strengths × personality sensitivity → voice parameter adjustments. Features: time-of-day baseline shifts, flood tier modifiers, emotion blend overrides, sarcasm flattening, modulation budget cap, NaN guard. |
+| `VoiceTransform.kt` | Text preprocessing pipeline: wording rules → commentary → gimmicks → intonation → stutter → breathiness. Uses quadratic `smooth()` curves for gradual slider response. |
+| `VoiceProfile.kt` | User-configurable voice personality. Includes `PersonalitySensitivity` (per-profile signal reaction multipliers: distress, warmth, fake, mood velocity/decay, range/speed reactivity). JSON serialization for persistence. |
 | `CommentaryPool.kt` | Bank of pre/post commentary lines injected based on notification signals. |
 | `MoodState.kt` | Persistent emotional state that evolves based on notification stream. |
 | `KokoroVoice.kt` | Kokoro voice ID mapping (speaker IDs for the multi-speaker model). |
-| `PhonicAnalyzer.kt` | Analyzes phonetic properties of text for stutter/breathiness placement. |
 
 ### Voice Management
 
@@ -96,8 +96,8 @@ All source is in `app/src/main/java/com/kokoro/reader/`.
 | File | Role |
 |---|---|
 | `MainActivity.kt` | Single-activity host with bottom navigation (Home, Voices, Apps). |
-| `HomeFragment.kt` | Permission setup, service status, engine status display with polling. |
-| `ProfilesFragment.kt` | Voice profile editor — sliders for pitch, speed, effects. Test playback. |
+| `HomeFragment.kt` | Permission setup, service status, master switch, read mode, DnD schedule, user talk (type & speak), battery/restricted settings. |
+| `ProfilesFragment.kt` | Voice profile editor — sliders for pitch, speed, effects. Test playback. Commentary and gimmick configuration. |
 | `AppsFragment.kt` | Per-app notification rules list. |
 | `RulesFragment.kt` | Rule editor for individual apps. |
 | `CrashReportActivity.kt` | Displays crash details when the app recovers from a crash. |
@@ -112,6 +112,134 @@ All source is in `app/src/main/java/com/kokoro/reader/`.
 | `GitHubReporter.kt` | Automatic error reporting — after 30s with TTS error, creates GitHub Issue with full diagnostics. Rate-limited (1/hour). Also fetches remote config (force_retry, messages, min_version) every 6h. |
 | `AppRule.kt` | Data class for per-app notification rules (block, priority, custom voice). |
 | `BootReceiver.kt` | Starts the service on device boot. |
+
+---
+
+## Audio DSP Pipeline
+
+The `AudioDsp` object applies effects to raw PCM from SherpaEngine. Effects are ordered to minimize artifacts:
+
+```
+Raw PCM from TTS
+    ↓
+1. Volume/gain — applies ModulatedVoice.volume
+    ↓
+2. Soft saturation — tanh(x * 1.05), very gentle, smooths peaks
+    ↓
+3. Formant smoothing — envelope-following blend (0.85 + 0.15 * ratio)
+    ↓
+4. Breathiness — filtered noise layer, intensity via quadratic curve
+    ↓
+5. Spectral tilt — low-pass filter proportional to breathiness (floor 3000Hz)
+    ↓
+6. Jitter — micro-amplitude variation, crossfaded 12ms windows (25% fade)
+    ↓
+7. Vocal fry — phrase-end amplitude modulation (uses PhonicLandmarks)
+    ↓
+8. Trailing off — gradual fade on collapsed trajectory
+    ↓
+9. Effect ramp-in — 30ms dry→wet crossfade at clip start
+    ↓
+10. Soft limiter — tanh-based above 0.9 threshold, prevents hard clipping
+    ↓
+Pitch shift — resampling + OLA time-stretch (25ms Hann windows, 50% overlap)
+    ↓
+Inter-clip crossfade — 40ms crossfade with previous clip's tail (AudioPipeline)
+    ↓
+AudioTrack playback at native sample rate
+```
+
+### Pitch Shifting
+
+Pitch is shifted via resampling (linear interpolation), which changes both pitch and duration. Duration is then restored via overlap-add (OLA) time-stretching with 25ms Hann-windowed segments at 50% overlap. This replaces the old `AudioTrack.playbackRate` approach which shifted pitch AND speed together.
+
+### Anti-Artifact Measures
+
+- **No hard clipping** — all `coerceIn(-1, 1)` replaced with tanh soft limiter
+- **Crossfaded jitter windows** — 25% fade at window edges prevents clicks
+- **Effect ramp-in** — 30ms dry→wet crossfade at clip start prevents abrupt onset
+- **Inter-clip crossfade** — 40ms crossfade between consecutive playbacks
+- **Quadratic intensity curves** — `smoothCurve(v)` maps 0-100 through x² for gradual response
+
+---
+
+## Voice Modulation System
+
+### Signal Flow
+
+```
+Notification text
+    ↓
+SignalExtractor.extract() → SignalMap
+    ├─ sourceType, senderType, warmth, register
+    ├─ stakesLevel/Type, urgencyType, intensityLevel
+    ├─ trajectory, unknownFactor, emojiSad
+    ├─ emotionBlend (detected from signal combinations)
+    ├─ detectedSarcasm (pattern-based: starters + complaint words)
+    ├─ floodTier (from daily notification count)
+    └─ senderPressure, senderRepeat, senderRecency
+    ↓
+VoiceModulator.modulate(profile, signal) → ModulatedVoice
+    ├─ Signal strengths × PersonalitySensitivity multipliers
+    ├─ Time-of-day baseline (pitch/speed/breath/intonation shifts by hour)
+    ├─ Flood tier effects (speed up, more breath, flatten intonation)
+    ├─ Emotion blend overrides (e.g., nervous excitement → pitch+speed up)
+    ├─ Sarcasm → flatten intonation by 30%
+    ├─ Modulation budget cap (max ±0.25 pitch, ±0.35 speed delta)
+    └─ Volume adjustment (urgency up, distress/night/overwhelmed down)
+    ↓
+ModulatedVoice (pitch, speed, breath, stutter, intonation, jitter, volume, trailOff)
+```
+
+### PersonalitySensitivity
+
+Each VoiceProfile has a `PersonalitySensitivity` that scales how strongly it reacts to signals:
+
+| Field | Default | Effect |
+|---|---|---|
+| `distressSensitivity` | 1.0 | Multiplier for distress/urgency signal strength |
+| `warmthSensitivity` | 1.0 | Multiplier for emotional stakes signal strength |
+| `fakeSensitivity` | 1.0 | Multiplier for fake/game stakes signal strength |
+| `moodVelocity` | 1.0 | How fast mood shifts (for MoodState) |
+| `moodDecayRate` | 1.0 | How fast mood returns to baseline |
+| `rangeReactivity` | 1.0 | Multiplier for intonation variation |
+| `speedReactivity` | 1.0 | Multiplier for speed changes |
+
+### EmotionBlend
+
+Complex mixed states detected from signal combinations:
+
+| Blend | Pitch | Speed | Breath | Intonation |
+|---|---|---|---|---|
+| NERVOUS_EXCITEMENT | +0.06 | +0.08 | −3 | +10 |
+| SUPPRESSED_TENSION | +0.03 | −0.04 | — | −8 |
+| NOSTALGIC_WARMTH | −0.04 | −0.06 | +5 | +5 |
+| RESIGNED_ACCEPTANCE | −0.02 | −0.08 | — | −12 |
+| WORRIED_AFFECTION | +0.02 | −0.02 | +3 | +3 |
+
+### FloodTier
+
+Based on daily notification count:
+
+| Tier | Count | Speed | Breath | Intonation |
+|---|---|---|---|---|
+| CALM | <20 | — | — | ×1.0 |
+| ACTIVE | <50 | — | — | ×1.0 |
+| BUSY | <100 | — | — | ×1.0 |
+| FLOODED | <200 | +0.08 | +5 | ×0.85 |
+| OVERWHELMED | 200+ | +0.05 | +10 | ×0.70 |
+
+### Time-of-Day Modifiers
+
+| Period | Pitch | Speed | Breath | Intonation |
+|---|---|---|---|---|
+| 0–4 (night) | −0.10 | −0.18 | +12 | −0.20 |
+| 5–7 (early) | −0.05 | −0.08 | +3 | −0.10 |
+| 8–11 (morning) | — | — | — | — |
+| 12–14 (afternoon) | −0.02 | +0.03 | +1 | +0.05 |
+| 15–18 (late afternoon) | — | +0.05 | — | +0.08 |
+| 19–21 (evening) | −0.04 | −0.05 | +4 | −0.05 |
+| 22–23 (late night) | −0.08 | −0.12 | +8 | −0.15 |
 
 ---
 
@@ -232,21 +360,28 @@ Dependencies:
         ↓
 4. Conversation grouping: buffer 1.5s, merge rapid messages from same sender
         ↓
-5. SignalExtractor.extract(text) → SignalMap (urgency, emotion, stakes)
+5. SignalExtractor.extract(text) → SignalMap
+   (urgency, emotion, stakes, sarcasm, emotion blend, flood tier)
         ↓
-6. VoiceModulator.modulate(profile, signals) → ModulatedVoice (pitch, speed, etc.)
+6. VoiceModulator.modulate(profile, signals) → ModulatedVoice
+   (pitch, speed, breath, stutter, intonation, jitter, volume, trailOff)
         ↓
-7. AudioPipeline.enqueue(Item(text, modulatedVoice))
+7. AudioPipeline.enqueue(Item(text, profile, modulatedVoice, signal, rules))
         ↓
-8. Pipeline thread dequeues, applies VoiceTransform (commentary, gimmicks, stutter)
+8. Pipeline thread dequeues, applies VoiceTransform
+   (commentary, gimmicks, intonation marks, stutter, breathiness markers)
         ↓
-9. Text chunking: split at sentence boundaries for streaming synthesis
+9. SherpaEngine.synthesize(text, speed) → FloatArray PCM + sampleRate
         ↓
-10. SherpaEngine.synthesizeWithFallback(chunk) → FloatArray PCM
+10. PhonicAnalyzer.analyze(pcm) → PhonicLandmarks
         ↓
-11. AudioDsp.process(samples) → gain, speed adjustment
+11. AudioDsp.apply(pcm, modulated, landmarks) → DSP effects chain
         ↓
-12. AudioTrack.write(samples) → speaker output
+12. AudioDsp.pitchShift(pcm, pitch) → resampling + OLA time-stretch
+        ↓
+13. AudioPipeline.applyCrossfade() → inter-clip smoothing
+        ↓
+14. AudioTrack.write(samples) → speaker output
 ```
 
 ---
@@ -257,7 +392,7 @@ Dependencies:
 |---|---|---|
 | `sherpa_init_tracker` | :tts | Crash counter, init_in_progress flag, last crash time, KEY_INIT_FORMAT, KEY_SKIP_ORT |
 | `sherpa_config_memory` | :tts | Last known-good engine config (threads, provider, debug, version) |
-| Default prefs | main | Voice profiles, per-app rules, UI settings, OEM protection prompt flag, GitHub reporter rate limits |
+| Default prefs | main | Voice profiles (with PersonalitySensitivity), per-app rules, UI settings, active_profile_id, wording_rules, OEM protection prompt flag, GitHub reporter rate limits |
 
 ---
 
@@ -284,3 +419,9 @@ Dependencies:
 10. **All OEMs kill background processes, not just Xiaomi.** `OemProtection.kt` handles AutoStart intents for Samsung, Huawei, OnePlus, Oppo, Vivo, and many more. `HomeFragment.promptOemProtections()` runs on all devices.
 
 11. **`GitHubReporter` needs a token.** Set `github.issues.token=ghp_xxx` in `local.properties` for auto-reporting. Without it, the reporter is silently disabled. Remote config is fetched from `remote-config.json` in the repo root.
+
+12. **DSP effects compound.** Each effect in the chain adds amplitude. The soft limiter at the end prevents clipping, but excessive parameters can still cause audible distortion. The modulation budget cap (±0.25 pitch, ±0.35 speed) prevents runaway compounding from VoiceModulator. AudioDsp uses quadratic intensity curves (`smoothCurve`) so low slider values produce subtle effects.
+
+13. **Pitch shifting is separate from speed.** Pitch uses resampling + OLA time-stretch in `AudioDsp.pitchShift()`. Speed is set via the TTS engine's `speed` parameter during synthesis. They are independent — changing one does not affect the other.
+
+14. **NaN guards are critical.** Float arithmetic in VoiceModulator can produce NaN from division-by-zero or infinite signal chains. All float outputs are guarded with `Float.guardNaN(default)` before being passed to DSP. Without this, a single NaN corrupts the entire PCM buffer.

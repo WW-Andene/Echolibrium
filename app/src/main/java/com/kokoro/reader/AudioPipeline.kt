@@ -35,7 +35,8 @@ object AudioPipeline {
         val modulated: ModulatedVoice,
         val signal: SignalMap,
         val rules: List<Pair<String, String>>,
-        val priority: Boolean = false   // true = interrupt and jump queue (phone calls)
+        val priority: Boolean = false,  // true = interrupt and jump queue (phone calls)
+        val translated: Boolean = false // true = text was machine-translated, skip text effects
     )
 
     private val queue = LinkedBlockingQueue<Item>()
@@ -100,13 +101,20 @@ object AudioPipeline {
 
     private fun processItem(ctx: Context, item: Item) {
         // ── Step 1: Transform text ─────────────────────────────────────────
-        val processed = VoiceTransform.process(
-            text      = item.rawText,
-            profile   = item.profile,
-            modulated = item.modulated,
-            signal    = item.signal,
-            rules     = item.rules
-        )
+        // When text was machine-translated, only apply wording rules (clean substitutions).
+        // Skip gimmicks, breathiness, stutter, intonation — they insert garbage characters
+        // (like "h", "Ha") into the translated text that TTS reads as literal sounds.
+        val processed = if (item.translated) {
+            VoiceTransform.applyWordingRules(item.rawText, item.rules)
+        } else {
+            VoiceTransform.process(
+                text      = item.rawText,
+                profile   = item.profile,
+                modulated = item.modulated,
+                signal    = item.signal,
+                rules     = item.rules
+            )
+        }
         if (processed.isBlank()) return
 
         // ── Step 2+3: Route to correct engine and synthesize ────────────

@@ -133,13 +133,18 @@ class NotificationReaderService : NotificationListenerService() {
                 else -> prefs.getBoolean("translate_en_enabled", false)
             }
             var effectiveLang = detectedLang
+            var wasTranslated = false
             if (translateEnabled) {
                 val targetLang = when (detectedLang) {
                     "fr" -> prefs.getString("translate_fr_lang", "") ?: ""
                     else -> prefs.getString("translate_en_lang", "") ?: ""
                 }
                 if (targetLang.isNotBlank() && targetLang != detectedLang) {
-                    rawText = NotificationTranslator.translate(rawText, detectedLang, targetLang)
+                    val translated = NotificationTranslator.translate(rawText, detectedLang, targetLang)
+                    if (translated != rawText) {
+                        rawText = translated
+                        wasTranslated = true
+                    }
                     effectiveLang = targetLang
                 }
             }
@@ -164,12 +169,13 @@ class NotificationReaderService : NotificationListenerService() {
             val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
 
             AudioPipeline.enqueue(AudioPipeline.Item(
-                rawText   = rawText,
-                profile   = profile,
-                modulated = modulated,
-                signal    = signal,
-                rules     = loadWordingRules(),
-                priority  = signal.urgencyType == UrgencyType.EXPIRING
+                rawText    = rawText,
+                profile    = profile,
+                modulated  = modulated,
+                signal     = signal,
+                rules      = loadWordingRules(),
+                priority   = signal.urgencyType == UrgencyType.EXPIRING,
+                translated = wasTranslated
             ), maxQueue)
         }
     }
@@ -250,23 +256,31 @@ class NotificationReaderService : NotificationListenerService() {
      */
     private fun detectLanguage(text: String): String {
         val lower = text.lowercase()
-        // Count French accent characters
+        // Count French accent characters — strong signal, but need enough of them
         val frenchAccents = lower.count { it in "éèêëàâùûôîïç" }
-        if (frenchAccents >= 2) return "fr"
+        if (frenchAccents >= 3) return "fr"
 
-        // Check for common French words (bounded by word boundaries)
-        val frenchWords = listOf(
-            "\\ble\\b", "\\bla\\b", "\\bles\\b", "\\bun\\b", "\\bune\\b", "\\bdes\\b",
-            "\\bdu\\b", "\\bau\\b", "\\baux\\b", "\\bde\\b",
-            "\\best\\b", "\\bsont\\b", "\\bpas\\b", "\\bque\\b", "\\bqui\\b",
-            "\\bje\\b", "\\btu\\b", "\\bil\\b", "\\bnous\\b", "\\bvous\\b", "\\bils\\b",
-            "\\bpour\\b", "\\bavec\\b", "\\bdans\\b", "\\bsur\\b",
+        // French contractions are very strong signals (don't exist in English)
+        val strongFrench = listOf("\\bc'est\\b", "\\bj'ai\\b", "\\bn'est\\b", "\\bqu'\\b",
+            "\\bl'\\w", "\\bd'\\w", "\\bs'\\w", "\\bn'\\w")
+        val strongHits = strongFrench.count { Regex(it).containsMatchIn(lower) }
+        if (strongHits >= 1) return "fr"
+
+        // French-only words that DON'T appear in English
+        // Excluded: "le", "la", "un", "il", "est", "sur", "du" — too common in English
+        val frenchOnlyWords = listOf(
+            "\\bune\\b", "\\bles\\b", "\\bdes\\b", "\\baux\\b",
+            "\\bsont\\b", "\\bpas\\b", "\\bque\\b", "\\bqui\\b",
+            "\\bje\\b", "\\btu\\b", "\\bnous\\b", "\\bvous\\b", "\\bils\\b",
+            "\\bpour\\b", "\\bavec\\b", "\\bdans\\b",
             "\\bbonjour\\b", "\\bmerci\\b", "\\bsalut\\b", "\\bbonsoir\\b",
             "\\bcomment\\b", "\\bpourquoi\\b", "\\bquand\\b",
-            "\\bc'est\\b", "\\bj'ai\\b", "\\bn'est\\b", "\\bqu'\\b"
+            "\\bactivé\\b", "\\bdésactivé\\b", "\\bêtes\\b"
         )
-        val frenchHits = frenchWords.count { Regex(it).containsMatchIn(lower) }
-        if (frenchHits >= 3) return "fr"
+        val frenchHits = frenchOnlyWords.count { Regex(it).containsMatchIn(lower) }
+        // Need at least 2 French-only words + 1 accent, or 4+ French-only words
+        if (frenchHits >= 4) return "fr"
+        if (frenchHits >= 2 && frenchAccents >= 1) return "fr"
 
         return "en"
     }

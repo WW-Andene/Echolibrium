@@ -102,6 +102,11 @@ class RulesFragment : Fragment() {
 
         setupLangProfileSpinner(v, R.id.spinner_lang_en, "lang_profile_en")
         setupLangProfileSpinner(v, R.id.spinner_lang_fr, "lang_profile_fr")
+
+        setupTranslateRoute(v, R.id.switch_translate_en, R.id.spinner_translate_en,
+            R.id.txt_translate_en_status, "translate_en_enabled", "translate_en_lang", "en")
+        setupTranslateRoute(v, R.id.switch_translate_fr, R.id.spinner_translate_fr,
+            R.id.txt_translate_fr_status, "translate_fr_enabled", "translate_fr_lang", "fr")
     }
 
     private fun toggleSection(label: TextView, section: LinearLayout, name: String) {
@@ -173,7 +178,9 @@ class RulesFragment : Fragment() {
     private fun setupLangProfileSpinner(v: View, spinnerId: Int, prefKey: String) {
         val spinner = v.findViewById<Spinner>(spinnerId)
         val profiles = VoiceProfile.loadAll(prefs)
-        val names = listOf("(Default / Active profile)") + profiles.map { "${it.emoji} ${it.name}" }
+        val activeId = prefs.getString("active_profile_id", "") ?: ""
+        val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: "Active profile"
+        val names = listOf("($activeName)") + profiles.map { "${it.emoji} ${it.name}" }
         val ids = listOf("") + profiles.map { it.id }
 
         spinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, names)
@@ -186,6 +193,62 @@ class RulesFragment : Fragment() {
                 prefs.edit().putString(prefKey, ids[position]).apply()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private val translateCodes = NotificationTranslator.LANGUAGES.keys.toList().filter { it.isNotEmpty() }
+    private val translateNames = NotificationTranslator.LANGUAGES.values.toList().filter { it != "Off (no translation)" }
+
+    private fun setupTranslateRoute(v: View, switchId: Int, spinnerId: Int, statusId: Int,
+                                     enabledKey: String, langKey: String, sourceLang: String) {
+        val switch = v.findViewById<SwitchCompat>(switchId)
+        val spinner = v.findViewById<Spinner>(spinnerId)
+        val status = v.findViewById<TextView>(statusId)
+
+        val enabled = prefs.getBoolean(enabledKey, false)
+        switch.isChecked = enabled
+        spinner.visibility = if (enabled) View.VISIBLE else View.GONE
+
+        spinner.adapter = ArrayAdapter(requireContext(),
+            android.R.layout.simple_spinner_dropdown_item, translateNames)
+        val savedLang = prefs.getString(langKey, "") ?: ""
+        val idx = translateCodes.indexOf(savedLang).coerceAtLeast(0)
+        spinner.setSelection(idx)
+        updateTranslateStatus(status, enabled, savedLang, sourceLang)
+
+        switch.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(enabledKey, checked).apply()
+            spinner.visibility = if (checked) View.VISIBLE else View.GONE
+            val lang = translateCodes[spinner.selectedItemPosition]
+            updateTranslateStatus(status, checked, lang, sourceLang)
+        }
+
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                val lang = translateCodes[pos]
+                prefs.edit().putString(langKey, lang).apply()
+                if (switch.isChecked && lang != sourceLang) {
+                    status.text = "Downloading model…"
+                    NotificationTranslator.ensureModel(sourceLang, lang) { ok ->
+                        status.post {
+                            updateTranslateStatus(status, true, lang, sourceLang)
+                            if (!ok) status.text = "✗ Download failed — needs internet once"
+                        }
+                    }
+                } else {
+                    updateTranslateStatus(status, switch.isChecked, lang, sourceLang)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+    }
+
+    private fun updateTranslateStatus(tv: TextView, enabled: Boolean, targetLang: String, sourceLang: String) {
+        tv.text = when {
+            !enabled -> ""
+            targetLang == sourceLang -> "Same language — no translation needed"
+            targetLang.isNotBlank() -> "Will translate $sourceLang → $targetLang before speaking"
+            else -> "Select target language"
         }
     }
 

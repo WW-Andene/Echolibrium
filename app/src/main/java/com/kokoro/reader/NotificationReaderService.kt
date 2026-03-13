@@ -121,14 +121,19 @@ class NotificationReaderService : NotificationListenerService() {
         var rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
 
-        // Translate: check selected profile first, then active profile as fallback
-        val translateLang = profile.translateTo.ifBlank {
-            profiles.find { it.id == activeId }?.translateTo ?: ""
+        // Translate based on per-route settings in Rules tab
+        val detectedLang = detectLanguage("$title $text")
+        val translateEnabled = when (detectedLang) {
+            "fr" -> prefs.getBoolean("translate_fr_enabled", false)
+            else -> prefs.getBoolean("translate_en_enabled", false)
         }
-        if (translateLang.isNotBlank()) {
-            val detectedLang = detectLanguage("$title $text")
-            if (detectedLang != translateLang) {
-                rawText = NotificationTranslator.translate(rawText, detectedLang, translateLang)
+        if (translateEnabled) {
+            val targetLang = when (detectedLang) {
+                "fr" -> prefs.getString("translate_fr_lang", "") ?: ""
+                else -> prefs.getString("translate_en_lang", "") ?: ""
+            }
+            if (targetLang.isNotBlank() && targetLang != detectedLang) {
+                rawText = NotificationTranslator.translate(rawText, detectedLang, targetLang)
             }
         }
 

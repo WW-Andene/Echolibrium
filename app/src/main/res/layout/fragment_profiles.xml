@@ -30,24 +30,6 @@
                 android:backgroundTint="#2a1a1a" android:textColor="#ff4444" android:fontFamily="monospace"/>
         </LinearLayout>
 
-        <!-- Translation -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// TRANSLATION" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp"
-            android:layout_marginBottom="16dp">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Translate notifications to:"
-                android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"
-                android:layout_marginBottom="8dp"/>
-            <Spinner android:id="@+id/spinner_translate" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:background="#1a1a1a"
-                android:padding="8dp" android:layout_marginBottom="4dp"/>
-            <TextView android:id="@+id/txt_translate_status" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="11sp"
-                android:textColor="#555555" android:fontFamily="monospace"/>
-        </LinearLayout>
-
         <!-- Personality presets -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// PERSONALITY PRESETS" style="@style/SectionLabel"/>

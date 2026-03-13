@@ -120,23 +120,52 @@
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
-            <!-- English profile -->
+            <!-- English route -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="🇺🇸🇬🇧  English → Profile:"
+                android:text="🇺🇸🇬🇧  English notifications → Voice:"
                 android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
                 android:layout_marginBottom="4dp"/>
             <Spinner android:id="@+id/spinner_lang_en" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:background="#1a1a1a"
-                android:padding="8dp" android:layout_marginBottom="12dp"/>
+                android:padding="8dp" android:layout_marginBottom="6dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Translate English notifications"
+                    android:textColor="#cccccc" android:textSize="12sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_translate_en"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+            <Spinner android:id="@+id/spinner_translate_en" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp" android:layout_marginBottom="4dp" android:visibility="gone"/>
+            <TextView android:id="@+id/txt_translate_en_status" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textSize="10sp"
+                android:textColor="#555555" android:fontFamily="monospace"
+                android:layout_marginBottom="16dp"/>
 
-            <!-- French profile -->
+            <!-- French route -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="🇫🇷  French → Profile:"
+                android:text="🇫🇷  French notifications → Voice:"
                 android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
                 android:layout_marginBottom="4dp"/>
             <Spinner android:id="@+id/spinner_lang_fr" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:background="#1a1a1a"
-                android:padding="8dp"/>
+                android:padding="8dp" android:layout_marginBottom="6dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Translate French notifications"
+                    android:textColor="#cccccc" android:textSize="12sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_translate_fr"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+            <Spinner android:id="@+id/spinner_translate_fr" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp" android:layout_marginBottom="4dp" android:visibility="gone"/>
+            <TextView android:id="@+id/txt_translate_fr_status" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textSize="10sp"
+                android:textColor="#555555" android:fontFamily="monospace"/>
         </LinearLayout>
 
     </LinearLayout>

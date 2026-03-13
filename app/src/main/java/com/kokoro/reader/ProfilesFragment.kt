@@ -38,8 +38,6 @@ class ProfilesFragment : Fragment() {
     private lateinit var gimmicksContainer: LinearLayout
     private lateinit var genderRow: LinearLayout
     private lateinit var nationRow: LinearLayout
-    private lateinit var spinnerTranslate: Spinner
-    private lateinit var txtTranslateStatus: TextView
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_profiles, c, false)
@@ -57,7 +55,6 @@ class ProfilesFragment : Fragment() {
         renderVoiceGrid()
         setupButtons()
         buildGimmicksEditor()
-        setupTranslationSpinner()
         loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
     }
 
@@ -93,8 +90,6 @@ class ProfilesFragment : Fragment() {
         gimmicksContainer = v.findViewById(R.id.gimmicks_container)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
-        spinnerTranslate = v.findViewById(R.id.spinner_translate)
-        txtTranslateStatus = v.findViewById(R.id.txt_translate_status)
         seekPitch       = v.findViewById(R.id.seek_pitch);         tvPitch       = v.findViewById(R.id.tv_pitch)
         seekSpeed       = v.findViewById(R.id.seek_speed);         tvSpeed       = v.findViewById(R.id.tv_speed)
         seekBreathInt   = v.findViewById(R.id.seek_breath_int);    tvBreathInt   = v.findViewById(R.id.tv_breath_int)
@@ -817,32 +812,6 @@ class ProfilesFragment : Fragment() {
         }
     }
 
-    private val translateCodes = NotificationTranslator.LANGUAGES.keys.toList()
-    private val translateNames = NotificationTranslator.LANGUAGES.values.toList()
-
-    private fun setupTranslationSpinner() {
-        spinnerTranslate.adapter = ArrayAdapter(requireContext(),
-            android.R.layout.simple_spinner_dropdown_item, translateNames)
-        spinnerTranslate.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val code = translateCodes[pos]
-                currentProfile = currentProfile.copy(translateTo = code)
-                if (code.isNotBlank()) {
-                    txtTranslateStatus.text = "Downloading model…"
-                    NotificationTranslator.ensureModel("en", code) { ok ->
-                        txtTranslateStatus.post {
-                            txtTranslateStatus.text = if (ok) "✓ Model ready (works offline)"
-                                else "✗ Download failed — needs internet for first use"
-                        }
-                    }
-                } else {
-                    txtTranslateStatus.text = ""
-                }
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
-    }
-
     private fun setupButtons() {
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
@@ -930,11 +899,6 @@ class ProfilesFragment : Fragment() {
         attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: $it" }
         attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: $it%" }
 
-        // Translation spinner
-        val translateIdx = translateCodes.indexOf(p.translateTo).coerceAtLeast(0)
-        spinnerTranslate.setSelection(translateIdx)
-        txtTranslateStatus.text = if (p.translateTo.isNotBlank()) "Selected: ${translateNames[translateIdx]}" else ""
-
         buildCommentaryEditor()
         buildGimmicksEditor()
         renderVoiceGrid()
@@ -951,8 +915,7 @@ class ProfilesFragment : Fragment() {
         stutterFrequency    = seekStutterFreq.progress,
         stutterPause        = seekStutterPause.progress,
         intonationIntensity = seekIntonInt.progress,
-        intonationVariation = seekIntonVar.progress / 100f,
-        translateTo         = translateCodes[spinnerTranslate.selectedItemPosition]
+        intonationVariation = seekIntonVar.progress / 100f
     )
 
     private fun loadWordingRules(): List<Pair<String, String>> {

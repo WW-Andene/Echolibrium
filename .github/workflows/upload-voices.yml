@@ -56,7 +56,7 @@ jobs:
             "en_GB-cori-medium"
             "fr_FR-siwis-medium"
             "fr_FR-tom-medium"
-            "fr_FR-mls-medium"
+            "fr_FR-gilles-low"
             "fr_FR-upmc-medium"
           )
 

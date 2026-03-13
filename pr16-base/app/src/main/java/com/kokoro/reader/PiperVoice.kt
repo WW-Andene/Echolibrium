@@ -86,7 +86,7 @@ object PiperVoices {
     private val FR_FR = listOf(
         piper("siwis",  "Female", "French", "French", "fr_FR", "medium"),
         piper("tom",    "Male",   "French", "French", "fr_FR", "medium"),
-        piper("mls",    "Female", "French", "French", "fr_FR", "medium"),
+        piper("gilles", "Male",   "French", "French", "fr_FR", "low"),
         piper("upmc",   "Male",   "French", "French", "fr_FR", "medium"),
     )
 

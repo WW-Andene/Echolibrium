@@ -126,8 +126,8 @@ class NotificationReaderService : NotificationListenerService() {
             var rawText = buildMessage(appName, title, text, readMode)
             if (rawText.isBlank()) return@execute
 
-            // Detect language and determine translation target
-            val detectedLang = detectLanguage("$title $text")
+            // Detect language: prefer the app's actual locale, fall back to text heuristic
+            val detectedLang = getAppLanguage(pkgName) ?: detectLanguage("$title $text")
             val translateEnabled = when (detectedLang) {
                 "fr" -> prefs.getBoolean("translate_fr_enabled", false)
                 else -> prefs.getBoolean("translate_en_enabled", false)
@@ -251,8 +251,30 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     /**
-     * Simple language detection: returns "fr" if the text looks French, "en" otherwise.
-     * Uses French-specific accented characters and common French words.
+     * Get the language the notification-sending app is running in.
+     * Uses the app's resource configuration locale — this is set by Android based on
+     * the app's supported languages and the user's device language preferences.
+     *
+     * Returns "fr", "en", etc. or null if we can't determine it.
+     */
+    private fun getAppLanguage(packageName: String): String? {
+        return try {
+            val appCtx = createPackageContext(packageName, 0)
+            val locale = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                appCtx.resources.configuration.locales[0]
+            } else {
+                @Suppress("DEPRECATION")
+                appCtx.resources.configuration.locale
+            }
+            locale.language.take(2).lowercase().ifEmpty { null }
+        } catch (e: Exception) {
+            null  // fall back to text-based detection
+        }
+    }
+
+    /**
+     * Fallback language detection from text content.
+     * Only used when app locale can't be determined.
      */
     private fun detectLanguage(text: String): String {
         val lower = text.lowercase()

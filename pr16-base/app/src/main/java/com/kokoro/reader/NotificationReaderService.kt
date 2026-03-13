@@ -45,6 +45,7 @@ class NotificationReaderService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (!prefs.getBoolean("service_enabled", true)) return
+        if (!prefs.getBoolean("listening_enabled", true)) return
         if (sbn.packageName == packageName) return
         if (isDndActive()) return
 

@@ -76,23 +76,14 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
 
-        // User Talk
-        val txtUserTalk = v.findViewById<EditText>(R.id.txt_user_talk)
-        val btnSpeak = v.findViewById<Button>(R.id.btn_speak)
-        val btnStopSpeak = v.findViewById<Button>(R.id.btn_stop_speak)
-
-        btnSpeak.setOnClickListener {
-            val text = txtUserTalk.text.toString().ifBlank { return@setOnClickListener }
-            val profiles = VoiceProfile.loadAll(prefs)
-            val activeId = prefs.getString("active_profile_id", "") ?: ""
-            val profile = profiles.find { it.id == activeId } ?: profiles.firstOrNull() ?: VoiceProfile()
-            val rules = loadWordingRules()
-            NotificationReaderService.instance?.testSpeak(text, profile, rules)
-                ?: Toast.makeText(context, "Service not running — grant permission first.", Toast.LENGTH_SHORT).show()
-        }
-
-        btnStopSpeak.setOnClickListener {
-            NotificationReaderService.instance?.stopSpeaking()
+        // Listening toggle
+        val switchListening = v.findViewById<SwitchCompat>(R.id.switch_listening)
+        val listeningStatus = v.findViewById<TextView>(R.id.listening_status)
+        switchListening.isChecked = prefs.getBoolean("listening_enabled", true)
+        updateListeningStatus(listeningStatus)
+        switchListening.setOnCheckedChangeListener { _, enabled ->
+            prefs.edit().putBoolean("listening_enabled", enabled).apply()
+            updateListeningStatus(listeningStatus)
         }
 
         // Battery optimization bypass
@@ -127,6 +118,7 @@ class HomeFragment : Fragment() {
         super.onResume()
         view?.let {
             updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission))
+            updateListeningStatus(it.findViewById(R.id.listening_status))
             updateBatteryStatus(it.findViewById(R.id.btn_battery), it.findViewById(R.id.txt_battery_status))
             updateRestrictedStatus(it.findViewById(R.id.txt_restricted_status))
         }
@@ -161,6 +153,15 @@ class HomeFragment : Fragment() {
         } else {
             txt.text = "On Android 13+, sideloaded apps need restricted settings allowed"
         }
+    }
+
+    private fun updateListeningStatus(tv: TextView) {
+        val enabled = prefs.getBoolean("listening_enabled", true)
+        tv.text = if (enabled) "Listening: active — notifications will be read aloud"
+                  else "Listening: off — notifications will be ignored"
+        tv.setTextColor(requireContext().getColor(
+            if (enabled) android.R.color.holo_green_dark else android.R.color.darker_gray
+        ))
     }
 
     private fun loadWordingRules(): List<Pair<String, String>> {

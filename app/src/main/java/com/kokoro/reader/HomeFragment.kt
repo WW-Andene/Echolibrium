@@ -135,31 +135,45 @@ class HomeFragment : Fragment() {
         return pm.isIgnoringBatteryOptimizations(requireContext().packageName)
     }
 
+    private fun needsRestricted(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 33) return false
+        // Once notification access is granted, restricted settings must be allowed
+        if (isNotifGranted()) return false
+        // Track whether user already visited restricted settings screen
+        return !prefs.getBoolean("restricted_done", false)
+    }
+
     private fun updateSetup(btn: Button, txt: TextView) {
         val notif = isNotifGranted()
         val battery = isBatteryExempt()
+        val restricted = needsRestricted()
+        // If notif is granted, restricted is implicitly done — persist it
+        if (notif) prefs.edit().putBoolean("restricted_done", true).apply()
+
         val steps = mutableListOf<String>()
-        if (!notif) steps.add("Notification access")
-        if (!battery) steps.add("Battery optimization")
-        if (!notif && android.os.Build.VERSION.SDK_INT >= 33) steps.add("Restricted settings")
+        // Order: restricted → battery → notifications
+        if (restricted) steps.add("Allow restricted settings")
+        if (!battery) steps.add("Disable battery optimization")
+        if (!notif) steps.add("Grant notification access")
 
         if (steps.isEmpty()) {
             btn.text = "✓ All permissions granted"
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1a2a1a.toInt())
             btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
-            txt.text = "Notification access ✓  Battery ✓  Ready to go"
+            txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
             txt.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
         } else {
             btn.text = "Setup: ${steps.first()}"
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
             btn.setTextColor(0xFF000000.toInt())
             val status = buildString {
-                append(if (notif) "✓ Notifications" else "✗ Notifications")
-                append("  ·  ")
-                append(if (battery) "✓ Battery" else "✗ Battery")
-                if (android.os.Build.VERSION.SDK_INT >= 33 && !notif) {
-                    append("  ·  ✗ Restricted")
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    append(if (!restricted) "✓ Restricted" else "✗ Restricted")
+                    append("  ·  ")
                 }
+                append(if (battery) "✓ Battery" else "✗ Battery")
+                append("  ·  ")
+                append(if (notif) "✓ Notifications" else "✗ Notifications")
             }
             txt.text = status
             txt.setTextColor(requireContext().getColor(android.R.color.holo_orange_dark))
@@ -169,21 +183,24 @@ class HomeFragment : Fragment() {
     private fun openNextSetupStep() {
         val ctx = requireContext()
         when {
-            !isNotifGranted() -> {
-                // On Android 13+ sideloaded apps, open app details first for restricted settings
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:${ctx.packageName}")
-                    })
-                    Toast.makeText(ctx, "Allow restricted settings, then enable Notification access", Toast.LENGTH_LONG).show()
-                } else {
-                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                }
+            // Step 1: Restricted settings (Android 13+ sideloaded apps)
+            needsRestricted() -> {
+                prefs.edit().putBoolean("restricted_done", true).apply()
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${ctx.packageName}")
+                })
+                Toast.makeText(ctx, "Tap \"Allow restricted settings\" at the top", Toast.LENGTH_LONG).show()
             }
+            // Step 2: Battery optimization — system dialog, one tap
             !isBatteryExempt() -> {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:${ctx.packageName}")
                 })
+            }
+            // Step 3: Notification listener access
+            !isNotifGranted() -> {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                Toast.makeText(ctx, "Enable Kokoro Reader", Toast.LENGTH_LONG).show()
             }
             else -> {
                 Toast.makeText(ctx, "All set!", Toast.LENGTH_SHORT).show()

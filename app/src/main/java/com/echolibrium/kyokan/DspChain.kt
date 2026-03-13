@@ -10,7 +10,9 @@ data class UtteranceContext(
     val modulated: ModulatedVoice,
     val signal: SignalMap,
     val landmarks: PhonicLandmarks? = null,
-    val sampleRate: Int = 24000
+    val sampleRate: Int = 24000,
+    /** Per-utterance parameter trajectory for time-varying DSP modulation */
+    val trajectory: ParameterTrajectory = ParameterTrajectory.FLAT
 )
 
 /**
@@ -72,6 +74,31 @@ class DspChain {
         return pcm
     }
 
+    /**
+     * Process samples through all enabled nodes, capturing per-node timing.
+     * Returns the processed PCM and a list of NodeTiming results for ObservationDb.
+     */
+    fun processProfiled(samples: FloatArray, ctx: UtteranceContext): Pair<FloatArray, List<NodeTiming>> {
+        var pcm = samples
+        val timings = mutableListOf<NodeTiming>()
+        for (node in nodes) {
+            val startNs = System.nanoTime()
+            if (!node.enabled) {
+                timings.add(NodeTiming(node.name, 0L, false, pcm.size))
+                continue
+            }
+            pcm = try {
+                node.process(pcm, ctx)
+            } catch (e: Exception) {
+                Log.w("DspChain", "Node '${node.name}' failed, skipping", e)
+                pcm
+            }
+            val durationUs = (System.nanoTime() - startNs) / 1000
+            timings.add(NodeTiming(node.name, durationUs, true, pcm.size))
+        }
+        return pcm to timings
+    }
+
     /** List node names and their enabled state (for debugging/UI). */
     fun describe(): List<Pair<String, Boolean>> = nodes.map { it.name to it.enabled }
 
@@ -103,7 +130,14 @@ class VolumeNode : DspNode {
     override var enabled = true
     override fun process(samples: FloatArray, ctx: UtteranceContext): FloatArray {
         val vol = ctx.modulated.volume
-        if (vol != 1.0f) for (i in samples.indices) samples[i] *= vol
+        if (vol == 1.0f && ctx.trajectory.shape == Trajectory.FLAT) return samples
+        val hasTrajectory = ctx.trajectory.curves.containsKey("volume")
+        for (i in samples.indices) {
+            val trajMod = if (hasTrajectory) {
+                ctx.trajectory.evaluate("volume", i.toFloat() / samples.size)
+            } else 1f
+            samples[i] *= vol * trajMod
+        }
         return samples
     }
 }
@@ -161,8 +195,18 @@ class JitterNode : DspNode {
     override val name = "jitter"
     override var enabled = true
     override fun process(samples: FloatArray, ctx: UtteranceContext): FloatArray {
-        if (ctx.modulated.jitterAmount < 0.01f) return samples
-        AudioDsp.applyJitterPublic(samples, ctx.sampleRate, ctx.modulated.jitterAmount, ctx.landmarks)
+        val baseJitter = ctx.modulated.jitterAmount
+        if (baseJitter < 0.01f) return samples
+        // Apply trajectory modulation to jitter amount
+        val hasTrajectory = ctx.trajectory.curves.containsKey("jitter")
+        if (hasTrajectory) {
+            // Mid-point trajectory evaluation for the whole buffer
+            val trajMod = ctx.trajectory.evaluate("jitter", 0.5f)
+            val modulatedJitter = (baseJitter * trajMod).coerceIn(0f, 1f)
+            AudioDsp.applyJitterPublic(samples, ctx.sampleRate, modulatedJitter, ctx.landmarks)
+        } else {
+            AudioDsp.applyJitterPublic(samples, ctx.sampleRate, baseJitter, ctx.landmarks)
+        }
         return samples
     }
 }

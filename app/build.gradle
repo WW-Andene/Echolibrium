@@ -44,6 +44,14 @@ android {
     kotlinOptions { jvmTarget = '17' }
     // Do not compress model files — they are extracted to filesystem at runtime
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
+    // AAB (Android App Bundle) — Play Store serves only needed ABI per device
+    // Build with: ./gradlew bundleRelease
+    // Output: app/build/outputs/bundle/release/app-release.aab
+    bundle {
+        language { enableSplit = false }  // keep all languages in base
+        density { enableSplit = true }
+        abi { enableSplit = true }        // key win: serve only arm64 or x86_64, not both
+    }
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true

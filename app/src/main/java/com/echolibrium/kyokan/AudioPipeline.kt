@@ -58,11 +58,16 @@ object AudioPipeline {
     // ── Modular DSP pipeline (Section 6.2) ────────────────────────────────
     private val dspChain: DspChain = DspChain.default()
 
+    // ── Observation layer (P3 #15) ────────────────────────────────────────
+    private var observationDb: ObservationDb? = null
+    private var utteranceCounter = 0L
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     fun start(ctx: Context) {
         if (running) return
         running = true
+        observationDb = ObservationDb.getInstance(ctx)
         initDirectOrt(ctx)
         Thread { loop(ctx) }.apply { isDaemon = true; start() }
     }
@@ -187,14 +192,40 @@ object AudioPipeline {
             null
         }
 
-        // ── Step 5: Apply DSP via modular DspChain ────────────────────────
+        // ── Step 5: Apply DSP via modular DspChain (profiled) ─────────────
+        val utteranceId = "u_${System.currentTimeMillis()}_${utteranceCounter++}"
+        val trajectory = ParameterTrajectory.fromSignal(item.signal, item.modulated)
         val utteranceCtx = UtteranceContext(
             modulated = item.modulated,
             signal = item.signal,
             landmarks = landmarks,
-            sampleRate = sampleRate
+            sampleRate = sampleRate,
+            trajectory = trajectory
         )
-        val dspPcm = dspChain.process(rawPcm, utteranceCtx)
+        val (dspPcm, timings) = dspChain.processProfiled(rawPcm, utteranceCtx)
+
+        // Log DSP timing + utterance metadata to observation DB
+        val db = observationDb
+        if (db != null) {
+            try {
+                db.logChainTiming(utteranceId, timings)
+                val totalDspUs = timings.sumOf { it.durationUs }
+                db.logUtterance(
+                    utteranceId = utteranceId,
+                    voiceId = voiceId,
+                    textLength = processed.length,
+                    totalDspUs = totalDspUs,
+                    sampleRate = sampleRate,
+                    pcmSamples = dspPcm.size,
+                    emotionBlend = item.signal.emotionBlend,
+                    floodTier = item.signal.floodTier,
+                    moodValence = null,
+                    moodArousal = null
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Observation logging failed", e)
+            }
+        }
 
         // ── Step 6: Pitch shift (resampling-based, preserves duration) ───
         val pcm = AudioDsp.pitchShift(dspPcm, item.modulated.pitch)

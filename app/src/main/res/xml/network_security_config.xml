@@ -6,4 +6,29 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Certificate pinning for voice model download server (GitHub Releases) -->
+    <domain-config>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">objects.githubusercontent.com</domain>
+        <domain includeSubdomains="true">github-releases.githubusercontent.com</domain>
+        <pin-set expiration="2027-01-01">
+            <!-- DigiCert Global Root G2 (GitHub's root CA) -->
+            <pin digest="SHA-256">i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=</pin>
+            <!-- DigiCert Global Root CA (backup) -->
+            <pin digest="SHA-256">r/mIkG3eEpVdm+u/ko/cwxzOMo1bk4TyHIlByibiA5E=</pin>
+        </pin-set>
+    </domain-config>
+
+    <!-- Certificate pinning for ML Kit model downloads (Google) -->
+    <domain-config>
+        <domain includeSubdomains="true">dl.google.com</domain>
+        <domain includeSubdomains="true">translate.googleapis.com</domain>
+        <pin-set expiration="2027-01-01">
+            <!-- GTS Root R1 (Google Trust Services) -->
+            <pin digest="SHA-256">hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=</pin>
+            <!-- GlobalSign Root CA - R2 (Google backup root) -->
+            <pin digest="SHA-256">iie1VXtL7HzAMF+/PVBER9bIByQtsmKaMD7zbUR4wK0=</pin>
+        </pin-set>
+    </domain-config>
 </network-security-config>

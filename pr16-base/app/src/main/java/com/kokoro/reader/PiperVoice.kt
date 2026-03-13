@@ -65,26 +65,46 @@ object PiperVoices {
         )
     }
 
-    // ── English (US) — curated selection ────────────────────────────────────
+    // ── English (US) ─────────────────────────────────────────────────────────
     private val EN_US = listOf(
-        piper("lessac",  "Female", "English (US)", "American", "en_US", "medium"),
-        piper("ljspeech","Female", "English (US)", "American", "en_US", "medium"),
-        piper("kristin", "Female", "English (US)", "American", "en_US", "medium"),
-        piper("ryan",    "Male",   "English (US)", "American", "en_US", "medium"),
-        piper("joe",     "Male",   "English (US)", "American", "en_US", "medium"),
-        piper("bryce",   "Male",   "English (US)", "American", "en_US", "medium"),
+        piper("lessac",     "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("ljspeech",   "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("kristin",    "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("amy",        "Female",  "English (US)", "American", "en_US", "low"),
+        piper("kathleen",   "Female",  "English (US)", "American", "en_US", "low"),
+        piper("hfc_female", "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("ryan",       "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("joe",        "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("bryce",      "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("danny",      "Male",    "English (US)", "American", "en_US", "low"),
+        piper("john",       "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("norman",     "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("hfc_male",   "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("kusal",      "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("arctic",     "Unknown", "English (US)", "American", "en_US", "medium"),
+        piper("l2arctic",   "Unknown", "English (US)", "American", "en_US", "medium"),
+        piper("libritts",   "Unknown", "English (US)", "American", "en_US", "high"),
+        piper("libritts_r", "Unknown", "English (US)", "American", "en_US", "medium"),
     )
 
-    // ── English (UK) ────────────────────────────────────────────────────────
+    // ── English (UK) ─────────────────────────────────────────────────────────
     private val EN_GB = listOf(
-        piper("alba",  "Female", "English (UK)", "British", "en_GB", "medium"),
-        piper("alan",  "Male",   "English (UK)", "British", "en_GB", "medium"),
-        piper("cori",  "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("alba",                    "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("cori",                    "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("jenny_dioco",             "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("southern_english_female", "Female", "English (UK)", "British", "en_GB", "low"),
+        piper("southern_english_female", "Female", "English (UK)", "British", "en_GB", "medium"),
+        piper("alan",                    "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("northern_english_male",   "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("aru",                     "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("semaine",                 "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("vctk",                    "Unknown","English (UK)", "British", "en_GB", "medium"),
     )
 
-    // ── French (FR) ───────────────────────────────────────────────────────
+    // ── French (FR) ──────────────────────────────────────────────────────────
     private val FR_FR = listOf(
         piper("siwis",  "Female", "French", "French", "fr_FR", "medium"),
+        piper("siwis",  "Female", "French", "French", "fr_FR", "low"),
         piper("tom",    "Male",   "French", "French", "fr_FR", "medium"),
         piper("gilles", "Male",   "French", "French", "fr_FR", "low"),
         piper("upmc",   "Male",   "French", "French", "fr_FR", "medium"),

@@ -219,13 +219,18 @@ class RulesFragment : Fragment() {
         val savedLang = prefs.getString(langKey, "") ?: ""
         val idx = translateCodes.indexOf(savedLang).coerceAtLeast(0)
         spinner.setSelection(idx)
-        updateTranslateStatus(status, enabled, savedLang, sourceLang)
+        // Persist the resolved lang in case spinner listener doesn't fire (spinner is GONE)
+        val resolvedLang = translateCodes[idx]
+        if (savedLang.isEmpty() && resolvedLang.isNotEmpty()) {
+            prefs.edit().putString(langKey, resolvedLang).apply()
+        }
+        updateTranslateStatus(status, enabled, if (savedLang.isEmpty()) resolvedLang else savedLang, sourceLang)
 
         switch.setOnCheckedChangeListener { _, checked ->
-            prefs.edit().putBoolean(enabledKey, checked).apply()
+            val lang = translateCodes[spinner.selectedItemPosition]
+            prefs.edit().putBoolean(enabledKey, checked).putString(langKey, lang).apply()
             spinner.visibility = if (checked) View.VISIBLE else View.GONE
             label.visibility = if (checked) View.VISIBLE else View.GONE
-            val lang = translateCodes[spinner.selectedItemPosition]
             updateTranslateStatus(status, checked, lang, sourceLang)
             // Pre-download model when toggle is turned on with a language already selected
             if (checked && lang.isNotBlank() && lang != sourceLang) {

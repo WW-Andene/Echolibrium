@@ -3,7 +3,7 @@ package com.kokoro.reader
 import android.util.Log
 
 /**
- * KagamiSynthesizer — Unified pipeline with pre-synthesis emotional control.
+ * YatagamiSynthesizer — Unified pipeline with pre-synthesis emotional control.
  *
  * Replaces the direct SherpaEngine.synthesize(text, sid, speed) call in AudioPipeline
  * with a richer path that sculpts style vectors (Kokoro) or maps scales (Piper)
@@ -23,10 +23,10 @@ import android.util.Log
  *       synthesizeWithKokoro(ctx, voiceId, processed, item.modulated.speed)
  *   }
  *
- * With Kagami:
- *   val kagamiResult = kagamiSynthesizer?.synthesize(tokenIds, item.modulated, item.signal, item.profile)
- *   val result = if (kagamiResult != null) {
- *       Pair(kagamiResult.pcm, kagamiResult.sampleRate)
+ * With Yatagami:
+ *   val yatagamiResult = yatagamiSynthesizer?.synthesize(tokenIds, item.modulated, item.signal, item.profile)
+ *   val result = if (yatagamiResult != null) {
+ *       Pair(yatagamiResult.pcm, yatagamiResult.sampleRate)
  *   } else {
  *       // existing SherpaEngine path (unchanged fallback)
  *       ...
@@ -40,12 +40,12 @@ import android.util.Log
  *   - KokoroVoices for voice index resolution
  *   - Actual ModulatedVoice field names
  */
-class KagamiSynthesizer(
+class YatagamiSynthesizer(
     private val directOrt: DirectOrtEngine,
 ) {
 
     companion object {
-        private const val TAG = "KagamiSynthesizer"
+        private const val TAG = "YatagamiSynthesizer"
     }
 
     // ─── Configuration ──────────────────────────────────────────────────

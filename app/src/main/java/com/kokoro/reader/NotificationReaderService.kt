@@ -191,6 +191,11 @@ class NotificationReaderService : NotificationListenerService() {
                 readKeys.remove(sbn.key)
             }
         }
+
+        // Stop reading immediately when notification is swiped/cleared
+        if (prefs.getBoolean("notif_stop_on_swipe", false)) {
+            AudioPipeline.stop()
+        }
     }
 
     private fun cleanupOldKeys(now: Long) {

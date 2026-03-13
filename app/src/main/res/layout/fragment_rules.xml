@@ -62,6 +62,16 @@
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
+            <!-- Stop on swipe -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Stop reading when swiped/cleared"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_stop_on_swipe"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
             <!-- Read ongoing -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">

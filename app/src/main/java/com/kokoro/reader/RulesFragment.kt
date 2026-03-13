@@ -63,6 +63,12 @@ class RulesFragment : Fragment() {
             prefs.edit().putBoolean("notif_skip_swiped", checked).apply()
         }
 
+        val switchStopOnSwipe = v.findViewById<SwitchCompat>(R.id.switch_stop_on_swipe)
+        switchStopOnSwipe.isChecked = prefs.getBoolean("notif_stop_on_swipe", false)
+        switchStopOnSwipe.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("notif_stop_on_swipe", checked).apply()
+        }
+
         val switchReadOngoing = v.findViewById<SwitchCompat>(R.id.switch_read_ongoing)
         switchReadOngoing.isChecked = prefs.getBoolean("notif_read_ongoing", false)
         switchReadOngoing.setOnCheckedChangeListener { _, checked ->

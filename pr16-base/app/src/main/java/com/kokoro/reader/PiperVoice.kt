@@ -96,11 +96,12 @@ object PiperVoices {
     fun isPiperVoice(voiceId: String): Boolean = byId(voiceId) != null
 
     /**
-     * Download URL for a Piper voice tar.bz2 from k2-fsa/sherpa-onnx releases.
+     * Download URL for a Piper voice tar.bz2 from our tts-assets-v1 release.
+     * These are k2-fsa-compatible packages (NOT raw HuggingFace .onnx).
      * Pattern: vits-piper-{locale}-{name}-{quality}.tar.bz2
      */
     fun downloadUrl(voiceId: String): String {
-        return "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-$voiceId.tar.bz2"
+        return "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/vits-piper-$voiceId.tar.bz2"
     }
 
     /** The directory name inside the tar.bz2 archive */

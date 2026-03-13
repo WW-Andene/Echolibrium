@@ -17,14 +17,14 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
 
-      # Download pre-built sherpa-onnx Android AAR
+      # Download sherpa-onnx AAR from our own tts-assets-v1 release
       - name: Download sherpa-onnx AAR
         run: |
           mkdir -p app/libs
-          VERSION="1.12.28"
-          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${VERSION}/sherpa-onnx-${VERSION}.aar"
+          REPO="${GITHUB_REPOSITORY}"
+          URL="https://github.com/${REPO}/releases/download/tts-assets-v1/sherpa_onnx.aar"
           echo "Downloading sherpa-onnx AAR from $URL"
-          curl -L "$URL" -o app/libs/sherpa_onnx.aar
+          curl -fL --retry 3 --retry-delay 5 "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar ($(du -h app/libs/sherpa_onnx.aar | cut -f1))"
 
       - run: chmod +x gradlew

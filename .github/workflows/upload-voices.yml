@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all external TTS dependencies
+      - name: Download all external TTS dependencies from k2-fsa
         run: |
           set -euo pipefail
           RETRY="--retry 3 --retry-delay 5"
@@ -19,68 +19,39 @@ jobs:
           mkdir -p "$STAGING"
 
           SHERPA_VERSION="1.12.28"
+          K2FSA_BASE="https://github.com/k2-fsa/sherpa-onnx/releases/download"
 
           # ── sherpa-onnx AAR ──
           echo "═══ sherpa-onnx AAR ═══"
           curl -fL $RETRY \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar" \
+            "${K2FSA_BASE}/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar" \
             -o "$STAGING/sherpa_onnx.aar"
           echo "✓ sherpa_onnx.aar ($(du -h "$STAGING/sherpa_onnx.aar" | cut -f1))"
 
-          # ── Piper tokens.txt + espeak-ng-data + all 44 voices ──
+          # ── Piper voice tar.bz2 packages from k2-fsa ──
+          # These are the ONLY compatible format for sherpa-onnx.
+          # Each tar.bz2 is self-contained: {voiceId}.onnx + tokens.txt + espeak-ng-data/
+          # DO NOT use HuggingFace .onnx files — they cause SIGSEGV with sherpa-onnx.
           echo ""
-          echo "═══ Piper tokens.txt + espeak-ng-data ═══"
-          curl -fL $RETRY \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2" \
-            -o piper-pkg.tar.bz2
-          mkdir -p tmp-piper
-          tar -xjf piper-pkg.tar.bz2 -C tmp-piper
-          find tmp-piper -name "tokens.txt" -exec cp {} "$STAGING/piper-tokens.txt" \;
-          # Package espeak-ng-data directory (required by Piper for phonemization)
-          ESPEAK_SRC=$(find tmp-piper -type d -name "espeak-ng-data" | head -1)
-          if [ -n "$ESPEAK_SRC" ]; then
-            tar -czf "$STAGING/espeak-ng-data.tar.gz" -C "$(dirname "$ESPEAK_SRC")" espeak-ng-data
-            echo "✓ espeak-ng-data.tar.gz ($(du -h "$STAGING/espeak-ng-data.tar.gz" | cut -f1))"
-          else
-            echo "✗ espeak-ng-data not found in piper package!"
-            exit 1
-          fi
-          rm -rf tmp-piper piper-pkg.tar.bz2
-          echo "✓ piper-tokens.txt"
+          echo "═══ Piper voice packages (k2-fsa tar.bz2) ═══"
 
-          echo ""
-          echo "═══ All 44 Piper voices ═══"
-          HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
           VOICES=(
-            "en_US-amy-low" "en_US-amy-medium" "en_US-arctic-medium"
-            "en_US-bryce-medium" "en_US-danny-low" "en_US-hfc_female-medium"
-            "en_US-hfc_male-medium" "en_US-joe-medium" "en_US-john-medium"
-            "en_US-kathleen-low" "en_US-kristin-medium" "en_US-kusal-medium"
-            "en_US-l2arctic-medium" "en_US-lessac-low" "en_US-lessac-medium"
-            "en_US-lessac-high" "en_US-libritts-high" "en_US-libritts_r-medium"
-            "en_US-ljspeech-medium" "en_US-ljspeech-high" "en_US-norman-medium"
-            "en_US-reza_ibrahim-medium" "en_US-ryan-low" "en_US-ryan-medium"
-            "en_US-ryan-high" "en_US-sam-medium"
-            "en_GB-alan-low" "en_GB-alan-medium" "en_GB-alba-medium"
-            "en_GB-aru-medium" "en_GB-cori-medium" "en_GB-cori-high"
-            "en_GB-jenny_dioco-medium" "en_GB-northern_english_male-medium"
-            "en_GB-semaine-medium" "en_GB-southern_english_female-low"
-            "en_GB-vctk-medium"
-            "fr_FR-gilles-low" "fr_FR-mls-medium" "fr_FR-mls_1840-low"
-            "fr_FR-siwis-low" "fr_FR-siwis-medium" "fr_FR-tom-medium"
-            "fr_FR-upmc-medium"
+            "en_US-lessac-medium"
+            "en_US-ljspeech-medium"
+            "en_US-kristin-medium"
+            "en_US-ryan-medium"
+            "en_US-joe-medium"
+            "en_US-bryce-medium"
+            "en_GB-alba-medium"
+            "en_GB-alan-medium"
+            "en_GB-cori-medium"
           )
 
           for VOICE_ID in "${VOICES[@]}"; do
-            LANG_CODE="${VOICE_ID%%_*}"
-            COUNTRY=$(echo "$VOICE_ID" | sed 's/^[^_]*_//' | sed 's/-.*//')
-            LOCALE="${LANG_CODE}_${COUNTRY}"
-            REST=$(echo "$VOICE_ID" | sed "s/^${LOCALE}-//")
-            QUALITY="${REST##*-}"
-            NAME="${REST%-*}"
-            URL="${HF_BASE}/${LANG_CODE}/${LOCALE}/${NAME}/${QUALITY}/${VOICE_ID}.onnx?download=true"
-            echo "↓ $VOICE_ID"
-            curl -fL $RETRY "$URL" -o "$STAGING/${VOICE_ID}.onnx" || echo "✗ FAILED: $VOICE_ID"
+            ARCHIVE="vits-piper-${VOICE_ID}.tar.bz2"
+            URL="${K2FSA_BASE}/tts-models/${ARCHIVE}"
+            echo "↓ $ARCHIVE"
+            curl -fL $RETRY "$URL" -o "$STAGING/${ARCHIVE}" || echo "✗ FAILED: $ARCHIVE"
           done
 
           echo ""
@@ -96,7 +67,7 @@ jobs:
           # Create or reuse the release
           gh release create tts-assets-v1 \
             --title "TTS Assets v1" \
-            --notes "All TTS dependencies for building and running Kyōkan/Echolibrium. Eliminates external fetching from HuggingFace and k2-fsa." \
+            --notes "All TTS dependencies for building and running Kyōkan/Echolibrium. Sources: k2-fsa/sherpa-onnx (compatible with sherpa-onnx runtime)." \
             2>/dev/null || echo "Release tts-assets-v1 already exists"
 
           # Upload everything

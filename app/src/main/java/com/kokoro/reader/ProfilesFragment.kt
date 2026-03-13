@@ -67,6 +67,7 @@ class ProfilesFragment : Fragment() {
         setupCollapsibleSection(v, R.id.label_breathiness, R.id.section_breathiness, "// BREATHINESS")
         setupCollapsibleSection(v, R.id.label_stuttering, R.id.section_stuttering, "// STUTTERING")
         setupCollapsibleSection(v, R.id.label_intonation, R.id.section_intonation, "// INTONATION")
+        setupCollapsibleSection(v, R.id.label_gimmicks, R.id.section_gimmicks, "// GIMMICKS")
     }
 
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
@@ -219,13 +220,26 @@ class ProfilesFragment : Fragment() {
         filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
             voiceGrid.addView(langHeader(lang, voices.size, 0xFF446644.toInt()))
             addVoiceRows(voices.map { v ->
-                buildVoiceCard(
+                val card = buildVoiceCard(
                     name = v.displayName, icon = v.genderIcon, iconColor = v.genderColor,
                     badge = "${v.flagEmoji} ${v.nationality}", voiceId = v.id,
                     active = currentProfile.voiceName == v.id,
                     accent = 0xFF00ff88.toInt(), enabled = true,
                     onClick = { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
                 )
+                // Add preview button
+                (card as LinearLayout).addView(TextView(ctx).apply {
+                    text = "▶ preview"
+                    textSize = 9f; gravity = android.view.Gravity.CENTER
+                    setTextColor(0xFF448844.toInt())
+                    setPadding(0, 6, 0, 0)
+                    setOnClickListener {
+                        val previewText = txtPreview.text.toString().ifBlank { "Hello! This is ${v.displayName}." }
+                        val tempProfile = currentProfile.copy(voiceName = v.id)
+                        NotificationReaderService.instance?.testSpeak(previewText, tempProfile, loadWordingRules())
+                    }
+                })
+                card
             })
         }
     }
@@ -241,6 +255,24 @@ class ProfilesFragment : Fragment() {
         if (filtered.isEmpty()) {
             voiceGrid.addView(emptyLabel("No Piper voices match filter."))
             return
+        }
+
+        // "Download All" button for Piper
+        val notDownloaded = filtered.filter {
+            PiperDownloadManager.getState(ctx, it.id) == PiperDownloadManager.State.NOT_DOWNLOADED
+        }
+        if (notDownloaded.isNotEmpty()) {
+            voiceGrid.addView(Button(ctx).apply {
+                text = "⬇ DOWNLOAD ALL (${notDownloaded.size} voices)"
+                setBackgroundColor(0xFF1a2a3a.toInt()); setTextColor(0xFF88ccff.toInt())
+                textSize = 12f; setPadding(16, 8, 16, 8)
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.setMargins(0, 8, 0, 12); layoutParams = lp
+                setOnClickListener {
+                    notDownloaded.forEach { v -> startPiperDownload(v.id) }
+                }
+            })
         }
 
         filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
@@ -449,7 +481,7 @@ class ProfilesFragment : Fragment() {
                     textSize = 12f; setTextColor(0xFF888888.toInt()); setPadding(0, 0, 0, 12)
                 })
                 card.addView(Button(ctx).apply {
-                    text = "⬇ DOWNLOAD KOKORO VOICES"
+                    text = "⬇ DOWNLOAD ALL"
                     setBackgroundColor(0xFF1a3a1a.toInt()); setTextColor(0xFF00ff88.toInt())
                     setOnClickListener {
                         VoiceDownloadManager.onProgress { pct ->

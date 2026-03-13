@@ -43,9 +43,21 @@ object VoiceDownloadManager {
     fun getVoiceFile(ctx: Context, voiceId: String): File =
         File(getDownloadDir(ctx), "$voiceId.onnx")
 
-    /** Check if a voice model has been downloaded to internal storage */
-    fun isDownloaded(ctx: Context, voiceId: String): Boolean =
-        getVoiceFile(ctx, voiceId).exists()
+    /** Minimum valid ONNX model size (bytes). Real models are 15-75 MB. */
+    private const val MIN_ONNX_MODEL_SIZE = 1024L
+
+    /** Check if a voice model has been downloaded and is valid (not corrupt/truncated) */
+    fun isDownloaded(ctx: Context, voiceId: String): Boolean {
+        val file = getVoiceFile(ctx, voiceId)
+        if (!file.exists()) return false
+        if (file.length() < MIN_ONNX_MODEL_SIZE) {
+            // Corrupt or truncated file — delete it so it can be re-downloaded
+            Log.w(TAG, "Deleting corrupt voice file: $voiceId (${file.length()} bytes)")
+            file.delete()
+            return false
+        }
+        return true
+    }
 
     // ── State queries ────────────────────────────────────────────────────────
 

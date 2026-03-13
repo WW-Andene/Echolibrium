@@ -842,6 +842,22 @@ object SherpaEngine {
         if (wasInProgress) {
             val wasNativeCrash = wasLastExitNativeCrash(ctx)
             val crashedFormat = initPrefs.getString(KEY_INIT_FORMAT, "unknown")
+
+            // ── Per-voice crash tracking ─────────────────────────────
+            // If we were loading a specific voice when the process died,
+            // increment that voice's crash counter so we skip it next time.
+            val crashedVoiceId = initPrefs.getString(KEY_LOADING_VOICE_ID, null)
+            if (crashedVoiceId != null) {
+                val voiceCrashKey = "$KEY_VOICE_CRASH_PREFIX$crashedVoiceId"
+                val voiceCrashes = initPrefs.getInt(voiceCrashKey, 0) + 1
+                initPrefs.edit()
+                    .putInt(voiceCrashKey, voiceCrashes)
+                    .remove(KEY_LOADING_VOICE_ID)
+                    .apply()
+                plog("warmUp: process died while loading voice '$crashedVoiceId' — crash #$voiceCrashes/$VOICE_CRASH_THRESHOLD")
+                Log.w(TAG, "Voice '$crashedVoiceId' caused crash #$voiceCrashes (threshold=$VOICE_CRASH_THRESHOLD)")
+            }
+
             plog("warmUp: process died during init — wasNativeCrash=$wasNativeCrash, format=$crashedFormat")
             if (wasNativeCrash) {
                 crashCount++
@@ -1056,14 +1072,22 @@ object SherpaEngine {
      */
     fun forceRetry(ctx: Context) {
         val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
-        initPrefs.edit()
+        // Clear all crash tracking, including per-voice crash counters
+        val editor = initPrefs.edit()
             .putInt(KEY_INIT_CRASH_COUNT, 0)
             .putInt(KEY_INIT_OS_KILL_COUNT, 0)
             .putBoolean(KEY_INIT_IN_PROGRESS, false)
             .putBoolean(KEY_SKIP_ORT, false)
             .putBoolean(KEY_FORCE_INT8, false)
             .remove(KEY_INIT_FORMAT)
-            .apply()
+            .remove(KEY_LOADING_VOICE_ID)
+        // Clear all per-voice crash counters
+        for (key in initPrefs.all.keys) {
+            if (key.startsWith(KEY_VOICE_CRASH_PREFIX)) {
+                editor.remove(key)
+            }
+        }
+        editor.apply()
         errorMessage = null
         statusMessage = "retrying…"
         isReady = false
@@ -1160,7 +1184,15 @@ object SherpaEngine {
 
         // Reuse cached engine if same voice
         if (piperTts == null || piperLoadedVoiceId != voiceId) {
-            if (!loadPiperVoice(ctx, voiceId)) return null
+            if (!loadPiperVoice(ctx, voiceId)) {
+                // Voice failed to load — if we still have a working engine (previous voice),
+                // use it as fallback rather than returning null and losing all TTS
+                if (piperTts != null && piperLoadedVoiceId != null) {
+                    Log.w(TAG, "Voice $voiceId failed — falling back to $piperLoadedVoiceId")
+                } else {
+                    return null
+                }
+            }
         }
 
         val engine = piperTts ?: return null
@@ -1174,6 +1206,18 @@ object SherpaEngine {
         }
     }
 
+    /** Minimum valid ONNX model size (bytes). Any smaller file is corrupt/truncated. */
+    private const val MIN_ONNX_MODEL_SIZE = 1024L  // 1 KB — real models are 15-75 MB
+
+    /** SharedPreferences key prefix for tracking per-voice crash counts. */
+    private const val KEY_VOICE_CRASH_PREFIX = "voice_crash_"
+
+    /** After this many crashes for a specific voice, skip it and delete the file. */
+    private const val VOICE_CRASH_THRESHOLD = 3
+
+    /** Key for tracking which voice was being loaded when process died. */
+    private const val KEY_LOADING_VOICE_ID = "loading_voice_id"
+
     private fun loadPiperVoice(ctx: Context, voiceId: String): Boolean {
         try {
             val voice = PiperVoiceCatalog.byId(voiceId)
@@ -1181,17 +1225,33 @@ object SherpaEngine {
             // Determine where the model lives: assets (bundled) or filesDir (downloaded)
             val isBundled = voice?.bundled == true
             val downloadedFile = VoiceDownloadManager.getVoiceFile(ctx, voiceId)
-            val isDownloaded = downloadedFile.exists()
+            val isDownloaded = downloadedFile.exists() && downloadedFile.length() > MIN_ONNX_MODEL_SIZE
 
             if (!isBundled && !isDownloaded) {
                 Log.e(TAG, "Piper voice not available: $voiceId (not bundled, not downloaded)")
+                // Clean up corrupt/truncated downloads
+                if (downloadedFile.exists() && downloadedFile.length() <= MIN_ONNX_MODEL_SIZE) {
+                    Log.w(TAG, "Deleting corrupt download: $voiceId (${downloadedFile.length()} bytes)")
+                    downloadedFile.delete()
+                }
                 return false
             }
 
-            // Release previous Piper engine
-            piperTts?.let { try { it.release() } catch (e: Exception) { Log.w(TAG, "Error releasing previous Piper engine", e) } }
-            piperTts = null
-            piperLoadedVoiceId = null
+            // ── Per-voice crash tracking ─────────────────────────────────
+            // If this specific voice has crashed too many times, refuse to load it.
+            val initPrefs = ctx.applicationContext.getSharedPreferences(INIT_PREFS, Context.MODE_PRIVATE)
+            val voiceCrashCount = initPrefs.getInt("$KEY_VOICE_CRASH_PREFIX$voiceId", 0)
+            if (voiceCrashCount >= VOICE_CRASH_THRESHOLD) {
+                Log.e(TAG, "Voice $voiceId has crashed $voiceCrashCount times — refusing to load")
+                // Delete the downloaded file so it can be re-downloaded fresh
+                if (!isBundled && downloadedFile.exists()) {
+                    Log.w(TAG, "Deleting crash-prone voice file: $voiceId")
+                    downloadedFile.delete()
+                    // Reset crash counter so re-download gets a fresh chance
+                    initPrefs.edit().remove("$KEY_VOICE_CRASH_PREFIX$voiceId").apply()
+                }
+                return false
+            }
 
             // Both bundled and downloaded voices use file-based constructor.
             // AssetManager-based constructor crashes on some devices (Xiaomi/MediaTek).
@@ -1209,8 +1269,15 @@ object SherpaEngine {
                 modelFilePath = extractedModel.absolutePath
                 Log.d(TAG, "Loading Piper voice from extracted file: $voiceId")
             } else {
+                // Validate downloaded model file before passing to native code
+                val fileSize = downloadedFile.length()
+                if (fileSize <= MIN_ONNX_MODEL_SIZE) {
+                    Log.e(TAG, "Downloaded model too small: $voiceId (${fileSize} bytes) — deleting")
+                    downloadedFile.delete()
+                    return false
+                }
                 modelFilePath = downloadedFile.absolutePath
-                Log.d(TAG, "Loading Piper voice from download: $voiceId (${downloadedFile.length() / 1024 / 1024}MB)")
+                Log.d(TAG, "Loading Piper voice from download: $voiceId (${fileSize / 1024 / 1024}MB)")
             }
 
             val vitsConfig = OfflineTtsVitsModelConfig(
@@ -1222,9 +1289,48 @@ object SherpaEngine {
                 vits = vitsConfig, numThreads = optimalThreadCount(),
                 debug = false, provider = optimalProvider()
             )
-            piperTts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
 
+            // ── Safe swap: create new engine BEFORE releasing old one ────
+            // If the constructor crashes (SIGSEGV) or throws, the old engine
+            // is preserved so the user can still synthesize with the previous voice.
+            // Set init_in_progress so crash-loop detection works for voice switches too.
+            initPrefs.edit()
+                .putBoolean(KEY_INIT_IN_PROGRESS, true)
+                .putString(KEY_LOADING_VOICE_ID, voiceId)
+                .commit()
+
+            val newEngine: OfflineTts
+            try {
+                newEngine = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
+            } catch (e: Throwable) {
+                Log.e(TAG, "OfflineTts constructor failed for $voiceId", e)
+                initPrefs.edit().putBoolean(KEY_INIT_IN_PROGRESS, false).apply()
+                // Increment per-voice crash counter for Java-level failures too
+                val newCount = voiceCrashCount + 1
+                initPrefs.edit().putInt("$KEY_VOICE_CRASH_PREFIX$voiceId", newCount).apply()
+                Log.w(TAG, "Voice $voiceId failure count: $newCount/$VOICE_CRASH_THRESHOLD")
+                return false
+            }
+
+            // New engine created successfully — now safe to release old one
+            initPrefs.edit()
+                .putBoolean(KEY_INIT_IN_PROGRESS, false)
+                .remove(KEY_LOADING_VOICE_ID)
+                .apply()
+
+            piperTts?.let { old ->
+                try { old.release() } catch (e: Exception) {
+                    Log.w(TAG, "Error releasing previous Piper engine", e)
+                }
+            }
+            piperTts = newEngine
             piperLoadedVoiceId = voiceId
+
+            // Clear any previous crash count for this voice on successful load
+            if (voiceCrashCount > 0) {
+                initPrefs.edit().remove("$KEY_VOICE_CRASH_PREFIX$voiceId").apply()
+            }
+
             Log.d(TAG, "Piper voice loaded: $voiceId (${if (isBundled) "bundled" else "downloaded"})")
             return true
 

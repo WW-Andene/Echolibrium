@@ -12,8 +12,16 @@ class NotificationReaderService : NotificationListenerService() {
     private var dailyCount = 0
     private var lastCountDay = -1
 
+    // Deduplication: track notification keys we already read
+    private val readKeys = LinkedHashMap<String, Long>(128, 0.75f, true)
+    // Track swiped notification keys so queued items can be skipped
+    private val swipedKeys = mutableSetOf<String>()
+    // Per-app cooldown: package → last read timestamp
+    private val appLastRead = mutableMapOf<String, Long>()
+
     companion object {
         var instance: NotificationReaderService? = null
+        private const val KEY_EXPIRY_MS = 5 * 60 * 1000L // 5 minutes
     }
 
     override fun onCreate() {
@@ -35,9 +43,34 @@ class NotificationReaderService : NotificationListenerService() {
         if (sbn.packageName == packageName) return
         if (isDndActive()) return
 
+        // Skip ongoing notifications unless allowed
+        if (sbn.isOngoing && !prefs.getBoolean("notif_read_ongoing", false)) return
+
         val rules = AppRule.loadAll(prefs)
         val rule  = rules.find { it.packageName == sbn.packageName }
         if (rule?.readMode == "skip" || rule?.enabled == false) return
+
+        val now = System.currentTimeMillis()
+
+        // Deduplication: skip if already read
+        if (prefs.getBoolean("notif_read_once", true)) {
+            val key = sbn.key
+            synchronized(readKeys) {
+                if (readKeys.containsKey(key)) return
+                readKeys[key] = now
+                cleanupOldKeys(now)
+            }
+        }
+
+        // Per-app cooldown
+        val cooldownMs = prefs.getInt("notif_cooldown", 3) * 1000L
+        if (cooldownMs > 0) {
+            synchronized(appLastRead) {
+                val lastRead = appLastRead[sbn.packageName] ?: 0L
+                if (now - lastRead < cooldownMs) return
+                appLastRead[sbn.packageName] = now
+            }
+        }
 
         val extras  = sbn.notification?.extras ?: return
         val appName = getAppName(sbn.packageName)
@@ -69,6 +102,12 @@ class NotificationReaderService : NotificationListenerService() {
         val rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
 
+        // Check max queue size
+        val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
+
+        // Track swiped key for skip-on-swipe
+        val notifKey = sbn.key
+
         AudioPipeline.enqueue(AudioPipeline.Item(
             rawText   = rawText,
             profile   = profile,
@@ -76,7 +115,27 @@ class NotificationReaderService : NotificationListenerService() {
             signal    = signal,
             rules     = loadWordingRules(),
             priority  = signal.urgencyType == UrgencyType.EXPIRING
-        ))
+        ), maxQueue)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (prefs.getBoolean("notif_skip_swiped", true)) {
+            synchronized(swipedKeys) {
+                swipedKeys.add(sbn.key)
+            }
+            // Also remove from read tracking so if it comes back it can be read again
+            synchronized(readKeys) {
+                readKeys.remove(sbn.key)
+            }
+        }
+    }
+
+    private fun cleanupOldKeys(now: Long) {
+        val iter = readKeys.iterator()
+        while (iter.hasNext()) {
+            val entry = iter.next()
+            if (now - entry.value > KEY_EXPIRY_MS) iter.remove() else break
+        }
     }
 
     private fun buildMessage(appName: String, title: String, text: String, mode: String) =

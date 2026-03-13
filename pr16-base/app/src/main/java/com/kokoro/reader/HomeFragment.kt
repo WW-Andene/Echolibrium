@@ -31,8 +31,6 @@ class HomeFragment : Fragment() {
         val seekDndEnd    = v.findViewById<SeekBar>(R.id.seek_dnd_end)
         val txtDndStart   = v.findViewById<TextView>(R.id.txt_dnd_start)
         val txtDndEnd     = v.findViewById<TextView>(R.id.txt_dnd_end)
-        val btnStop       = v.findViewById<Button>(R.id.btn_stop)
-
         updateStatus(statusText, btnPermission)
         btnPermission.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -77,8 +75,6 @@ class HomeFragment : Fragment() {
             prefs.edit().putInt("dnd_end", h).apply()
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
-
-        btnStop.setOnClickListener { NotificationReaderService.instance?.stopSpeaking() }
 
         // Battery optimization bypass
         val btnBattery = v.findViewById<Button>(R.id.btn_battery)

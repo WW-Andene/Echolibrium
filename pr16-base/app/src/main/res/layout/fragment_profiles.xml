@@ -181,5 +181,10 @@
                 android:backgroundTint="#1a1a2a" android:textColor="#8888ff" android:fontFamily="monospace"/>
         </LinearLayout>
 
+        <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="⏹  STOP SPEAKING"
+            android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
+            android:fontFamily="monospace" android:layout_marginBottom="24dp"/>
+
     </LinearLayout>
 </ScrollView>

@@ -5,6 +5,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.*
 import android.widget.*
+import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 import org.json.JSONArray
@@ -20,6 +21,18 @@ class RulesFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         container = v.findViewById(R.id.rules_container)
+
+        // ── Collapsible: Word Rules ──
+        val labelWord = v.findViewById<TextView>(R.id.label_word_rules)
+        val sectionWord = v.findViewById<LinearLayout>(R.id.section_word_rules)
+        labelWord.setOnClickListener { toggleSection(labelWord, sectionWord, "WORD RULES") }
+
+        // ── Collapsible: Notification Rules ──
+        val labelNotif = v.findViewById<TextView>(R.id.label_notif_rules)
+        val sectionNotif = v.findViewById<LinearLayout>(R.id.section_notif_rules)
+        labelNotif.setOnClickListener { toggleSection(labelNotif, sectionNotif, "NOTIFICATION RULES") }
+
+        // ── Word rules ──
         loadRules()
         if (rules.isEmpty()) {
             rules.addAll(listOf(
@@ -35,7 +48,54 @@ class RulesFragment : Fragment() {
         v.findViewById<Button>(R.id.btn_add_rule).setOnClickListener {
             rules.add("" to ""); saveRules(); renderRules()
         }
+
+        // ── Notification rules ──
+        val switchReadOnce = v.findViewById<SwitchCompat>(R.id.switch_read_once)
+        switchReadOnce.isChecked = prefs.getBoolean("notif_read_once", true)
+        switchReadOnce.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("notif_read_once", checked).apply()
+        }
+
+        val switchSkipSwiped = v.findViewById<SwitchCompat>(R.id.switch_skip_swiped)
+        switchSkipSwiped.isChecked = prefs.getBoolean("notif_skip_swiped", true)
+        switchSkipSwiped.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("notif_skip_swiped", checked).apply()
+        }
+
+        val switchReadOngoing = v.findViewById<SwitchCompat>(R.id.switch_read_ongoing)
+        switchReadOngoing.isChecked = prefs.getBoolean("notif_read_ongoing", false)
+        switchReadOngoing.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("notif_read_ongoing", checked).apply()
+        }
+
+        val txtCooldown = v.findViewById<TextView>(R.id.txt_cooldown)
+        val seekCooldown = v.findViewById<SeekBar>(R.id.seek_cooldown)
+        val cooldown = prefs.getInt("notif_cooldown", 3)
+        seekCooldown.progress = cooldown
+        txtCooldown.text = "Cooldown per app: ${cooldown}s"
+        seekCooldown.setOnSeekBarChangeListener(seek { value ->
+            prefs.edit().putInt("notif_cooldown", value).apply()
+            txtCooldown.text = "Cooldown per app: ${value}s"
+        })
+
+        val txtMaxQueue = v.findViewById<TextView>(R.id.txt_max_queue)
+        val seekMaxQueue = v.findViewById<SeekBar>(R.id.seek_max_queue)
+        val maxQueue = prefs.getInt("notif_max_queue", 10)
+        seekMaxQueue.progress = maxQueue
+        txtMaxQueue.text = "Max queue size: $maxQueue"
+        seekMaxQueue.setOnSeekBarChangeListener(seek { value ->
+            prefs.edit().putInt("notif_max_queue", value.coerceAtLeast(1)).apply()
+            txtMaxQueue.text = "Max queue size: ${value.coerceAtLeast(1)}"
+        })
     }
+
+    private fun toggleSection(label: TextView, section: LinearLayout, name: String) {
+        val visible = section.visibility == View.VISIBLE
+        section.visibility = if (visible) View.GONE else View.VISIBLE
+        label.text = "${if (visible) "▸" else "▾"} // $name"
+    }
+
+    // ── Word rules ──
 
     private fun loadRules() {
         rules.clear()
@@ -57,7 +117,7 @@ class RulesFragment : Fragment() {
         rules.forEachIndexed { idx, (find, replace) ->
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setBackgroundColor(0xFF111111.toInt()); setPadding(12, 10, 12, 10)
+                setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 10, 12, 10)
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 lp.setMargins(0, 0, 0, 4); layoutParams = lp
             }
@@ -66,7 +126,7 @@ class RulesFragment : Fragment() {
                 EditText(requireContext()).apply {
                     setText(value); this.hint = hint; textSize = 13f
                     setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
-                    setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 8, 12, 8)
+                    setBackgroundColor(0xFF222222.toInt()); setPadding(12, 8, 12, 8)
                     addTextChangedListener(object : TextWatcher {
                         override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -93,5 +153,11 @@ class RulesFragment : Fragment() {
             row.addView(etFind); row.addView(arrow); row.addView(etReplace); row.addView(btnDel)
             container.addView(row)
         }
+    }
+
+    private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
+        override fun onProgressChanged(s: SeekBar?, v: Int, fromUser: Boolean) { if (fromUser) onChange(v) }
+        override fun onStartTrackingTouch(s: SeekBar?) {}
+        override fun onStopTrackingTouch(s: SeekBar?) {}
     }
 }

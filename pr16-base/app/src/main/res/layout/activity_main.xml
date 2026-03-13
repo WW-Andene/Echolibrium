@@ -35,10 +35,10 @@
         <LinearLayout android:id="@+id/nav_rules" style="@style/NavTab"
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">
             <ImageView android:layout_width="24dp" android:layout_height="24dp"
-                android:src="@drawable/ic_rules" android:contentDescription="Words"
+                android:src="@drawable/ic_rules" android:contentDescription="Rules"
                 android:importantForAccessibility="no"/>
             <TextView style="@style/NavTabLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Words"/>
+                android:text="Rules"/>
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

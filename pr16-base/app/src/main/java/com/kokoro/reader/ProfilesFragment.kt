@@ -842,6 +842,9 @@ class ProfilesFragment : Fragment() {
                     VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
                 }.setNegativeButton("Cancel", null).show()
         }
+        view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
+            NotificationReaderService.instance?.stopSpeaking()
+        }
     }
 
     private fun loadProfileToUI(p: VoiceProfile) {

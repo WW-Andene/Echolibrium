@@ -12,7 +12,28 @@
     <Button android:id="@+id/btn_load_apps" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:text="LOAD INSTALLED APPS"
         android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
-        android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
+        android:fontFamily="monospace" android:layout_marginBottom="10dp"/>
+
+    <!-- Search bar -->
+    <EditText android:id="@+id/et_search" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:hint="Search apps..."
+        android:textSize="14sp" android:textColor="#cccccc" android:hintTextColor="#444444"
+        android:background="#111111" android:padding="12dp" android:fontFamily="monospace"
+        android:inputType="text" android:layout_marginBottom="8dp"/>
+
+    <!-- Select/Deselect All -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginBottom="10dp">
+        <Button android:id="@+id/btn_select_all" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="SELECT ALL"
+            android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+            android:fontFamily="monospace" android:textSize="12sp" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_deselect_all" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="DESELECT ALL"
+            android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
+            android:fontFamily="monospace" android:textSize="12sp" android:layout_marginStart="4dp"/>
+    </LinearLayout>
+
     <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
         <LinearLayout android:id="@+id/apps_container" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"/>

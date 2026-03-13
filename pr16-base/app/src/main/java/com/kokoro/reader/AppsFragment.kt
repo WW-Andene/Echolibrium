@@ -2,6 +2,8 @@ package com.kokoro.reader
 
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import android.widget.Toast
@@ -14,6 +16,7 @@ class AppsFragment : Fragment() {
     private var rules = mutableListOf<AppRule>()
     private var profiles = listOf<VoiceProfile>()
     private lateinit var container: LinearLayout
+    private var searchFilter = ""
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_apps, c, false)
@@ -23,7 +26,37 @@ class AppsFragment : Fragment() {
         rules = AppRule.loadAll(prefs)
         profiles = VoiceProfile.loadAll(prefs)
         v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
+
+        // Search bar
+        v.findViewById<EditText>(R.id.et_search).addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                searchFilter = s?.toString()?.trim() ?: ""
+                renderRules()
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+
+        // Select / Deselect all
+        v.findViewById<Button>(R.id.btn_select_all).setOnClickListener { setAllEnabled(true) }
+        v.findViewById<Button>(R.id.btn_deselect_all).setOnClickListener { setAllEnabled(false) }
+
         renderRules()
+    }
+
+    private fun setAllEnabled(enabled: Boolean) {
+        val filtered = filteredRules()
+        filtered.forEach { rule ->
+            val idx = rules.indexOfFirst { it.packageName == rule.packageName }
+            if (idx >= 0) rules[idx] = rules[idx].copy(enabled = enabled)
+        }
+        AppRule.saveAll(rules, prefs)
+        renderRules()
+    }
+
+    private fun filteredRules(): List<AppRule> {
+        if (searchFilter.isBlank()) return rules
+        return rules.filter { it.appLabel.contains(searchFilter, ignoreCase = true) }
     }
 
     private fun loadInstalledApps() {
@@ -62,7 +95,7 @@ class AppsFragment : Fragment() {
 
     private fun renderRules() {
         container.removeAllViews()
-        rules.forEach { container.addView(buildRow(it)) }
+        filteredRules().forEach { container.addView(buildRow(it)) }
     }
 
     private fun buildRow(rule: AppRule): View {

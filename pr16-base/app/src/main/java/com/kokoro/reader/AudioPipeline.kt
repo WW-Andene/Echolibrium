@@ -64,11 +64,15 @@ object AudioPipeline {
 
     // ── Enqueue ───────────────────────────────────────────────────────────────
 
-    fun enqueue(item: Item) {
+    fun enqueue(item: Item, maxQueue: Int = 0) {
         if (item.priority) {
             // Phone call / expiring urgency — clear queue and interrupt now
             queue.clear()
             stopCurrentPlayback()
+        }
+        // Respect max queue size — drop oldest if full
+        if (maxQueue > 0) {
+            while (queue.size >= maxQueue) queue.poll()
         }
         queue.offer(item)
     }

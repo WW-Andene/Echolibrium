@@ -160,7 +160,7 @@ class ProfilesFragment : Fragment() {
         })
 
         // ── PIPER section ───────────────────────────────────────────────────
-        voiceGrid.addView(buildSectionHeader("PIPER", "On-demand download  ·  ~40MB each", 0xFF88ccff.toInt()))
+        voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt()))
         renderPiperVoices()
     }
 
@@ -262,7 +262,7 @@ class ProfilesFragment : Fragment() {
             }
             PiperDownloadManager.State.DOWNLOADING -> {
                 val pct = PiperDownloadManager.getProgress(v.id)
-                statusText = if (pct < 0) "setting up..." else "$pct%"
+                statusText = if (pct < 0) "extracting..." else "$pct%"
                 statusColor = 0xFFffcc00.toInt()
                 statusClickable = false
             }
@@ -291,11 +291,8 @@ class ProfilesFragment : Fragment() {
         // Add status / download indicator
         val statusView = TextView(ctx).apply {
             tag = "piper_status_${v.id}"
-            text = when {
-                state == PiperDownloadManager.State.NOT_DOWNLOADED -> "⬇ $statusText"
-                state == PiperDownloadManager.State.ERROR -> "⚠ $statusText"
-                else -> statusText
-            }
+            text = if (!ready && state != PiperDownloadManager.State.DOWNLOADING
+                && state != PiperDownloadManager.State.ERROR) "⬇ $statusText" else statusText
             textSize = 10f; gravity = android.view.Gravity.CENTER
             setTextColor(statusColor)
             setPadding(0, 4, 0, 0)

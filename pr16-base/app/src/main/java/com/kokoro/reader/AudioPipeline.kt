@@ -113,10 +113,18 @@ object AudioPipeline {
 
         val (rawPcm, sampleRate) = result
 
-        // ── Step 4: Apply DSP ─────────────────────────────────────────────
-        val pcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated)
+        // ── Step 4: Analyze PCM for context-aware DSP ─────────────────────
+        val landmarks = try {
+            PhonicAnalyzer.analyze(rawPcm, sampleRate)
+        } catch (e: Exception) {
+            Log.w(TAG, "PhonicAnalyzer failed, proceeding without landmarks", e)
+            null
+        }
 
-        // ── Step 5: Play ──────────────────────────────────────────────────
+        // ── Step 5: Apply DSP ─────────────────────────────────────────────
+        val pcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated, landmarks)
+
+        // ── Step 6: Play ──────────────────────────────────────────────────
         playPcm(pcm, sampleRate, item.modulated.pitch)
     }
 

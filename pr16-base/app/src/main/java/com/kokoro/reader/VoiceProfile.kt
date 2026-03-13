@@ -152,7 +152,10 @@ data class VoiceProfile(
     val gimmicks: List<GimmickConfig> = emptyList(),
 
     // Commentary pools — contextual lines before/after notification
-    val commentaryPools: List<CommentaryPool> = emptyList()
+    val commentaryPools: List<CommentaryPool> = emptyList(),
+
+    // Per-profile nickname for the voice (doesn't change original voice name)
+    val voiceAlias: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("emoji", emoji)
@@ -168,6 +171,7 @@ data class VoiceProfile(
         put("intonationVariation", intonationVariation)
         val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; put("gimmicks", ga)
         val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; put("commentaryPools", ca)
+        put("voiceAlias", voiceAlias)
     }
 
     companion object {
@@ -192,7 +196,8 @@ data class VoiceProfile(
             } ?: emptyList(),
             commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
                 (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
-            } ?: emptyList()
+            } ?: emptyList(),
+            voiceAlias = j.optString("voiceAlias", "")
         )
 
         // ── Personality presets ───────────────────────────────────────────────

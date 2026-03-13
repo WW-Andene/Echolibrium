@@ -22,6 +22,11 @@ class NotificationReaderService : NotificationListenerService() {
     companion object {
         var instance: NotificationReaderService? = null
         private const val KEY_EXPIRY_MS = 5 * 60 * 1000L // 5 minutes
+
+        /** Last spoken notification text — used by VoiceCommandHandler repeat */
+        @Volatile var lastSpokenText: String = ""
+        /** Timestamp of last notification — used by VoiceCommandHandler time-ago */
+        @Volatile var lastNotificationTime: Long = 0L
     }
 
     override fun onCreate() {
@@ -103,11 +108,17 @@ class NotificationReaderService : NotificationListenerService() {
         val rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
 
+        // Track for voice commands (repeat, time-ago)
+        lastSpokenText = rawText
+        lastNotificationTime = now
+
+        // Update mood state
+        val mood = MoodState.load(prefs).decayed()
+        val updatedMood = MoodUpdater.update(mood, signal)
+        MoodState.save(prefs, updatedMood)
+
         // Check max queue size
         val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
-
-        // Track swiped key for skip-on-swipe
-        val notifKey = sbn.key
 
         AudioPipeline.enqueue(AudioPipeline.Item(
             rawText   = rawText,

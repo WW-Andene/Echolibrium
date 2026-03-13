@@ -796,7 +796,10 @@ class ProfilesFragment : Fragment() {
 
     private fun setupProfileSpinner() {
         profileSpinner.adapter = ArrayAdapter(requireContext(),
-            android.R.layout.simple_spinner_dropdown_item, profiles.map { "${it.emoji} ${it.name}" })
+            android.R.layout.simple_spinner_dropdown_item, profiles.map { p ->
+                val alias = p.voiceAlias
+                if (alias.isNotBlank()) "${p.emoji} ${p.name} ($alias)" else "${p.emoji} ${p.name}"
+            })
         val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
         profileSpinner.setSelection(idx)
         profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -841,6 +844,27 @@ class ProfilesFragment : Fragment() {
                     profiles.removeAll { it.id == currentProfile.id }
                     VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
                 }.setNegativeButton("Cancel", null).show()
+        }
+        view?.findViewById<Button>(R.id.btn_rename_voice)?.setOnClickListener {
+            val ctx = context ?: return@setOnClickListener
+            val et = EditText(ctx).apply {
+                hint = "Voice nickname (leave empty to clear)"
+                setText(currentProfile.voiceAlias)
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle("Rename Voice")
+                .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
+                .setView(et)
+                .setPositiveButton("Save") { _, _ ->
+                    val alias = et.text.toString().trim()
+                    currentProfile = currentProfile.copy(voiceAlias = alias)
+                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                    if (idx >= 0) profiles[idx] = currentProfile
+                    VoiceProfile.saveAll(profiles, prefs)
+                    setupProfileSpinner()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
             NotificationReaderService.instance?.stopSpeaking()

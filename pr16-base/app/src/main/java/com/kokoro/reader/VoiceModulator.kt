@@ -29,7 +29,11 @@ data class ModulatedVoice(
     val stutterPosition:     Float,
     val stutterPause:        Int,
     val intonationIntensity: Int,
-    val intonationVariation: Float
+    val intonationVariation: Float,
+    // DSP fields — computed here, applied in AudioDsp
+    val jitterAmount:   Float = 0f,
+    val shouldTrailOff: Boolean = false,
+    val volume:         Float = 1.0f
 )
 
 object VoiceModulator {
@@ -91,6 +95,21 @@ object VoiceModulator {
         val intonationVariation = (profile.intonationVariation + msgInton * 0.2f)
             .coerceIn(0f, 1f)
 
+        // ── Jitter — micro-amplitude variation for humanizing ──────────────
+        val jitterAmount = (distressStrength * 0.12f + urgencyStrength * 0.04f)
+            .coerceIn(0.01f, 0.15f)
+
+        // ── Trailing off — for exhausted/collapsed states ─────────────────
+        val shouldTrailOff = signal.trajectory == Trajectory.COLLAPSED
+
+        // ── Volume — contextual gain adjustment ───────────────────────────
+        var volumeDelta = 0f
+        volumeDelta += urgencyStrength * 0.15f
+        volumeDelta -= distressStrength * 0.10f
+        if (signal.hourOfDay in 22..23 || signal.hourOfDay in 0..6) volumeDelta -= 0.08f
+        if (signal.trajectory == Trajectory.COLLAPSED) volumeDelta -= 0.10f
+        val volume = (1.0f + volumeDelta).coerceIn(0.4f, 1.3f)
+
         return ModulatedVoice(
             pitch               = pitch,
             speed               = speed,
@@ -102,7 +121,10 @@ object VoiceModulator {
             stutterPosition     = profile.stutterPosition,
             stutterPause        = profile.stutterPause,
             intonationIntensity = intonationIntensity,
-            intonationVariation = intonationVariation
+            intonationVariation = intonationVariation,
+            jitterAmount        = jitterAmount,
+            shouldTrailOff      = shouldTrailOff,
+            volume              = volume
         )
     }
 

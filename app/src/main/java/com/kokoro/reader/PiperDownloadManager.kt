@@ -67,6 +67,9 @@ object PiperDownloadManager {
     fun isDownloading(voiceId: String): Boolean =
         synchronized(downloading) { voiceId in downloading }
 
+    fun isAnyDownloading(): Boolean =
+        synchronized(downloading) { downloading.isNotEmpty() }
+
     fun getState(ctx: Context, voiceId: String): State {
         if (isVoiceReady(ctx, voiceId)) return State.READY
         if (isDownloading(voiceId)) return State.DOWNLOADING

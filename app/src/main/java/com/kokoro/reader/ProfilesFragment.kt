@@ -15,6 +15,8 @@ class ProfilesFragment : Fragment() {
     private var currentProfile = VoiceProfile()
     private var genderFilter = "All"
     private var languageFilter = "All"
+    private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var refreshRunnable: Runnable? = null
 
     private lateinit var profileSpinner: Spinner
     private lateinit var txtPreview: EditText
@@ -423,6 +425,7 @@ class ProfilesFragment : Fragment() {
         }
         PiperDownloadManager.downloadVoice(ctx, voiceId)
         renderVoiceGrid()
+        startDownloadRefresh()
     }
 
     private fun buildDownloadBanner(): android.view.View {
@@ -464,6 +467,7 @@ class ProfilesFragment : Fragment() {
                         }
                         VoiceDownloadManager.downloadModel(ctx)
                         renderVoiceGrid()
+                        startDownloadRefresh()
                     }
                 })
             }
@@ -1078,5 +1082,51 @@ class ProfilesFragment : Fragment() {
         })
     }
 
-    override fun onDestroyView() { super.onDestroyView() }
+    override fun onResume() {
+        super.onResume()
+        startDownloadRefresh()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopDownloadRefresh()
+    }
+
+    override fun onDestroyView() {
+        stopDownloadRefresh()
+        super.onDestroyView()
+    }
+
+    /**
+     * Periodically refresh the voice grid while any download is in progress.
+     * Checks every 2 seconds; stops automatically when no downloads are active.
+     */
+    private fun startDownloadRefresh() {
+        stopDownloadRefresh()
+        refreshRunnable = object : Runnable {
+            override fun run() {
+                if (!isAdded) return
+                val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
+                val piperDownloading = PiperDownloadManager.isAnyDownloading()
+                if (kokoroDownloading || piperDownloading) {
+                    renderVoiceGrid()
+                    refreshHandler.postDelayed(this, 2000)
+                } else {
+                    // One final refresh to show completed state
+                    renderVoiceGrid()
+                }
+            }
+        }
+        // Only start polling if something is downloading
+        val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
+        val piperDownloading = PiperDownloadManager.isAnyDownloading()
+        if (kokoroDownloading || piperDownloading) {
+            refreshHandler.postDelayed(refreshRunnable!!, 2000)
+        }
+    }
+
+    private fun stopDownloadRefresh() {
+        refreshRunnable?.let { refreshHandler.removeCallbacks(it) }
+        refreshRunnable = null
+    }
 }

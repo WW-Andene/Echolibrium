@@ -6,6 +6,7 @@ import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,6 +23,9 @@ object NotificationTranslator {
 
     // Track which models are ready (downloaded)
     private val readyModels = mutableSetOf<String>()
+
+    // Background executor for ML Kit callbacks — avoids deadlock when called from main thread
+    private val callbackExecutor = Executors.newSingleThreadExecutor()
 
     /** Supported languages: code → display name */
     val LANGUAGES = linkedMapOf(
@@ -69,8 +73,8 @@ object NotificationTranslator {
             var downloaded = false
             val conditions = DownloadConditions.Builder().build()
             translator.downloadModelIfNeeded(conditions)
-                .addOnSuccessListener { downloaded = true; latch.countDown() }
-                .addOnFailureListener { e ->
+                .addOnSuccessListener(callbackExecutor) { downloaded = true; latch.countDown() }
+                .addOnFailureListener(callbackExecutor) { e ->
                     Log.w(TAG, "Model download failed for $key", e)
                     latch.countDown()
                 }
@@ -85,12 +89,12 @@ object NotificationTranslator {
         val latch = CountDownLatch(1)
         var result = text
         translator.translate(text)
-            .addOnSuccessListener { translated ->
+            .addOnSuccessListener(callbackExecutor) { translated ->
                 result = translated
                 Log.d(TAG, "Translated [$key]: \"$text\" → \"$translated\"")
                 latch.countDown()
             }
-            .addOnFailureListener { e ->
+            .addOnFailureListener(callbackExecutor) { e ->
                 Log.w(TAG, "Translation failed for $key", e)
                 latch.countDown()
             }

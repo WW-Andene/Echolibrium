@@ -1,11 +1,20 @@
 # Sherpa-onnx JNI — keep all native method bindings
 -keep class com.k2fsa.sherpa.onnx.** { *; }
 
-# Keep all app classes — the voice pipeline uses object singletons, enums,
-# data classes, and cross-class references that R8 can incorrectly strip
-# or rename. This is a small app; aggressive minification provides no
-# meaningful APK size benefit but causes runtime crashes.
--keep class com.echolibrium.kyokan.** { *; }
+# Keep components declared in AndroidManifest (Activity, Service, Receiver)
+-keep class com.echolibrium.kyokan.MainActivity { *; }
+-keep class com.echolibrium.kyokan.NotificationReaderService { *; }
+-keep class com.echolibrium.kyokan.TtsAliveService { *; }
+-keep class com.echolibrium.kyokan.BootReceiver { *; }
+
+# Keep classes that are deserialized from SharedPreferences or JSON
+-keep class com.echolibrium.kyokan.VoiceProfile { *; }
+-keep class com.echolibrium.kyokan.AppRule { *; }
+-keep class com.echolibrium.kyokan.GimmickConfig { *; }
+-keep class com.echolibrium.kyokan.MoodState { *; }
+
+# Keep Fragment classes (instantiated by FragmentManager via class name)
+-keep class com.echolibrium.kyokan.*Fragment { *; }
 
 # Keep enum entries (used by valueOf in deserialization)
 -keepclassmembers enum com.echolibrium.kyokan.** {

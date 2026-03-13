@@ -4,11 +4,11 @@ plugins {
 }
 android {
     namespace 'com.echolibrium.kyokan'
-    compileSdk 34
+    compileSdk 35
     defaultConfig {
         applicationId "com.echolibrium.kyokan"
         minSdk 26
-        targetSdk 34
+        targetSdk 35
         versionCode 3
         versionName "3.0"
         // Only include arm64 — Dimensity 8200 is arm64, keeps APK small
@@ -23,11 +23,15 @@ android {
                 keyAlias "echolibrium"
                 keyPassword "echolibrium123"
             }
+            // Enable v1 (JAR) + v2 (APK Signature Scheme) + v3 (key rotation support)
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
     }
     buildTypes {
         release {
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             def ksFile = file("${rootProject.projectDir}/keystore.jks")
             signingConfig ksFile.exists() ? signingConfigs.release : signingConfigs.debug
@@ -41,7 +45,11 @@ android {
     // Do not compress model files — they are extracted to filesystem at runtime
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
     packagingOptions {
-        jniLibs { useLegacyPackaging = true }
+        jniLibs {
+            useLegacyPackaging = true
+            // Strip debug symbols from all native libs (fixes unstripped libonnxruntime4j_jni.so)
+            keepDebugSymbols -= ['**/libonnxruntime4j_jni.so']
+        }
         // sherpa_onnx.aar and onnxruntime-android both bundle libonnxruntime.so
         // Keep sherpa's copy (loaded first) — they're the same ORT version
         pickFirst '**/libonnxruntime.so'

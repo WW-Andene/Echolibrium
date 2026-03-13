@@ -1,5 +1,6 @@
 package com.echolibrium.kyokan
 
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.text.Editable
@@ -66,11 +67,16 @@ class AppsFragment : Fragment() {
 
         Thread {
             val pm = requireContext().packageManager
-            val apps = try {
-                @Suppress("DEPRECATION") pm.getInstalledApplications(0)
+            // Use queryIntentActivities with LAUNCHER intent — works with scoped <queries>
+            // instead of QUERY_ALL_PACKAGES. Returns all apps with a launcher icon (user apps).
+            val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val resolveInfos = try {
+                pm.queryIntentActivities(launcherIntent, 0)
             } catch (e: Exception) { emptyList() }
 
-            val newRules = apps
+            val newRules = resolveInfos
+                .mapNotNull { ri -> ri.activityInfo?.applicationInfo }
+                .distinctBy { it.packageName }
                 .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
                 .sortedBy { try { pm.getApplicationLabel(it).toString().lowercase() } catch (e: Exception) { it.packageName } }
                 .mapNotNull { info ->

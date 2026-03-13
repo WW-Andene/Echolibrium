@@ -104,9 +104,11 @@ class RulesFragment : Fragment() {
         setupLangProfileSpinner(v, R.id.spinner_lang_fr, "lang_profile_fr")
 
         setupTranslateRoute(v, R.id.switch_translate_en, R.id.spinner_translate_en,
-            R.id.txt_translate_en_status, "translate_en_enabled", "translate_en_lang", "en")
+            R.id.label_translate_en_target, R.id.txt_translate_en_status,
+            "translate_en_enabled", "translate_en_lang", "en")
         setupTranslateRoute(v, R.id.switch_translate_fr, R.id.spinner_translate_fr,
-            R.id.txt_translate_fr_status, "translate_fr_enabled", "translate_fr_lang", "fr")
+            R.id.label_translate_fr_target, R.id.txt_translate_fr_status,
+            "translate_fr_enabled", "translate_fr_lang", "fr")
     }
 
     private fun toggleSection(label: TextView, section: LinearLayout, name: String) {
@@ -199,15 +201,18 @@ class RulesFragment : Fragment() {
     private val translateCodes = NotificationTranslator.LANGUAGES.keys.toList().filter { it.isNotEmpty() }
     private val translateNames = NotificationTranslator.LANGUAGES.values.toList().filter { it != "Off (no translation)" }
 
-    private fun setupTranslateRoute(v: View, switchId: Int, spinnerId: Int, statusId: Int,
-                                     enabledKey: String, langKey: String, sourceLang: String) {
+    private fun setupTranslateRoute(v: View, switchId: Int, spinnerId: Int, labelId: Int,
+                                     statusId: Int, enabledKey: String, langKey: String,
+                                     sourceLang: String) {
         val switch = v.findViewById<SwitchCompat>(switchId)
         val spinner = v.findViewById<Spinner>(spinnerId)
+        val label = v.findViewById<TextView>(labelId)
         val status = v.findViewById<TextView>(statusId)
 
         val enabled = prefs.getBoolean(enabledKey, false)
         switch.isChecked = enabled
         spinner.visibility = if (enabled) View.VISIBLE else View.GONE
+        label.visibility = if (enabled) View.VISIBLE else View.GONE
 
         spinner.adapter = ArrayAdapter(requireContext(),
             android.R.layout.simple_spinner_dropdown_item, translateNames)
@@ -219,8 +224,19 @@ class RulesFragment : Fragment() {
         switch.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(enabledKey, checked).apply()
             spinner.visibility = if (checked) View.VISIBLE else View.GONE
+            label.visibility = if (checked) View.VISIBLE else View.GONE
             val lang = translateCodes[spinner.selectedItemPosition]
             updateTranslateStatus(status, checked, lang, sourceLang)
+            // Pre-download model when toggle is turned on with a language already selected
+            if (checked && lang.isNotBlank() && lang != sourceLang) {
+                status.text = "Downloading model…"
+                NotificationTranslator.ensureModel(sourceLang, lang) { ok ->
+                    status.post {
+                        updateTranslateStatus(status, true, lang, sourceLang)
+                        if (!ok) status.text = "✗ Download failed — needs internet once"
+                    }
+                }
+            }
         }
 
         spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -244,10 +260,12 @@ class RulesFragment : Fragment() {
     }
 
     private fun updateTranslateStatus(tv: TextView, enabled: Boolean, targetLang: String, sourceLang: String) {
+        val srcName = NotificationTranslator.LANGUAGES[sourceLang] ?: sourceLang
+        val tgtName = NotificationTranslator.LANGUAGES[targetLang] ?: targetLang
         tv.text = when {
             !enabled -> ""
             targetLang == sourceLang -> "Same language — no translation needed"
-            targetLang.isNotBlank() -> "Will translate $sourceLang → $targetLang before speaking"
+            targetLang.isNotBlank() -> "Will translate $srcName → $tgtName before speaking"
             else -> "Select target language"
         }
     }

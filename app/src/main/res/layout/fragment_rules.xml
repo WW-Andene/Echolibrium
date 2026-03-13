@@ -120,7 +120,12 @@
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
-            <!-- English route -->
+            <!-- Voice routing per language -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="// VOICE ROUTING"
+                android:textColor="#446644" android:textSize="11sp" android:fontFamily="monospace"
+                android:layout_marginBottom="8dp"/>
+
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="🇺🇸🇬🇧  English notifications → Voice:"
                 android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
@@ -128,6 +133,29 @@
             <Spinner android:id="@+id/spinner_lang_en" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:background="#1a1a1a"
                 android:padding="8dp" android:layout_marginBottom="6dp"/>
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="🇫🇷  French notifications → Voice:"
+                android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
+                android:layout_marginBottom="4dp"/>
+            <Spinner android:id="@+id/spinner_lang_fr" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp" android:layout_marginBottom="12dp"/>
+
+            <!-- Translation (works independently of routing) -->
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="#222222" android:layout_marginBottom="12dp"/>
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="// TRANSLATION"
+                android:textColor="#446644" android:textSize="11sp" android:fontFamily="monospace"
+                android:layout_marginBottom="4dp"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Translate notifications before speaking. Works with or without voice routing above."
+                android:textSize="11sp" android:textColor="#555555" android:fontFamily="monospace"
+                android:layout_marginBottom="10dp"/>
+
+            <!-- English translation -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
@@ -136,22 +164,20 @@
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_translate_en"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
+            <TextView android:id="@+id/label_translate_en_target" android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Translate to:"
+                android:textColor="#888888" android:textSize="11sp" android:fontFamily="monospace"
+                android:paddingStart="8dp" android:layout_marginBottom="2dp" android:visibility="gone"/>
             <Spinner android:id="@+id/spinner_translate_en" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:background="#1a1a1a"
                 android:padding="8dp" android:layout_marginBottom="4dp" android:visibility="gone"/>
             <TextView android:id="@+id/txt_translate_en_status" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:textSize="10sp"
                 android:textColor="#555555" android:fontFamily="monospace"
-                android:layout_marginBottom="16dp"/>
+                android:layout_marginBottom="12dp"/>
 
-            <!-- French route -->
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="🇫🇷  French notifications → Voice:"
-                android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
-                android:layout_marginBottom="4dp"/>
-            <Spinner android:id="@+id/spinner_lang_fr" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:background="#1a1a1a"
-                android:padding="8dp" android:layout_marginBottom="6dp"/>
+            <!-- French translation -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
@@ -160,6 +186,11 @@
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_translate_fr"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
+            <TextView android:id="@+id/label_translate_fr_target" android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Translate to:"
+                android:textColor="#888888" android:textSize="11sp" android:fontFamily="monospace"
+                android:paddingStart="8dp" android:layout_marginBottom="2dp" android:visibility="gone"/>
             <Spinner android:id="@+id/spinner_translate_fr" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:background="#1a1a1a"
                 android:padding="8dp" android:layout_marginBottom="4dp" android:visibility="gone"/>

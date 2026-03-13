@@ -126,8 +126,9 @@ class NotificationReaderService : NotificationListenerService() {
             var rawText = buildMessage(appName, title, text, readMode)
             if (rawText.isBlank()) return@execute
 
-            // Detect language: prefer the app's actual locale, fall back to text heuristic
-            val detectedLang = getAppLanguage(pkgName) ?: detectLanguage("$title $text")
+            // Detect content language from text, using app locale as hint for ambiguous cases
+            val appLang = getAppLanguage(pkgName)
+            val detectedLang = detectLanguage("$title $text", appLang)
             val translateEnabled = when (detectedLang) {
                 "fr" -> prefs.getBoolean("translate_fr_enabled", false)
                 else -> prefs.getBoolean("translate_en_enabled", false)
@@ -251,11 +252,9 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     /**
-     * Get the language the notification-sending app is running in.
-     * Uses the app's resource configuration locale — this is set by Android based on
-     * the app's supported languages and the user's device language preferences.
-     *
-     * Returns "fr", "en", etc. or null if we can't determine it.
+     * Get the UI language the notification-sending app is running in.
+     * NOTE: This is the app's UI language, not necessarily the content language.
+     * A French Gmail can show an English email. Used as a hint, not as truth.
      */
     private fun getAppLanguage(packageName: String): String? {
         return try {
@@ -268,28 +267,36 @@ class NotificationReaderService : NotificationListenerService() {
             }
             locale.language.take(2).lowercase().ifEmpty { null }
         } catch (e: Exception) {
-            null  // fall back to text-based detection
+            null
         }
     }
 
     /**
-     * Fallback language detection from text content.
-     * Only used when app locale can't be determined.
+     * Detect the language of the notification content.
+     *
+     * Text analysis is primary (it sees the actual words). App locale is a hint
+     * for ambiguous cases — e.g. a French app with short text like "OK" or "Photo"
+     * that has no clear language markers.
+     *
+     * @param text The notification text to analyze
+     * @param appLangHint The sending app's UI locale (may differ from content language)
      */
-    private fun detectLanguage(text: String): String {
+    private fun detectLanguage(text: String, appLangHint: String? = null): String {
         val lower = text.lowercase()
-        // Count French accent characters — strong signal, but need enough of them
-        val frenchAccents = lower.count { it in "éèêëàâùûôîïç" }
-        if (frenchAccents >= 3) return "fr"
 
-        // French contractions are very strong signals (don't exist in English)
+        // ── Strong signals: these override everything ──
+
+        // French accents are definitive — English text doesn't have éèêëàâùûôîïç
+        val frenchAccents = lower.count { it in "éèêëàâùûôîïç" }
+        if (frenchAccents >= 2) return "fr"
+
+        // French contractions don't exist in English
         val strongFrench = listOf("\\bc'est\\b", "\\bj'ai\\b", "\\bn'est\\b", "\\bqu'\\b",
             "\\bl'\\w", "\\bd'\\w", "\\bs'\\w", "\\bn'\\w")
         val strongHits = strongFrench.count { Regex(it).containsMatchIn(lower) }
         if (strongHits >= 1) return "fr"
 
-        // French-only words that DON'T appear in English
-        // Excluded: "le", "la", "un", "il", "est", "sur", "du" — too common in English
+        // ── Medium signals: French-only words ──
         val frenchOnlyWords = listOf(
             "\\bune\\b", "\\bles\\b", "\\bdes\\b", "\\baux\\b",
             "\\bsont\\b", "\\bpas\\b", "\\bque\\b", "\\bqui\\b",
@@ -300,10 +307,14 @@ class NotificationReaderService : NotificationListenerService() {
             "\\bactivé\\b", "\\bdésactivé\\b", "\\bêtes\\b"
         )
         val frenchHits = frenchOnlyWords.count { Regex(it).containsMatchIn(lower) }
-        // Need at least 2 French-only words + 1 accent, or 4+ French-only words
-        if (frenchHits >= 4) return "fr"
-        if (frenchHits >= 2 && frenchAccents >= 1) return "fr"
+        if (frenchHits >= 3) return "fr"
 
+        // ── Ambiguous zone: some French signals but not enough to be sure ──
+        // Use app locale as tiebreaker: if the app is French AND there are some
+        // French-looking words, it's probably French content
+        if (frenchHits >= 1 && appLangHint == "fr") return "fr"
+
+        // ── No French signals at all: default to English ──
         return "en"
     }
 

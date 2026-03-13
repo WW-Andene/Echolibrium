@@ -200,7 +200,7 @@ class HomeFragment : Fragment() {
             // Step 3: Notification listener access
             !isNotifGranted() -> {
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                Toast.makeText(ctx, "Enable Kokoro Reader", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, "Enable Kyōkan", Toast.LENGTH_LONG).show()
             }
             else -> {
                 Toast.makeText(ctx, "All set!", Toast.LENGTH_SHORT).show()

@@ -1,4 +1,4 @@
-# Kokoro Reader v3
+# Kyōkan v3
 
 Notification reader for Android with full voice personality system.
 
@@ -19,13 +19,13 @@ Notification reader for Android with full voice personality system.
 3. Download **both** APKs from Artifacts:
    - `KokoroReader-v3` — the main app
    - `SherpaTTS-arm64-v8a` — the TTS engine (required)
-4. Install SherpaTTS first, then Kokoro Reader
+4. Install SherpaTTS first, then Kyōkan
 5. Grant notification permission when prompted
 
 ## Install
-1. Install **SherpaTTS** (`SherpaTTS-arm64-v8a.apk`) — this is the TTS engine that Kokoro Reader uses to speak
-2. Install **Kokoro Reader** (`KokoroReader-v3.apk`)
-3. Open Kokoro Reader → Grant notification listener permission
+1. Install **SherpaTTS** (`SherpaTTS-arm64-v8a.apk`) — this is the TTS engine that Kyōkan uses to speak
+2. Install **Kyōkan** (`KokoroReader-v3.apk`)
+3. Open Kyōkan → Grant notification listener permission
 4. Go to **Profiles** tab → Download the Kokoro voice model (~120 MB, one-time)
 
 ## Requirements

@@ -89,7 +89,7 @@ class TtsAliveService : Service() {
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Kokoro Reader")
+                .setContentTitle("Kyōkan")
                 .setContentText("Reading notifications")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentIntent(openIntent)
@@ -98,7 +98,7 @@ class TtsAliveService : Service() {
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("Kokoro Reader")
+                .setContentTitle("Kyōkan")
                 .setContentText("Reading notifications")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentIntent(openIntent)

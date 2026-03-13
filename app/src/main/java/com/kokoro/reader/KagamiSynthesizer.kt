@@ -3,7 +3,7 @@ package com.kokoro.reader
 import android.util.Log
 
 /**
- * LegoSynthesizer — Unified pipeline with pre-synthesis emotional control.
+ * KagamiSynthesizer — Unified pipeline with pre-synthesis emotional control.
  *
  * Replaces the direct SherpaEngine.synthesize(text, sid, speed) call in AudioPipeline
  * with a richer path that sculpts style vectors (Kokoro) or maps scales (Piper)
@@ -23,10 +23,10 @@ import android.util.Log
  *       synthesizeWithKokoro(ctx, voiceId, processed, item.modulated.speed)
  *   }
  *
- * With Lego:
- *   val legoResult = legoSynthesizer?.synthesize(tokenIds, item.modulated, item.signal, item.profile)
- *   val result = if (legoResult != null) {
- *       Pair(legoResult.pcm, legoResult.sampleRate)
+ * With Kagami:
+ *   val kagamiResult = kagamiSynthesizer?.synthesize(tokenIds, item.modulated, item.signal, item.profile)
+ *   val result = if (kagamiResult != null) {
+ *       Pair(kagamiResult.pcm, kagamiResult.sampleRate)
  *   } else {
  *       // existing SherpaEngine path (unchanged fallback)
  *       ...
@@ -40,12 +40,12 @@ import android.util.Log
  *   - KokoroVoices for voice index resolution
  *   - Actual ModulatedVoice field names
  */
-class LegoSynthesizer(
+class KagamiSynthesizer(
     private val directOrt: DirectOrtEngine,
 ) {
 
     companion object {
-        private const val TAG = "LegoSynthesizer"
+        private const val TAG = "KagamiSynthesizer"
     }
 
     // ─── Configuration ──────────────────────────────────────────────────

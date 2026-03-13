@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 import org.json.JSONArray
 import org.json.JSONObject
+import android.widget.ArrayAdapter
 
 class RulesFragment : Fragment() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
@@ -87,6 +88,20 @@ class RulesFragment : Fragment() {
             prefs.edit().putInt("notif_max_queue", value.coerceAtLeast(1)).apply()
             txtMaxQueue.text = "Max queue size: ${value.coerceAtLeast(1)}"
         })
+
+        // ── Collapsible: Language Profiles ──
+        val labelLang = v.findViewById<TextView>(R.id.label_lang_profiles)
+        val sectionLang = v.findViewById<LinearLayout>(R.id.section_lang_profiles)
+        labelLang.setOnClickListener { toggleSection(labelLang, sectionLang, "LANGUAGE PROFILES") }
+
+        val switchLangRouting = v.findViewById<SwitchCompat>(R.id.switch_lang_routing)
+        switchLangRouting.isChecked = prefs.getBoolean("lang_routing_enabled", false)
+        switchLangRouting.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("lang_routing_enabled", checked).apply()
+        }
+
+        setupLangProfileSpinner(v, R.id.spinner_lang_en, "lang_profile_en")
+        setupLangProfileSpinner(v, R.id.spinner_lang_fr, "lang_profile_fr")
     }
 
     private fun toggleSection(label: TextView, section: LinearLayout, name: String) {
@@ -152,6 +167,25 @@ class RulesFragment : Fragment() {
 
             row.addView(etFind); row.addView(arrow); row.addView(etReplace); row.addView(btnDel)
             container.addView(row)
+        }
+    }
+
+    private fun setupLangProfileSpinner(v: View, spinnerId: Int, prefKey: String) {
+        val spinner = v.findViewById<Spinner>(spinnerId)
+        val profiles = VoiceProfile.loadAll(prefs)
+        val names = listOf("(Default / Active profile)") + profiles.map { "${it.emoji} ${it.name}" }
+        val ids = listOf("") + profiles.map { it.id }
+
+        spinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, names)
+        val savedId = prefs.getString(prefKey, "") ?: ""
+        val idx = ids.indexOf(savedId).coerceAtLeast(0)
+        spinner.setSelection(idx)
+
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putString(prefKey, ids[position]).apply()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 

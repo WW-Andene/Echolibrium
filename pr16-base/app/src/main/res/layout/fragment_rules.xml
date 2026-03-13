@@ -97,5 +97,47 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Collapsible: Language Profiles -->
+        <TextView android:id="@+id/label_lang_profiles" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // LANGUAGE PROFILES" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_lang_profiles" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="14dp" android:visibility="gone">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Route notifications to different voice profiles by detected language. When enabled, the app auto-detects language and uses the mapped profile."
+                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- Enable toggle -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="10dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Enable language routing"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_lang_routing"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- English profile -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="🇺🇸🇬🇧  English → Profile:"
+                android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
+                android:layout_marginBottom="4dp"/>
+            <Spinner android:id="@+id/spinner_lang_en" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp" android:layout_marginBottom="12dp"/>
+
+            <!-- French profile -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="🇫🇷  French → Profile:"
+                android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
+                android:layout_marginBottom="4dp"/>
+            <Spinner android:id="@+id/spinner_lang_fr" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp"/>
+        </LinearLayout>
+
     </LinearLayout>
 </ScrollView>

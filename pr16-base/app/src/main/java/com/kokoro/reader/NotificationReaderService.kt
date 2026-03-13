@@ -94,6 +94,7 @@ class NotificationReaderService : NotificationListenerService() {
 
         val profiles  = VoiceProfile.loadAll(prefs)
         val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
+            ?: resolveProfileByLanguage(title, text, profiles)
             ?: prefs.getString("active_profile_id", "")
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
         val modulated = VoiceModulator.modulate(profile, signal)
@@ -172,6 +173,49 @@ class NotificationReaderService : NotificationListenerService() {
                 Pair(o.optString("find"), o.optString("replace"))
             }
         } catch (e: Exception) { emptyList() }
+    }
+
+    /**
+     * Detect language from notification text and return the mapped profile ID,
+     * or null if language routing is disabled or no match.
+     */
+    private fun resolveProfileByLanguage(title: String, text: String, profiles: List<VoiceProfile>): String? {
+        if (!prefs.getBoolean("lang_routing_enabled", false)) return null
+        val combined = "$title $text"
+        val lang = detectLanguage(combined)
+        val prefKey = when (lang) {
+            "fr" -> "lang_profile_fr"
+            else -> "lang_profile_en"
+        }
+        val id = prefs.getString(prefKey, "") ?: ""
+        return id.ifEmpty { null }
+    }
+
+    /**
+     * Simple language detection: returns "fr" if the text looks French, "en" otherwise.
+     * Uses French-specific accented characters and common French words.
+     */
+    private fun detectLanguage(text: String): String {
+        val lower = text.lowercase()
+        // Count French accent characters
+        val frenchAccents = lower.count { it in "éèêëàâùûôîïç" }
+        if (frenchAccents >= 2) return "fr"
+
+        // Check for common French words (bounded by word boundaries)
+        val frenchWords = listOf(
+            "\\ble\\b", "\\bla\\b", "\\bles\\b", "\\bun\\b", "\\bune\\b", "\\bdes\\b",
+            "\\bdu\\b", "\\bau\\b", "\\baux\\b", "\\bde\\b",
+            "\\best\\b", "\\bsont\\b", "\\bpas\\b", "\\bque\\b", "\\bqui\\b",
+            "\\bje\\b", "\\btu\\b", "\\bil\\b", "\\bnous\\b", "\\bvous\\b", "\\bils\\b",
+            "\\bpour\\b", "\\bavec\\b", "\\bdans\\b", "\\bsur\\b",
+            "\\bbonjour\\b", "\\bmerci\\b", "\\bsalut\\b", "\\bbonsoir\\b",
+            "\\bcomment\\b", "\\bpourquoi\\b", "\\bquand\\b",
+            "\\bc'est\\b", "\\bj'ai\\b", "\\bn'est\\b", "\\bqu'\\b"
+        )
+        val frenchHits = frenchWords.count { Regex(it).containsMatchIn(lower) }
+        if (frenchHits >= 3) return "fr"
+
+        return "en"
     }
 
     fun testSpeak(text: String, profile: VoiceProfile, rules: List<Pair<String, String>>) {

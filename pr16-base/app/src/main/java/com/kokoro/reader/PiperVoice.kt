@@ -82,7 +82,15 @@ object PiperVoices {
         piper("cori",  "Female", "English (UK)", "British", "en_GB", "medium"),
     )
 
-    val ALL: List<PiperVoice> = EN_US + EN_GB
+    // ── French (FR) ───────────────────────────────────────────────────────
+    private val FR_FR = listOf(
+        piper("siwis",  "Female", "French", "French", "fr_FR", "medium"),
+        piper("tom",    "Male",   "French", "French", "fr_FR", "medium"),
+        piper("mls",    "Female", "French", "French", "fr_FR", "medium"),
+        piper("upmc",   "Male",   "French", "French", "fr_FR", "medium"),
+    )
+
+    val ALL: List<PiperVoice> = EN_US + EN_GB + FR_FR
 
     fun byId(id: String): PiperVoice? = ALL.find { it.id == id }
     fun default(): PiperVoice = ALL.first()

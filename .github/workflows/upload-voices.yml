@@ -54,6 +54,10 @@ jobs:
             "en_GB-alba-medium"
             "en_GB-alan-medium"
             "en_GB-cori-medium"
+            "fr_FR-siwis-medium"
+            "fr_FR-tom-medium"
+            "fr_FR-mls-medium"
+            "fr_FR-upmc-medium"
           )
 
           for VOICE_ID in "${VOICES[@]}"; do

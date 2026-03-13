@@ -111,22 +111,18 @@ class NotificationReaderService : NotificationListenerService() {
 
         val profiles  = VoiceProfile.loadAll(prefs)
         val activeId = prefs.getString("active_profile_id", "") ?: ""
-        val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
-            ?: resolveProfileByLanguage(title, text, profiles)
-            ?: activeId
-        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        val modulated = VoiceModulator.modulate(profile, signal)
 
         val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
         var rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
 
-        // Translate based on per-route settings in Rules tab
+        // Detect language and determine translation target
         val detectedLang = detectLanguage("$title $text")
         val translateEnabled = when (detectedLang) {
             "fr" -> prefs.getBoolean("translate_fr_enabled", false)
             else -> prefs.getBoolean("translate_en_enabled", false)
         }
+        var effectiveLang = detectedLang
         if (translateEnabled) {
             val targetLang = when (detectedLang) {
                 "fr" -> prefs.getString("translate_fr_lang", "") ?: ""
@@ -134,8 +130,16 @@ class NotificationReaderService : NotificationListenerService() {
             }
             if (targetLang.isNotBlank() && targetLang != detectedLang) {
                 rawText = NotificationTranslator.translate(rawText, detectedLang, targetLang)
+                effectiveLang = targetLang
             }
         }
+
+        // Pick voice profile: per-app rule > language route (using output language) > active
+        val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
+            ?: resolveProfileByLanguage(effectiveLang, profiles)
+            ?: activeId
+        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
+        val modulated = VoiceModulator.modulate(profile, signal)
 
         // Track for voice commands (repeat, time-ago)
         lastSpokenText = rawText
@@ -216,13 +220,11 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     /**
-     * Detect language from notification text and return the mapped profile ID,
+     * Return the mapped voice profile ID for the given language,
      * or null if language routing is disabled or no match.
      */
-    private fun resolveProfileByLanguage(title: String, text: String, profiles: List<VoiceProfile>): String? {
+    private fun resolveProfileByLanguage(lang: String, profiles: List<VoiceProfile>): String? {
         if (!prefs.getBoolean("lang_routing_enabled", false)) return null
-        val combined = "$title $text"
-        val lang = detectLanguage(combined)
         val prefKey = when (lang) {
             "fr" -> "lang_profile_fr"
             else -> "lang_profile_en"

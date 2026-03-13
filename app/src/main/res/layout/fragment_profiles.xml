@@ -8,12 +8,15 @@
             android:text="VOICE PROFILES" android:textSize="20sp" android:textStyle="bold"
             android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
 
-        <!-- Profile selector -->
+        <!-- Profile grid -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// ACTIVE PROFILE" style="@style/SectionLabel"/>
-        <Spinner android:id="@+id/spinner_profile" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:background="#111111"
-            android:padding="12dp" android:layout_marginBottom="8dp"/>
+            android:text="// PROFILES" style="@style/SectionLabel"/>
+
+        <!-- Grid of profile cards (built dynamically) -->
+        <LinearLayout android:id="@+id/profile_grid" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:layout_marginBottom="8dp"/>
+
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="16dp">
             <Button android:id="@+id/btn_rename_voice" android:layout_width="wrap_content"
@@ -29,6 +32,10 @@
                 android:layout_height="wrap_content" android:text="DELETE"
                 android:backgroundTint="#2a1a1a" android:textColor="#ff4444" android:fontFamily="monospace"/>
         </LinearLayout>
+
+        <!-- Hidden spinner kept for compatibility -->
+        <Spinner android:id="@+id/spinner_profile" android:layout_width="match_parent"
+            android:layout_height="0dp" android:visibility="gone"/>
 
         <!-- Personality presets -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

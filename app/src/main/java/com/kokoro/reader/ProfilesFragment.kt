@@ -33,6 +33,7 @@ class ProfilesFragment : Fragment() {
     private lateinit var seekStutterPause: SeekBar;private lateinit var tvStutterPause: TextView
     private lateinit var seekIntonInt: SeekBar;    private lateinit var tvIntonInt: TextView
     private lateinit var seekIntonVar: SeekBar;    private lateinit var tvIntonVar: TextView
+    private lateinit var profileGrid: LinearLayout
     private lateinit var voiceGrid: LinearLayout
     private lateinit var presetsScroll: LinearLayout
     private lateinit var gimmicksContainer: LinearLayout
@@ -50,6 +51,7 @@ class ProfilesFragment : Fragment() {
 
         setupCollapsibleSections(v)
         setupProfileSpinner()
+        renderProfileGrid()
         buildPresets()
         buildFilterButtons()
         renderVoiceGrid()
@@ -80,6 +82,7 @@ class ProfilesFragment : Fragment() {
 
     private fun bindViews(v: View) {
         profileSpinner  = v.findViewById(R.id.spinner_profile)
+        profileGrid     = v.findViewById(R.id.profile_grid)
         txtPreview      = v.findViewById(R.id.txt_preview)
         btnTest         = v.findViewById(R.id.btn_test)
         btnSave         = v.findViewById(R.id.btn_save)
@@ -794,6 +797,106 @@ class ProfilesFragment : Fragment() {
         currentProfile = currentProfile.copy(gimmicks = updated)
     }
 
+    // ── Profile grid (cards) ───────────────────────────────────────────────
+
+    private fun renderProfileGrid() {
+        profileGrid.removeAllViews()
+        val ctx = requireContext()
+        val columns = 3
+        var row: LinearLayout? = null
+
+        profiles.forEachIndexed { index, p ->
+            if (index % columns == 0) {
+                row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).also { it.setMargins(0, 0, 0, 8) }
+                }
+                profileGrid.addView(row)
+            }
+
+            val isActive = p.id == activeProfileId
+            val card = buildProfileCard(p, isActive)
+            row!!.addView(card)
+        }
+
+        // Fill remaining cells in last row with spacers
+        val remainder = profiles.size % columns
+        if (remainder != 0) {
+            for (i in remainder until columns) {
+                row!!.addView(android.view.View(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+                })
+            }
+        }
+    }
+
+    private fun buildProfileCard(p: VoiceProfile, isActive: Boolean): android.view.View {
+        val ctx = requireContext()
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(8, 16, 8, 16)
+            setBackgroundColor(if (isActive) 0xFF1a3a1a.toInt() else 0xFF151515.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
+                it.setMargins(4, 0, 4, 0)
+            }
+
+            setOnClickListener {
+                activeProfileId = p.id
+                prefs.edit().putString("active_profile_id", activeProfileId).apply()
+                loadProfileToUI(p)
+                renderProfileGrid()
+                // Keep spinner in sync for any code that still uses it
+                val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
+                profileSpinner.setSelection(idx)
+            }
+        }
+
+        // Emoji
+        card.addView(TextView(ctx).apply {
+            text = p.emoji
+            textSize = 24f
+            gravity = android.view.Gravity.CENTER
+        })
+
+        // Profile name
+        card.addView(TextView(ctx).apply {
+            text = p.name
+            textSize = 11f
+            setTextColor(if (isActive) 0xFF00ff88.toInt() else 0xFFaaaaaa.toInt())
+            gravity = android.view.Gravity.CENTER
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+
+        // Voice name (small, below)
+        val voiceLabel = p.voiceAlias.ifBlank { p.voiceName }
+        if (voiceLabel.isNotBlank()) {
+            card.addView(TextView(ctx).apply {
+                text = voiceLabel
+                textSize = 9f
+                setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
+                gravity = android.view.Gravity.CENTER
+                maxLines = 1
+            })
+        }
+
+        // Active indicator
+        if (isActive) {
+            card.addView(android.view.View(ctx).apply {
+                setBackgroundColor(0xFF00ff88.toInt())
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 3
+                ).also { it.setMargins(12, 8, 12, 0) }
+            })
+        }
+
+        return card
+    }
+
     private fun setupProfileSpinner() {
         profileSpinner.adapter = ArrayAdapter(requireContext(),
             android.R.layout.simple_spinner_dropdown_item, profiles.map { p ->
@@ -825,6 +928,7 @@ class ProfilesFragment : Fragment() {
             val idx = profiles.indexOfFirst { it.id == p.id }
             if (idx >= 0) profiles[idx] = p else profiles.add(p)
             VoiceProfile.saveAll(profiles, prefs)
+            renderProfileGrid()
             Toast.makeText(context, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
         }
         btnNew.setOnClickListener {
@@ -834,7 +938,11 @@ class ProfilesFragment : Fragment() {
                     val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
                     val p = VoiceProfile(name = name)
                     profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
+                    activeProfileId = p.id
+                    prefs.edit().putString("active_profile_id", activeProfileId).apply()
+                    loadProfileToUI(p)
                     setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
+                    renderProfileGrid()
                 }.setNegativeButton("Cancel", null).show()
         }
         btnDelete.setOnClickListener {
@@ -842,7 +950,12 @@ class ProfilesFragment : Fragment() {
             AlertDialog.Builder(requireContext()).setTitle("Delete ${currentProfile.name}?")
                 .setPositiveButton("Delete") { _, _ ->
                     profiles.removeAll { it.id == currentProfile.id }
-                    VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
+                    VoiceProfile.saveAll(profiles, prefs)
+                    activeProfileId = profiles[0].id
+                    prefs.edit().putString("active_profile_id", activeProfileId).apply()
+                    loadProfileToUI(profiles[0])
+                    setupProfileSpinner()
+                    renderProfileGrid()
                 }.setNegativeButton("Cancel", null).show()
         }
         view?.findViewById<Button>(R.id.btn_rename_voice)?.setOnClickListener {
@@ -862,6 +975,7 @@ class ProfilesFragment : Fragment() {
                     if (idx >= 0) profiles[idx] = currentProfile
                     VoiceProfile.saveAll(profiles, prefs)
                     setupProfileSpinner()
+                    renderProfileGrid()
                 }
                 .setNegativeButton("Cancel", null)
                 .show()

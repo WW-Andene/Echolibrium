@@ -154,7 +154,11 @@ class ProfilesFragment : Fragment() {
             && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
             { startKokoroDownload() }
         } else null
-        voiceGrid.addView(buildSectionHeader("KOKORO", "Multi-voice model  ·  11 speakers", 0xFF00ff88.toInt(), kokoroDownloadIcon))
+        val kokoroSubtitle = if (VoiceDownloadManager.isModelReady(ctx))
+            "Shared model  ·  11 speakers"
+        else
+            "Shared model  ·  11 speakers  ·  ~${VoiceDownloadManager.MODEL_SIZE_MB}MB one-time download"
+        voiceGrid.addView(buildSectionHeader("KOKORO", kokoroSubtitle, 0xFF00ff88.toInt(), kokoroDownloadIcon))
         renderKokoroVoices()
 
         // ── Spacing ─────────────────────────────────────────────────────────
@@ -264,7 +268,7 @@ class ProfilesFragment : Fragment() {
                 statusClickable = true
             }
             else -> {
-                statusText = "~${VoiceDownloadManager.MODEL_SIZE_MB}MB"
+                statusText = "get model"
                 statusColor = 0xFF00ff88.toInt()
                 statusClickable = true
             }

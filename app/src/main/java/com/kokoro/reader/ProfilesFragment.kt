@@ -844,14 +844,20 @@ class ProfilesFragment : Fragment() {
                 it.setMargins(4, 0, 4, 0)
             }
 
+            // Tap to select
             setOnClickListener {
                 activeProfileId = p.id
                 prefs.edit().putString("active_profile_id", activeProfileId).apply()
                 loadProfileToUI(p)
                 renderProfileGrid()
-                // Keep spinner in sync for any code that still uses it
                 val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
                 profileSpinner.setSelection(idx)
+            }
+
+            // Long-press to rename
+            setOnLongClickListener {
+                showRenameDialog(p)
+                true
             }
         }
 
@@ -862,10 +868,9 @@ class ProfilesFragment : Fragment() {
             gravity = android.view.Gravity.CENTER
         })
 
-        // Voice name (main label)
-        val voiceLabel = p.voiceAlias.ifBlank { p.voiceName }
+        // Profile name (main label)
         card.addView(TextView(ctx).apply {
-            text = voiceLabel.ifBlank { "No voice" }
+            text = p.name
             textSize = 11f
             setTextColor(if (isActive) 0xFF00ff88.toInt() else 0xFFaaaaaa.toInt())
             gravity = android.view.Gravity.CENTER
@@ -873,14 +878,17 @@ class ProfilesFragment : Fragment() {
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
 
-        // Profile name (small, below)
-        card.addView(TextView(ctx).apply {
-            text = p.name
-            textSize = 9f
-            setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
-            gravity = android.view.Gravity.CENTER
-            maxLines = 1
-        })
+        // Voice name (small, below)
+        val voiceLabel = p.voiceAlias.ifBlank { p.voiceName }
+        if (voiceLabel.isNotBlank()) {
+            card.addView(TextView(ctx).apply {
+                text = voiceLabel
+                textSize = 9f
+                setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
+                gravity = android.view.Gravity.CENTER
+                maxLines = 1
+            })
+        }
 
         // Active indicator
         if (isActive) {
@@ -893,6 +901,30 @@ class ProfilesFragment : Fragment() {
         }
 
         return card
+    }
+
+    private fun showRenameDialog(p: VoiceProfile) {
+        val ctx = context ?: return
+        val et = EditText(ctx).apply {
+            setText(p.name)
+            hint = "Profile name"
+            selectAll()
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle("Rename Profile")
+            .setView(et)
+            .setPositiveButton("Save") { _, _ ->
+                val newName = et.text.toString().trim().ifBlank { p.name }
+                val updated = p.copy(name = newName)
+                val idx = profiles.indexOfFirst { it.id == p.id }
+                if (idx >= 0) profiles[idx] = updated
+                if (p.id == currentProfile.id) currentProfile = updated
+                VoiceProfile.saveAll(profiles, prefs)
+                setupProfileSpinner()
+                renderProfileGrid()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun setupProfileSpinner() {

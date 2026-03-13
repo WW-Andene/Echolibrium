@@ -44,7 +44,7 @@ android {
         jniLibs { useLegacyPackaging = true }
         // sherpa_onnx.aar and onnxruntime-android both bundle libonnxruntime.so
         // Keep sherpa's copy (loaded first) — they're the same ORT version
-        pickFirst 'lib/arm64-v8a/libonnxruntime.so'
+        pickFirst '**/libonnxruntime.so'
     }
 }
 dependencies {

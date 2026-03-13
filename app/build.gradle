@@ -42,6 +42,9 @@ android {
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
     packagingOptions {
         jniLibs { useLegacyPackaging = true }
+        // sherpa_onnx.aar and onnxruntime-android both bundle libonnxruntime.so
+        // Keep sherpa's copy (loaded first) — they're the same ORT version
+        pickFirst 'lib/arm64-v8a/libonnxruntime.so'
     }
 }
 dependencies {
@@ -56,11 +59,9 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
 
     // Direct ORT access for Yatagami/Lego pipeline (style sculpting, scale mapping)
-    // sherpa_onnx.aar bundles libonnxruntime.so (v1.17.x), so we only need the Java API.
-    // Exclude native libs to avoid duplicate .so conflicts.
-    implementation('com.microsoft.onnxruntime:onnxruntime-android:1.17.0') {
-        exclude group: 'com.microsoft.onnxruntime', module: 'onnxruntime-native'
-    }
+    // sherpa_onnx.aar already bundles libonnxruntime.so — pickFirst in packagingOptions
+    // resolves the duplicate .so; we only need ORT's Java API classes (ai.onnxruntime.*)
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.0'
 
     // Tar.bz2 extraction for Kokoro model download
     implementation 'org.apache.commons:commons-compress:1.26.2'

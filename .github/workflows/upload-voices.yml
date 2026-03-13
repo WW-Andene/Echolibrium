@@ -32,6 +32,15 @@ jobs:
           # These are the ONLY compatible format for sherpa-onnx.
           # Each tar.bz2 is self-contained: {voiceId}.onnx + tokens.txt + espeak-ng-data/
           # DO NOT use HuggingFace .onnx files — they cause SIGSEGV with sherpa-onnx.
+          # ── Kokoro TTS model ──
+          echo ""
+          echo "═══ Kokoro TTS model ═══"
+          curl -fL $RETRY \
+            "${K2FSA_BASE}/tts-models/kokoro-en-v0_19.tar.bz2" \
+            -o "$STAGING/kokoro-en-v0_19.tar.bz2"
+          echo "✓ kokoro-en-v0_19.tar.bz2 ($(du -h "$STAGING/kokoro-en-v0_19.tar.bz2" | cut -f1))"
+
+          # ── Piper voice tar.bz2 packages from k2-fsa ──
           echo ""
           echo "═══ Piper voice packages (k2-fsa tar.bz2) ═══"
 

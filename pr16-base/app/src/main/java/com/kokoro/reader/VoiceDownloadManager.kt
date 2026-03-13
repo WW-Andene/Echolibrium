@@ -24,7 +24,7 @@ object VoiceDownloadManager {
 
     // Model package — int8 is ~120MB vs ~400MB for float32
     const val MODEL_NAME   = "kokoro-en-v0_19"
-    const val DOWNLOAD_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2"
+    const val DOWNLOAD_URL = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/kokoro-en-v0_19.tar.bz2"
     const val MODEL_SIZE_MB = 120  // approximate, for display
 
     enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }

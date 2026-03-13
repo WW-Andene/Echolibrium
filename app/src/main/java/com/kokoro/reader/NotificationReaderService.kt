@@ -110,9 +110,10 @@ class NotificationReaderService : NotificationListenerService() {
         )
 
         val profiles  = VoiceProfile.loadAll(prefs)
+        val activeId = prefs.getString("active_profile_id", "") ?: ""
         val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
             ?: resolveProfileByLanguage(title, text, profiles)
-            ?: prefs.getString("active_profile_id", "")
+            ?: activeId
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
         val modulated = VoiceModulator.modulate(profile, signal)
 
@@ -120,10 +121,15 @@ class NotificationReaderService : NotificationListenerService() {
         var rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
 
-        // Translate if profile has a target language set
-        if (profile.translateTo.isNotBlank()) {
+        // Translate: check selected profile first, then active profile as fallback
+        val translateLang = profile.translateTo.ifBlank {
+            profiles.find { it.id == activeId }?.translateTo ?: ""
+        }
+        if (translateLang.isNotBlank()) {
             val detectedLang = detectLanguage("$title $text")
-            rawText = NotificationTranslator.translate(rawText, detectedLang, profile.translateTo)
+            if (detectedLang != translateLang) {
+                rawText = NotificationTranslator.translate(rawText, detectedLang, translateLang)
+            }
         }
 
         // Track for voice commands (repeat, time-ago)

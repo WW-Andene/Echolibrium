@@ -87,6 +87,7 @@ object NotificationTranslator {
         translator.translate(text)
             .addOnSuccessListener { translated ->
                 result = translated
+                Log.d(TAG, "Translated [$key]: \"$text\" → \"$translated\"")
                 latch.countDown()
             }
             .addOnFailureListener { e ->

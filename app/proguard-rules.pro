@@ -9,6 +9,9 @@
 
 # Keep classes that are deserialized from SharedPreferences or JSON
 -keep class com.echolibrium.kyokan.VoiceProfile { *; }
+-keep class com.echolibrium.kyokan.VoiceIdentity { *; }
+-keep class com.echolibrium.kyokan.ExpressionMap { *; }
+-keep class com.echolibrium.kyokan.GimmickSet { *; }
 -keep class com.echolibrium.kyokan.AppRule { *; }
 -keep class com.echolibrium.kyokan.GimmickConfig { *; }
 -keep class com.echolibrium.kyokan.MoodState { *; }

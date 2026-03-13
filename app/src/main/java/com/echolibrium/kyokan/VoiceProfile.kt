@@ -155,49 +155,131 @@ data class GimmickConfig(
     }
 }
 
-// ── Voice Profile ─────────────────────────────────────────────────────────────
+// ── Voice Identity — the "who": engine, model, base pitch/speed ──────────────
+data class VoiceIdentity(
+    val voiceName: String = "",
+    val pitch: Float = 1.0f,
+    val speed: Float = 1.0f,
+    val voiceAlias: String = "",
+    val translateTo: String = ""
+) {
+    fun toJson(j: JSONObject) {
+        j.put("voiceName", voiceName); j.put("pitch", pitch); j.put("speed", speed)
+        j.put("voiceAlias", voiceAlias); j.put("translateTo", translateTo)
+    }
+
+    companion object {
+        fun fromJson(j: JSONObject) = VoiceIdentity(
+            voiceName = j.optString("voiceName", ""),
+            pitch = j.optDouble("pitch", 1.0).toFloat(),
+            speed = j.optDouble("speed", 1.0).toFloat(),
+            voiceAlias = j.optString("voiceAlias", ""),
+            translateTo = j.optString("translateTo", "")
+        )
+    }
+}
+
+// ── Expression Map — the "how they react": DSP parameter mappings ────────────
+data class ExpressionMap(
+    val breathIntensity: Int = 0,
+    val breathCurvePosition: Float = 0f,
+    val breathPause: Int = 0,
+    val stutterIntensity: Int = 0,
+    val stutterPosition: Float = 0f,
+    val stutterFrequency: Int = 0,
+    val stutterPause: Int = 30,
+    val intonationIntensity: Int = 0,
+    val intonationVariation: Float = 0.5f
+) {
+    fun toJson(j: JSONObject) {
+        j.put("breathIntensity", breathIntensity)
+        j.put("breathCurvePosition", breathCurvePosition)
+        j.put("breathPause", breathPause)
+        j.put("stutterIntensity", stutterIntensity)
+        j.put("stutterPosition", stutterPosition)
+        j.put("stutterFrequency", stutterFrequency)
+        j.put("stutterPause", stutterPause)
+        j.put("intonationIntensity", intonationIntensity)
+        j.put("intonationVariation", intonationVariation)
+    }
+
+    companion object {
+        fun fromJson(j: JSONObject) = ExpressionMap(
+            breathIntensity = j.optInt("breathIntensity", 0),
+            breathCurvePosition = j.optDouble("breathCurvePosition", 0.0).toFloat(),
+            breathPause = j.optInt("breathPause", 0),
+            stutterIntensity = j.optInt("stutterIntensity", 0),
+            stutterPosition = j.optDouble("stutterPosition", 0.0).toFloat(),
+            stutterFrequency = j.optInt("stutterFrequency", 0),
+            stutterPause = j.optInt("stutterPause", 30),
+            intonationIntensity = j.optInt("intonationIntensity", 0),
+            intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat()
+        )
+    }
+}
+
+// ── Gimmick Set — the "personality texture": transform chain config ──────────
+data class GimmickSet(
+    val gimmicks: List<GimmickConfig> = emptyList(),
+    val commentaryPools: List<CommentaryPool> = emptyList()
+) {
+    fun toJson(j: JSONObject) {
+        val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; j.put("gimmicks", ga)
+        val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; j.put("commentaryPools", ca)
+    }
+
+    companion object {
+        fun fromJson(j: JSONObject) = GimmickSet(
+            gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
+                (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
+            } ?: emptyList(),
+            commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
+                (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
+            } ?: emptyList()
+        )
+    }
+}
+
+// ── Voice Profile — named container composing Identity + Expression + Gimmicks ──
+// Backward-compatible: flat property access (profile.pitch) still works via delegation.
+// JSON serialization stays flat for SharedPreferences backward compat.
 data class VoiceProfile(
     val id: String = java.util.UUID.randomUUID().toString(),
     val name: String = "New Profile",
     val emoji: String = "🎙️",
 
-    // Base TTS
-    val voiceName: String = "",
-    val pitch: Float = 1.0f,
-    val speed: Float = 1.0f,
-
-    // Breathiness
-    val breathIntensity: Int = 0,
-    val breathCurvePosition: Float = 0f,
-    val breathPause: Int = 0,
-
-    // Stuttering
-    val stutterIntensity: Int = 0,
-    val stutterPosition: Float = 0f,
-    val stutterFrequency: Int = 0,
-    val stutterPause: Int = 30,
-
-    // Intonation
-    val intonationIntensity: Int = 0,
-    val intonationVariation: Float = 0.5f,
+    // Composed sub-types — can be swapped independently (same voice, different expression)
+    val identity: VoiceIdentity = VoiceIdentity(),
+    val expression: ExpressionMap = ExpressionMap(),
+    val gimmickSet: GimmickSet = GimmickSet(),
 
     // Personality sensitivity
     val sensitivity: PersonalitySensitivity = PersonalitySensitivity(),
 
-    // Gimmicks
-    val gimmicks: List<GimmickConfig> = emptyList(),
+    // ── Backward-compat constructor overrides ────────────────────────────
 
-    // Commentary pools — contextual lines before/after notification
-    val commentaryPools: List<CommentaryPool> = emptyList(),
-
-    // Per-profile nickname for the voice (doesn't change original voice name)
-    val voiceAlias: String = "",
-
-    // Translation: target language code (e.g. "fr", "en", "es") or "" for no translation
-    val translateTo: String = ""
+    // These let existing code do: VoiceProfile(pitch = 1.2f, breathIntensity = 30)
+    // They delegate to the composed sub-types.
+    val voiceName: String = identity.voiceName,
+    val pitch: Float = identity.pitch,
+    val speed: Float = identity.speed,
+    val voiceAlias: String = identity.voiceAlias,
+    val translateTo: String = identity.translateTo,
+    val breathIntensity: Int = expression.breathIntensity,
+    val breathCurvePosition: Float = expression.breathCurvePosition,
+    val breathPause: Int = expression.breathPause,
+    val stutterIntensity: Int = expression.stutterIntensity,
+    val stutterPosition: Float = expression.stutterPosition,
+    val stutterFrequency: Int = expression.stutterFrequency,
+    val stutterPause: Int = expression.stutterPause,
+    val intonationIntensity: Int = expression.intonationIntensity,
+    val intonationVariation: Float = expression.intonationVariation,
+    val gimmicks: List<GimmickConfig> = gimmickSet.gimmicks,
+    val commentaryPools: List<CommentaryPool> = gimmickSet.commentaryPools
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("emoji", emoji)
+        // Serialize flat (backward-compat with existing SharedPreferences data)
         put("voiceName", voiceName); put("pitch", pitch); put("speed", speed)
         put("breathIntensity", breathIntensity)
         put("breathCurvePosition", breathCurvePosition)
@@ -216,32 +298,23 @@ data class VoiceProfile(
     }
 
     companion object {
-        fun fromJson(j: JSONObject) = VoiceProfile(
-            id = j.optString("id", java.util.UUID.randomUUID().toString()),
-            name = j.optString("name", "Profile"),
-            emoji = j.optString("emoji", "🎙️"),
-            voiceName = j.optString("voiceName", ""),
-            pitch = j.optDouble("pitch", 1.0).toFloat(),
-            speed = j.optDouble("speed", 1.0).toFloat(),
-            breathIntensity = j.optInt("breathIntensity", 0),
-            breathCurvePosition = j.optDouble("breathCurvePosition", 0.0).toFloat(),
-            breathPause = j.optInt("breathPause", 0),
-            stutterIntensity = j.optInt("stutterIntensity", 0),
-            stutterPosition = j.optDouble("stutterPosition", 0.0).toFloat(),
-            stutterFrequency = j.optInt("stutterFrequency", 0),
-            stutterPause = j.optInt("stutterPause", 30),
-            intonationIntensity = j.optInt("intonationIntensity", 0),
-            intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
-            sensitivity = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity(),
-            gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
-                (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
-            } ?: emptyList(),
-            commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
-                (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
-            } ?: emptyList(),
-            voiceAlias = j.optString("voiceAlias", ""),
-            translateTo = j.optString("translateTo", "")
-        )
+        fun fromJson(j: JSONObject): VoiceProfile {
+            // Parse sub-types from flat JSON
+            val ident = VoiceIdentity.fromJson(j)
+            val expr = ExpressionMap.fromJson(j)
+            val gimmick = GimmickSet.fromJson(j)
+            val sens = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity()
+
+            return VoiceProfile(
+                id = j.optString("id", java.util.UUID.randomUUID().toString()),
+                name = j.optString("name", "Profile"),
+                emoji = j.optString("emoji", "🎙️"),
+                identity = ident,
+                expression = expr,
+                gimmickSet = gimmick,
+                sensitivity = sens
+            )
+        }
 
         // ── Personality presets ───────────────────────────────────────────────
         // Helper: build pre+post pools with optional condition

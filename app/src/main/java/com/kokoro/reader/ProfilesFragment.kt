@@ -862,9 +862,10 @@ class ProfilesFragment : Fragment() {
             gravity = android.view.Gravity.CENTER
         })
 
-        // Profile name
+        // Voice name (main label)
+        val voiceLabel = p.voiceAlias.ifBlank { p.voiceName }
         card.addView(TextView(ctx).apply {
-            text = p.name
+            text = voiceLabel.ifBlank { "No voice" }
             textSize = 11f
             setTextColor(if (isActive) 0xFF00ff88.toInt() else 0xFFaaaaaa.toInt())
             gravity = android.view.Gravity.CENTER
@@ -872,17 +873,14 @@ class ProfilesFragment : Fragment() {
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
 
-        // Voice name (small, below)
-        val voiceLabel = p.voiceAlias.ifBlank { p.voiceName }
-        if (voiceLabel.isNotBlank()) {
-            card.addView(TextView(ctx).apply {
-                text = voiceLabel
-                textSize = 9f
-                setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
-                gravity = android.view.Gravity.CENTER
-                maxLines = 1
-            })
-        }
+        // Profile name (small, below)
+        card.addView(TextView(ctx).apply {
+            text = p.name
+            textSize = 9f
+            setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
+            gravity = android.view.Gravity.CENTER
+            maxLines = 1
+        })
 
         // Active indicator
         if (isActive) {

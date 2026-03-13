@@ -16,3 +16,7 @@
 # Kotlin metadata needed for reflection
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
+
+# ML Kit Translation
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**

@@ -191,7 +191,10 @@ data class VoiceProfile(
     val commentaryPools: List<CommentaryPool> = emptyList(),
 
     // Per-profile nickname for the voice (doesn't change original voice name)
-    val voiceAlias: String = ""
+    val voiceAlias: String = "",
+
+    // Translation: target language code (e.g. "fr", "en", "es") or "" for no translation
+    val translateTo: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("emoji", emoji)
@@ -209,6 +212,7 @@ data class VoiceProfile(
         val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; put("gimmicks", ga)
         val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; put("commentaryPools", ca)
         put("voiceAlias", voiceAlias)
+        put("translateTo", translateTo)
     }
 
     companion object {
@@ -235,7 +239,8 @@ data class VoiceProfile(
             commentaryPools = j.optJSONArray("commentaryPools")?.let { arr ->
                 (0 until arr.length()).map { CommentaryPool.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList(),
-            voiceAlias = j.optString("voiceAlias", "")
+            voiceAlias = j.optString("voiceAlias", ""),
+            translateTo = j.optString("translateTo", "")
         )
 
         // ── Personality presets ───────────────────────────────────────────────

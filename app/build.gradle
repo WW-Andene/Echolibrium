@@ -57,4 +57,7 @@ dependencies {
 
     // Tar.bz2 extraction for Kokoro model download
     implementation 'org.apache.commons:commons-compress:1.26.2'
+
+    // ML Kit Translation (on-device, offline after model download)
+    implementation 'com.google.mlkit:translate:17.0.3'
 }

@@ -117,8 +117,14 @@ class NotificationReaderService : NotificationListenerService() {
         val modulated = VoiceModulator.modulate(profile, signal)
 
         val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
-        val rawText = buildMessage(appName, title, text, readMode)
+        var rawText = buildMessage(appName, title, text, readMode)
         if (rawText.isBlank()) return
+
+        // Translate if profile has a target language set
+        if (profile.translateTo.isNotBlank()) {
+            val detectedLang = detectLanguage("$title $text")
+            rawText = NotificationTranslator.translate(rawText, detectedLang, profile.translateTo)
+        }
 
         // Track for voice commands (repeat, time-ago)
         lastSpokenText = rawText

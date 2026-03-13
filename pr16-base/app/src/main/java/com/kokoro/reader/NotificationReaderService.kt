@@ -34,10 +34,22 @@ class NotificationReaderService : NotificationListenerService() {
         instance = this
         AudioPipeline.start(this)
         TtsAliveService.start(this)
+        // Start voice command listener if enabled and mic permission granted
+        if (prefs.getBoolean("listening_enabled", false)) {
+            try {
+                val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.RECORD_AUDIO
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (hasPerm) VoiceCommandListener.start(this)
+            } catch (e: Exception) {
+                android.util.Log.e("NotifReader", "Error starting voice commands", e)
+            }
+        }
     }
 
     override fun onDestroy() {
         instance = null
+        VoiceCommandListener.stop()
         AudioPipeline.shutdown()
         TtsAliveService.stop(this)
         super.onDestroy()

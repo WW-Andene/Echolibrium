@@ -1,5 +1,7 @@
 package com.kokoro.reader
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
@@ -9,12 +11,17 @@ import android.provider.Settings
 import android.view.*
 import android.widget.*
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 
 class HomeFragment : Fragment() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+
+    companion object {
+        private const val AUDIO_PERMISSION_CODE = 1001
+    }
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_home, c, false)
@@ -76,13 +83,24 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
 
-        // Listening toggle
+        // Listening toggle — starts/stops VoiceCommandListener with mic permission
         val switchListening = v.findViewById<SwitchCompat>(R.id.switch_listening)
         val listeningStatus = v.findViewById<TextView>(R.id.listening_status)
-        switchListening.isChecked = prefs.getBoolean("listening_enabled", true)
+        switchListening.isChecked = prefs.getBoolean("listening_enabled", false)
         updateListeningStatus(listeningStatus)
         switchListening.setOnCheckedChangeListener { _, enabled ->
             prefs.edit().putBoolean("listening_enabled", enabled).apply()
+            val ctx = context ?: return@setOnCheckedChangeListener
+            if (enabled) {
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
+                } else {
+                    VoiceCommandListener.start(ctx)
+                }
+            } else {
+                VoiceCommandListener.stop()
+            }
             updateListeningStatus(listeningStatus)
         }
 
@@ -124,6 +142,22 @@ class HomeFragment : Fragment() {
         }
     }
 
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == AUDIO_PERMISSION_CODE) {
+            val ctx = context ?: return
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                VoiceCommandListener.start(ctx)
+            } else {
+                prefs.edit().putBoolean("listening_enabled", false).apply()
+                view?.findViewById<SwitchCompat>(R.id.switch_listening)?.isChecked = false
+                Toast.makeText(ctx, "Microphone permission required for listening", Toast.LENGTH_SHORT).show()
+            }
+            view?.let { updateListeningStatus(it.findViewById(R.id.listening_status)) }
+        }
+    }
+
     private fun updateStatus(tv: TextView, btn: Button) {
         val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
         tv.text = if (granted) "✓ Active — reading notifications with Kokoro"
@@ -156,12 +190,26 @@ class HomeFragment : Fragment() {
     }
 
     private fun updateListeningStatus(tv: TextView) {
-        val enabled = prefs.getBoolean("listening_enabled", true)
-        tv.text = if (enabled) "Listening: active — notifications will be read aloud"
-                  else "Listening: off — notifications will be ignored"
-        tv.setTextColor(requireContext().getColor(
-            if (enabled) android.R.color.holo_green_dark else android.R.color.darker_gray
-        ))
+        val ctx = context ?: return
+        val enabled = prefs.getBoolean("listening_enabled", false)
+        val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        val listening = VoiceCommandListener.isListening
+        val wake = VoiceCommandListener.wakeWord
+
+        tv.text = when {
+            !enabled -> "Listening: off"
+            !hasPerm -> "Listening: microphone permission needed"
+            listening && wake.isNotBlank() ->
+                "Listening: say \"$wake\" + command: repeat / how long ago? / stop / what time?"
+            listening -> "Listening for: repeat / how long ago? / stop / what time?"
+            else -> "Listening: starting…"
+        }
+        tv.setTextColor(ctx.getColor(when {
+            listening -> android.R.color.holo_green_dark
+            enabled && !hasPerm -> android.R.color.holo_orange_dark
+            else -> android.R.color.darker_gray
+        }))
     }
 
     private fun loadWordingRules(): List<Pair<String, String>> {

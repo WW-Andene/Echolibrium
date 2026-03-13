@@ -72,6 +72,8 @@ class HomeFragment : Fragment() {
         val seekDndEnd       = v.findViewById<SeekBar>(R.id.seek_dnd_end)
         val txtDndStart      = v.findViewById<TextView>(R.id.txt_dnd_start)
         val txtDndEnd        = v.findViewById<TextView>(R.id.txt_dnd_end)
+        val switchListening   = v.findViewById<SwitchCompat>(R.id.switch_listening)
+        val listeningStatus   = v.findViewById<TextView>(R.id.listening_status)
         val btnStop          = v.findViewById<Button>(R.id.btn_stop)
         val btnDumpDebug     = v.findViewById<Button>(R.id.btn_dump_debug)
         val btnShowInitLogs  = v.findViewById<Button>(R.id.btn_show_init_logs)
@@ -260,6 +262,14 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
 
+        // ── Listening toggle ──────────────────────────────────────────────────
+        switchListening.isChecked = prefs.getBoolean("listening_enabled", true)
+        updateListeningStatus(listeningStatus)
+        switchListening.setOnCheckedChangeListener { _, enabled ->
+            prefs.edit().putBoolean("listening_enabled", enabled).apply()
+            updateListeningStatus(listeningStatus)
+        }
+
         btnStop.setOnClickListener { context?.let { TtsBridge.stop(it) } }
     }
 
@@ -387,6 +397,7 @@ class HomeFragment : Fragment() {
                 )
                 updateEngineStatus(it.findViewById(R.id.engine_status_text))
                 updateLogPath(it.findViewById(R.id.log_path_text))
+                updateListeningStatus(it.findViewById(R.id.listening_status))
                 updateVoiceCommandStatus(it.findViewById(R.id.voice_command_status))
             }
         } catch (e: Exception) {
@@ -618,6 +629,14 @@ class HomeFragment : Fragment() {
         } catch (e: Throwable) {
             tv.text = "(error reading logs: ${e.message})"
         }
+    }
+
+    private fun updateListeningStatus(tv: TextView) {
+        val ctx = context ?: return
+        val enabled = prefs.getBoolean("listening_enabled", true)
+        tv.text = if (enabled) "Listening: active — notifications will be read aloud"
+                  else "Listening: off — notifications will be ignored"
+        tv.setTextColor(ctx.getColor(if (enabled) R.color.status_active else R.color.status_inactive))
     }
 
     private fun updateVoiceCommandStatus(tv: TextView) {

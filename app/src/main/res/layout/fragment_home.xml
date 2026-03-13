@@ -158,9 +158,32 @@
                 android:thumbTint="@color/status_warning"/>
         </LinearLayout>
 
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// LISTENING" style="@style/SectionLabel" android:layout_marginTop="20dp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="@color/surface" android:padding="16dp"
+            android:layout_marginBottom="8dp">
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Activate listening"
+                    android:textColor="@color/text_primary" android:textSize="14sp" android:fontFamily="monospace"/>
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Process and read incoming notifications"
+                    android:textColor="@color/text_muted" android:textSize="12sp" android:fontFamily="monospace"/>
+            </LinearLayout>
+            <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_listening"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+        <TextView android:id="@+id/listening_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
+            android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/status_inactive"
+            android:layout_marginBottom="8dp"
+            android:text="Listening: off"/>
+
         <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="⏹  STOP SPEAKING"
             android:backgroundTint="@color/btn_danger_bg" android:textColor="@color/status_error"
-            android:fontFamily="monospace" android:layout_marginTop="20dp"/>
+            android:fontFamily="monospace" android:layout_marginTop="12dp"/>
     </LinearLayout>
 </ScrollView>

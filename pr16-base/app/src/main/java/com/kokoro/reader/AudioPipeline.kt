@@ -43,6 +43,11 @@ object AudioPipeline {
     @Volatile private var currentTrack: AudioTrack? = null
     private val trackLock = Object()
 
+    // Crossfade state — store tail of previous playback for smooth transitions
+    private const val CROSSFADE_MS = 40  // 40ms crossfade between clips
+    private var prevTail: FloatArray? = null
+    private var prevSampleRate: Int = 0
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     fun start(ctx: Context) {
@@ -54,6 +59,7 @@ object AudioPipeline {
     fun stop() {
         queue.clear()
         stopCurrentPlayback()
+        prevTail = null
     }
 
     fun shutdown() {
@@ -122,10 +128,13 @@ object AudioPipeline {
         }
 
         // ── Step 5: Apply DSP ─────────────────────────────────────────────
-        val pcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated, landmarks)
+        val dspPcm = AudioDsp.apply(rawPcm, sampleRate, item.modulated, landmarks)
 
-        // ── Step 6: Play ──────────────────────────────────────────────────
-        playPcm(pcm, sampleRate, item.modulated.pitch)
+        // ── Step 6: Pitch shift (resampling-based, preserves duration) ───
+        val pcm = AudioDsp.pitchShift(dspPcm, item.modulated.pitch)
+
+        // ── Step 7: Play at native sample rate (no playbackRate hack) ────
+        playPcm(pcm, sampleRate)
     }
 
     private fun synthesizeWithKokoro(
@@ -151,8 +160,11 @@ object AudioPipeline {
 
     // ── Playback ──────────────────────────────────────────────────────────────
 
-    private fun playPcm(samples: FloatArray, sampleRate: Int, pitch: Float) {
-        val bufferBytes = samples.size * 4  // Float = 4 bytes
+    private fun playPcm(samples: FloatArray, sampleRate: Int) {
+        // Apply crossfade from previous clip's tail for smooth transitions
+        val pcm = applyCrossfade(samples, sampleRate)
+
+        val bufferBytes = pcm.size * 4  // Float = 4 bytes
 
         val track = AudioTrack.Builder()
             .setAudioAttributes(
@@ -176,16 +188,9 @@ object AudioPipeline {
         synchronized(trackLock) { currentTrack = track }
 
         try {
-            // Apply pitch shift via playback rate
-            // AudioTrack can adjust playback rate to shift pitch within limits
-            val shiftedRate = (sampleRate * pitch).toInt().coerceIn(
-                AUDIO_TRACK_MIN_SAMPLE_RATE_HZ,
-                AUDIO_TRACK_MAX_SAMPLE_RATE_HZ
-            )
-            track.playbackRate = shiftedRate
-
-            track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            track.setNotificationMarkerPosition((samples.size - 1).coerceAtLeast(1))
+            // Pitch is now applied via AudioDsp.pitchShift() before playback
+            track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+            track.setNotificationMarkerPosition((pcm.size - 1).coerceAtLeast(1))
 
             val latch = CountDownLatch(1)
             track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
@@ -202,6 +207,41 @@ object AudioPipeline {
             try { track.release() } catch (e: Exception) {}
             synchronized(trackLock) { if (currentTrack === track) currentTrack = null }
         }
+    }
+
+    /**
+     * Crossfade between previous clip's tail and current clip's head.
+     * Prevents abrupt transitions when slider parameters change between utterances.
+     */
+    private fun applyCrossfade(samples: FloatArray, sampleRate: Int): FloatArray {
+        val tail = prevTail
+        val result = samples.copyOf()
+
+        // Store this clip's tail for next crossfade
+        val fadeSamples = (sampleRate * CROSSFADE_MS / 1000).coerceAtMost(samples.size / 4)
+        if (fadeSamples > 0) {
+            val start = (samples.size - fadeSamples).coerceAtLeast(0)
+            prevTail = samples.sliceArray(start until samples.size)
+            prevSampleRate = sampleRate
+        }
+
+        // Crossfade with previous clip's tail if available and compatible
+        if (tail != null && prevSampleRate == sampleRate && tail.isNotEmpty()) {
+            val crossLen = minOf(tail.size, fadeSamples, result.size)
+            for (i in 0 until crossLen) {
+                val t = i.toFloat() / crossLen  // 0→1
+                // Fade out previous tail, fade in current head
+                result[i] = tail[tail.size - crossLen + i] * (1f - t) + result[i] * t
+            }
+        } else {
+            // No previous clip — apply a short fade-in to avoid click
+            val fadeIn = (sampleRate * 0.005f).toInt().coerceAtMost(result.size)  // 5ms
+            for (i in 0 until fadeIn) {
+                result[i] *= i.toFloat() / fadeIn
+            }
+        }
+
+        return result
     }
 
     private fun stopCurrentPlayback() {

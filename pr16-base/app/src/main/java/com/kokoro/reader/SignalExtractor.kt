@@ -179,6 +179,18 @@ object SignalExtractor {
             else -> Trajectory.FLAT
         }
 
+        // ── Emotion blend detection ──────────────────────────────────────────
+        val emotionBlend = detectBlend(
+            urgencyType, warmth, emojiHappy, emojiLove, emojiSad,
+            register, intensityLevel, trajectory, stakesType, senderType
+        )
+
+        // ── Sarcasm detection ────────────────────────────────────────────────
+        val detectedSarcasm = detectSarcasm(lower, capsRatio)
+
+        // ── Flood tier ───────────────────────────────────────────────────────
+        val floodTier = FloodTier.from(floodCount)
+
         return SignalMap(
             sourceType    = sourceType,
             senderType    = senderType,
@@ -200,8 +212,48 @@ object SignalExtractor {
             intensityLevel = intensityLevel,
             trajectory    = trajectory,
             hourOfDay     = hourOfDay,
-            floodCount    = floodCount
+            floodCount    = floodCount,
+            emotionBlend  = emotionBlend,
+            detectedSarcasm = detectedSarcasm,
+            floodTier     = floodTier
         )
+    }
+
+    // ── Emotion blend detection ────────────────────────────────────────────
+    private fun detectBlend(
+        urgency: UrgencyType, warmth: WarmthLevel,
+        emojiHappy: Boolean, emojiLove: Boolean, emojiSad: Boolean,
+        register: Register, intensity: Float, trajectory: Trajectory,
+        stakesType: StakesType, senderType: SenderType
+    ): EmotionBlend = when {
+        urgency >= UrgencyType.REAL && warmth >= WarmthLevel.MEDIUM && (emojiHappy || emojiLove) ->
+            EmotionBlend.NERVOUS_EXCITEMENT
+        urgency >= UrgencyType.SOFT && register == Register.FORMAL && intensity < 0.5f ->
+            EmotionBlend.SUPPRESSED_TENSION
+        warmth == WarmthLevel.HIGH && trajectory == Trajectory.COLLAPSED && stakesType == StakesType.EMOTIONAL ->
+            EmotionBlend.NOSTALGIC_WARMTH
+        trajectory == Trajectory.COLLAPSED && intensity < 0.3f && senderType == SenderType.HUMAN ->
+            EmotionBlend.RESIGNED_ACCEPTANCE
+        warmth >= WarmthLevel.MEDIUM && urgency >= UrgencyType.SOFT && emojiSad ->
+            EmotionBlend.WORRIED_AFFECTION
+        else -> EmotionBlend.NONE
+    }
+
+    // ── Sarcasm detection ───────────────────────────────────────────────────
+    private val SARCASM_STARTERS = listOf("oh wow", "great", "oh great", "wonderful", "fantastic", "brilliant", "lovely", "oh sure", "yeah right")
+    private val SARCASM_MARKERS  = listOf("obviously", "of course", "sure", "right", "totally", "absolutely", "clearly")
+    private val COMPLAINT_WORDS  = listOf("broke", "crash", "fail", "error", "bug", "wrong", "bad", "terrible", "awful", "worse", "broken", "useless", "stupid")
+
+    private fun detectSarcasm(lower: String, capsRatio: Float): Boolean {
+        // Sarcasm starter + complaint combo
+        if (SARCASM_STARTERS.any { lower.contains(it) } && COMPLAINT_WORDS.any { lower.contains(it) }) return true
+        // Multiple sarcasm markers
+        if (SARCASM_MARKERS.count { lower.contains(it) } >= 2) return true
+        // "Thanks" at end with complaints
+        if ((lower.endsWith("thanks") || lower.endsWith("thanks a lot")) && COMPLAINT_WORDS.any { lower.contains(it) }) return true
+        // Excessive exclamations with low caps (fake enthusiasm)
+        if (lower.count { it == '!' } >= 4 && capsRatio < 0.1f) return true
+        return false
     }
 
     private fun scoreIntensity(line: String): Float {

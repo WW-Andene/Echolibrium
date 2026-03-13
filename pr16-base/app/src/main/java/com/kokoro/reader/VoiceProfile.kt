@@ -98,6 +98,39 @@ data class VoiceInfo(
     }
 }
 
+// ── Personality sensitivity coefficients ──────────────────────────────────────
+data class PersonalitySensitivity(
+    val distressSensitivity: Float = 1.0f,   // 0.0 (numb) to 2.0 (hypersensitive)
+    val warmthSensitivity:   Float = 1.0f,
+    val fakeSensitivity:     Float = 1.0f,
+    val moodVelocity:        Float = 1.0f,   // how fast mood shifts
+    val moodDecayRate:       Float = 0.08f,  // per minute
+    val rangeReactivity:     Float = 1.0f,   // pitch range multiplier
+    val speedReactivity:     Float = 1.0f
+) {
+    fun toJson() = JSONObject().apply {
+        put("distressSensitivity", distressSensitivity)
+        put("warmthSensitivity", warmthSensitivity)
+        put("fakeSensitivity", fakeSensitivity)
+        put("moodVelocity", moodVelocity)
+        put("moodDecayRate", moodDecayRate)
+        put("rangeReactivity", rangeReactivity)
+        put("speedReactivity", speedReactivity)
+    }
+
+    companion object {
+        fun fromJson(j: JSONObject) = PersonalitySensitivity(
+            distressSensitivity = j.optDouble("distressSensitivity", 1.0).toFloat(),
+            warmthSensitivity   = j.optDouble("warmthSensitivity", 1.0).toFloat(),
+            fakeSensitivity     = j.optDouble("fakeSensitivity", 1.0).toFloat(),
+            moodVelocity        = j.optDouble("moodVelocity", 1.0).toFloat(),
+            moodDecayRate       = j.optDouble("moodDecayRate", 0.08).toFloat(),
+            rangeReactivity     = j.optDouble("rangeReactivity", 1.0).toFloat(),
+            speedReactivity     = j.optDouble("speedReactivity", 1.0).toFloat()
+        )
+    }
+}
+
 // ── Gimmick model ─────────────────────────────────────────────────────────────
 data class GimmickConfig(
     val type: String,
@@ -148,6 +181,9 @@ data class VoiceProfile(
     val intonationIntensity: Int = 0,
     val intonationVariation: Float = 0.5f,
 
+    // Personality sensitivity
+    val sensitivity: PersonalitySensitivity = PersonalitySensitivity(),
+
     // Gimmicks
     val gimmicks: List<GimmickConfig> = emptyList(),
 
@@ -169,6 +205,7 @@ data class VoiceProfile(
         put("stutterPause", stutterPause)
         put("intonationIntensity", intonationIntensity)
         put("intonationVariation", intonationVariation)
+        put("sensitivity", sensitivity.toJson())
         val ga = JSONArray(); gimmicks.forEach { ga.put(it.toJson()) }; put("gimmicks", ga)
         val ca = JSONArray(); commentaryPools.forEach { ca.put(it.toJson()) }; put("commentaryPools", ca)
         put("voiceAlias", voiceAlias)
@@ -191,6 +228,7 @@ data class VoiceProfile(
             stutterPause = j.optInt("stutterPause", 30),
             intonationIntensity = j.optInt("intonationIntensity", 0),
             intonationVariation = j.optDouble("intonationVariation", 0.5).toFloat(),
+            sensitivity = j.optJSONObject("sensitivity")?.let { PersonalitySensitivity.fromJson(it) } ?: PersonalitySensitivity(),
             gimmicks = j.optJSONArray("gimmicks")?.let { arr ->
                 (0 until arr.length()).map { GimmickConfig.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList(),

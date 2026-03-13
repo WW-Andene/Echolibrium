@@ -4,6 +4,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.preference.PreferenceManager
 import org.json.JSONArray
+import java.util.concurrent.Executors
 
 class NotificationReaderService : NotificationListenerService() {
 
@@ -18,6 +19,9 @@ class NotificationReaderService : NotificationListenerService() {
     private val swipedKeys = mutableSetOf<String>()
     // Per-app cooldown: package → last read timestamp
     private val appLastRead = mutableMapOf<String, Long>()
+    // Background thread for notification processing — keeps main thread unblocked
+    // so ML Kit translation (which needs main looper for Task dispatch) doesn't deadlock
+    private val processingExecutor = Executors.newSingleThreadExecutor()
 
     companion object {
         var instance: NotificationReaderService? = null
@@ -98,69 +102,76 @@ class NotificationReaderService : NotificationListenerService() {
         val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
         if (today != lastCountDay) { dailyCount = 0; lastCountDay = today }
         dailyCount++
+        val floodSnapshot = dailyCount
+        val pkgName = sbn.packageName
 
-        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        val signal = SignalExtractor.extract(
-            packageName = sbn.packageName,
-            appName     = appName,
-            title       = title,
-            text        = text,
-            hourOfDay   = hour,
-            floodCount  = dailyCount
-        )
+        // Move heavy processing (translation, signal extraction, enqueue) off main thread.
+        // ML Kit translation Tasks need the main looper free to dispatch completion;
+        // blocking main thread with latch.await() causes deadlock and 5s timeout.
+        processingExecutor.execute {
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            val signal = SignalExtractor.extract(
+                packageName = pkgName,
+                appName     = appName,
+                title       = title,
+                text        = text,
+                hourOfDay   = hour,
+                floodCount  = floodSnapshot
+            )
 
-        val profiles  = VoiceProfile.loadAll(prefs)
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+            val profiles  = VoiceProfile.loadAll(prefs)
+            val activeId = prefs.getString("active_profile_id", "") ?: ""
 
-        val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
-        var rawText = buildMessage(appName, title, text, readMode)
-        if (rawText.isBlank()) return
+            val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
+            var rawText = buildMessage(appName, title, text, readMode)
+            if (rawText.isBlank()) return@execute
 
-        // Detect language and determine translation target
-        val detectedLang = detectLanguage("$title $text")
-        val translateEnabled = when (detectedLang) {
-            "fr" -> prefs.getBoolean("translate_fr_enabled", false)
-            else -> prefs.getBoolean("translate_en_enabled", false)
-        }
-        var effectiveLang = detectedLang
-        if (translateEnabled) {
-            val targetLang = when (detectedLang) {
-                "fr" -> prefs.getString("translate_fr_lang", "") ?: ""
-                else -> prefs.getString("translate_en_lang", "") ?: ""
+            // Detect language and determine translation target
+            val detectedLang = detectLanguage("$title $text")
+            val translateEnabled = when (detectedLang) {
+                "fr" -> prefs.getBoolean("translate_fr_enabled", false)
+                else -> prefs.getBoolean("translate_en_enabled", false)
             }
-            if (targetLang.isNotBlank() && targetLang != detectedLang) {
-                rawText = NotificationTranslator.translate(rawText, detectedLang, targetLang)
-                effectiveLang = targetLang
+            var effectiveLang = detectedLang
+            if (translateEnabled) {
+                val targetLang = when (detectedLang) {
+                    "fr" -> prefs.getString("translate_fr_lang", "") ?: ""
+                    else -> prefs.getString("translate_en_lang", "") ?: ""
+                }
+                if (targetLang.isNotBlank() && targetLang != detectedLang) {
+                    rawText = NotificationTranslator.translate(rawText, detectedLang, targetLang)
+                    effectiveLang = targetLang
+                }
             }
+
+            // Pick voice profile: per-app rule > language route (using output language) > active
+            val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
+                ?: resolveProfileByLanguage(effectiveLang, profiles)
+                ?: activeId
+            val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
+            val modulated = VoiceModulator.modulate(profile, signal)
+
+            // Track for voice commands (repeat, time-ago)
+            lastSpokenText = rawText
+            lastNotificationTime = now
+
+            // Update mood state
+            val mood = MoodState.load(prefs).decayed()
+            val updatedMood = MoodUpdater.update(mood, signal)
+            MoodState.save(prefs, updatedMood)
+
+            // Check max queue size
+            val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
+
+            AudioPipeline.enqueue(AudioPipeline.Item(
+                rawText   = rawText,
+                profile   = profile,
+                modulated = modulated,
+                signal    = signal,
+                rules     = loadWordingRules(),
+                priority  = signal.urgencyType == UrgencyType.EXPIRING
+            ), maxQueue)
         }
-
-        // Pick voice profile: per-app rule > language route (using output language) > active
-        val profileId = rule?.profileId?.takeIf { it.isNotEmpty() }
-            ?: resolveProfileByLanguage(effectiveLang, profiles)
-            ?: activeId
-        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        val modulated = VoiceModulator.modulate(profile, signal)
-
-        // Track for voice commands (repeat, time-ago)
-        lastSpokenText = rawText
-        lastNotificationTime = now
-
-        // Update mood state
-        val mood = MoodState.load(prefs).decayed()
-        val updatedMood = MoodUpdater.update(mood, signal)
-        MoodState.save(prefs, updatedMood)
-
-        // Check max queue size
-        val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
-
-        AudioPipeline.enqueue(AudioPipeline.Item(
-            rawText   = rawText,
-            profile   = profile,
-            modulated = modulated,
-            signal    = signal,
-            rules     = loadWordingRules(),
-            priority  = signal.urgencyType == UrgencyType.EXPIRING
-        ), maxQueue)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {

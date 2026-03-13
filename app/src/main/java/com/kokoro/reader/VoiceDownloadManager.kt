@@ -97,14 +97,33 @@ object VoiceDownloadManager {
         Log.i(TAG, "Downloading $voiceId from $url")
 
         try {
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.connectTimeout = CONNECT_TIMEOUT
-            connection.readTimeout = READ_TIMEOUT
-            connection.setRequestProperty("Accept", "application/octet-stream")
+            // Manually follow redirects — HttpURLConnection doesn't follow
+            // cross-host redirects (github.com → release-assets.githubusercontent.com)
+            var currentUrl = url
+            var connection: HttpURLConnection
+            var redirects = 0
+
+            while (true) {
+                connection = URL(currentUrl).openConnection() as HttpURLConnection
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = CONNECT_TIMEOUT
+                connection.readTimeout = READ_TIMEOUT
+                connection.setRequestProperty("Accept", "application/octet-stream")
+                connection.connect()
+
+                if (connection.responseCode in 300..399 && redirects++ < 10) {
+                    val location = connection.getHeaderField("Location") ?: break
+                    connection.disconnect()
+                    currentUrl = location
+                } else {
+                    break
+                }
+            }
 
             val responseCode = connection.responseCode
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 Log.e(TAG, "HTTP $responseCode for $voiceId")
+                connection.disconnect()
                 onComplete?.invoke(voiceId, false)
                 return false
             }

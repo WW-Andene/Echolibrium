@@ -209,20 +209,25 @@ object PiperDownloadManager {
     }
 
     private fun download(urlStr: String, dest: File, onProgress: (Int) -> Unit) {
-        val url = URL(urlStr)
-        var conn = url.openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        conn.connect()
-
+        var currentUrl = urlStr
+        var conn: HttpURLConnection
         var redirects = 0
-        while (conn.responseCode in 300..399 && redirects++ < 5) {
-            val location = conn.getHeaderField("Location") ?: break
-            conn.disconnect()
-            conn = URL(location).openConnection() as HttpURLConnection
+
+        // Manually follow redirects (HttpURLConnection doesn't follow cross-host redirects)
+        while (true) {
+            conn = URL(currentUrl).openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = false
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
             conn.connect()
+
+            if (conn.responseCode in 300..399 && redirects++ < 10) {
+                val location = conn.getHeaderField("Location") ?: break
+                conn.disconnect()
+                currentUrl = location
+            } else {
+                break
+            }
         }
 
         if (conn.responseCode != 200) {

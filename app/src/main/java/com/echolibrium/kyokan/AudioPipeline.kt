@@ -164,7 +164,7 @@ object AudioPipeline {
         // Until Phase 4 adds the eSpeak-NG tokenizer, we pass null tokenIds
         // and Yatagami returns null → SherpaEngine handles all synthesis.
         val voiceId = item.profile.voiceName
-        val yatagamiResult = synthesizeWithYatagami(item)
+        val yatagamiResult = synthesizeWithYatagami(ctx, item)
         val result = if (yatagamiResult != null) {
             Pair(yatagamiResult.pcm, yatagamiResult.sampleRate)
         } else if (PiperVoices.isPiperVoice(voiceId)) {
@@ -203,8 +203,25 @@ object AudioPipeline {
      *
      * When null is returned, the caller falls through to SherpaEngine.
      */
-    private fun synthesizeWithYatagami(item: Item): YatagamiSynthesizer.SynthResult? {
+    private fun synthesizeWithYatagami(
+        ctx: Context, item: Item
+    ): YatagamiSynthesizer.SynthResult? {
         val yatagami = yatagamiSynthesizer ?: return null
+        val engine = directOrtEngine ?: return null
+
+        // Phase 3: Lazy-load Piper voice into DirectOrtEngine if needed.
+        // This mirrors SherpaEngine.initPiper() but loads into an OrtSession
+        // for tensor-level scale control via ScaleMapper.
+        val voiceId = item.profile.voiceName
+        if (PiperVoices.isPiperVoice(voiceId) && !engine.isPiperReady) {
+            if (!engine.initPiper(ctx, voiceId)) {
+                Log.d(TAG, "Piper voice $voiceId not ready for direct ORT")
+                // Don't block — fall through to SherpaEngine's Piper path
+            }
+        } else if (PiperVoices.isPiperVoice(voiceId)) {
+            // Piper is ready but might be a different voice — lazy switch
+            engine.initPiper(ctx, voiceId)
+        }
 
         // Phase 4 gate: tokenizer not yet implemented.
         // When added, this will be:

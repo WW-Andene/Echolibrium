@@ -29,6 +29,7 @@ class DirectOrtEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "DirectOrtEngine"
+        private const val MAX_PIPER_CACHE = 2
     }
 
     // ─── State ──────────────────────────────────────────────────────────
@@ -46,6 +47,10 @@ class DirectOrtEngine(private val context: Context) {
         private set
     @Volatile var isPiperReady = false
         private set
+
+    // LRU cache of Piper ORT sessions — one per voice, max 2 in memory
+    private val piperCache = LinkedHashMap<String, OrtSession>(4, 0.75f, true)
+    private var activePiperVoiceId: String? = null
 
     // ─── Initialization ─────────────────────────────────────────────────
 
@@ -140,6 +145,68 @@ class DirectOrtEngine(private val context: Context) {
                 Log.w(TAG, "Expected input '$name' not found! Available: $inputNames")
                 Log.w(TAG, "Run inspect_graph.py to get actual tensor names")
             }
+        }
+    }
+
+    // ─── Piper Lazy Init (per-voice, LRU cached) ──────────────────────
+
+    /**
+     * Lazy-load a Piper voice model into the direct ORT pipeline.
+     *
+     * Mirrors SherpaEngine.initPiper() but loads into an OrtSession for
+     * tensor-level control (ScaleMapper can set noise_scale, length_scale, noise_w).
+     *
+     * @param ctx Android context for path resolution
+     * @param voiceId Piper voice ID (e.g. "en_US-lessac-medium")
+     * @return true if the voice is now ready for direct ORT synthesis
+     */
+    fun initPiper(ctx: Context, voiceId: String): Boolean {
+        if (piperCache.containsKey(voiceId)) {
+            activePiperVoiceId = voiceId
+            piperSession = piperCache[voiceId]
+            isPiperReady = true
+            return true
+        }
+
+        if (!PiperDownloadManager.isVoiceReady(ctx, voiceId)) {
+            Log.w(TAG, "Piper voice $voiceId not downloaded yet")
+            return false
+        }
+
+        val env = ortEnv ?: return false
+
+        return try {
+            val voiceDir = PiperDownloadManager.getVoiceDir(ctx, voiceId)
+            val modelFile = PiperDownloadManager.getModelFile(voiceDir, voiceId)
+                ?: throw IllegalStateException("No .onnx model in $voiceDir")
+
+            Log.d(TAG, "Loading Piper voice $voiceId via direct ORT: ${modelFile.name}")
+
+            val sessionOptions = OrtSession.SessionOptions().apply {
+                setIntraOpNumThreads(2)
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            }
+
+            val session = env.createSession(modelFile.absolutePath, sessionOptions)
+
+            // LRU eviction — keep at most MAX_PIPER_CACHE sessions
+            while (piperCache.size >= MAX_PIPER_CACHE) {
+                val oldest = piperCache.entries.firstOrNull() ?: break
+                Log.d(TAG, "Evicting Piper voice ${oldest.key} from direct ORT cache")
+                try { oldest.value.close() } catch (_: Exception) {}
+                piperCache.remove(oldest.key)
+            }
+
+            piperCache[voiceId] = session
+            activePiperVoiceId = voiceId
+            piperSession = session
+            isPiperReady = true
+
+            Log.d(TAG, "Piper voice $voiceId ready via direct ORT (cache: ${piperCache.size})")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load Piper voice $voiceId via direct ORT", e)
+            false
         }
     }
 
@@ -311,7 +378,13 @@ class DirectOrtEngine(private val context: Context) {
     fun cleanup() {
         try {
             kokoroSession?.close()
-            piperSession?.close()
+            // Close all cached Piper sessions
+            piperCache.values.forEach { session ->
+                try { session.close() } catch (_: Exception) {}
+            }
+            piperCache.clear()
+            piperSession = null
+            activePiperVoiceId = null
             ortEnv?.close()
         } catch (e: Exception) {
             Log.w(TAG, "Cleanup error: ${e.message}")

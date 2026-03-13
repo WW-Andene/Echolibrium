@@ -50,9 +50,10 @@ object AudioPipeline {
     private var prevTail: FloatArray? = null
     private var prevSampleRate: Int = 0
 
-    // ── Direct ORT engine (Mirror Project Phase 2) ──────────────────────────
+    // ── Direct ORT engine (Mirror Project Phase 2-4) ────────────────────────
     private var directOrtEngine: DirectOrtEngine? = null
     private var yatagamiSynthesizer: YatagamiSynthesizer? = null
+    private var kokoroTokenizer: PhonemeTokenizer? = null
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -84,7 +85,8 @@ object AudioPipeline {
             if (ok) {
                 directOrtEngine = engine
                 yatagamiSynthesizer = YatagamiSynthesizer(engine)
-                Log.i(TAG, "DirectOrt + YatagamiSynthesizer initialized")
+                kokoroTokenizer = PhonemeTokenizer.loadKokoro(ctx)
+                Log.i(TAG, "DirectOrt + YatagamiSynthesizer + tokenizer initialized")
             } else {
                 Log.w(TAG, "DirectOrt init returned false, using SherpaEngine only")
                 engine.cleanup()
@@ -107,6 +109,7 @@ object AudioPipeline {
         directOrtEngine?.cleanup()
         directOrtEngine = null
         yatagamiSynthesizer = null
+        kokoroTokenizer = null
     }
 
     // ── Enqueue ───────────────────────────────────────────────────────────────
@@ -158,13 +161,11 @@ object AudioPipeline {
         if (processed.isBlank()) return
 
         // ── Step 2+3: Route to correct engine and synthesize ────────────
-        // Try YatagamiSynthesizer (direct ORT + style sculpting) first,
-        // fall back to SherpaEngine if Yatagami isn't ready or fails.
-        // NOTE: Yatagami requires tokenized input (LongArray of phoneme IDs).
-        // Until Phase 4 adds the eSpeak-NG tokenizer, we pass null tokenIds
-        // and Yatagami returns null → SherpaEngine handles all synthesis.
+        // Try YatagamiSynthesizer (direct ORT + style sculpting) first.
+        // Falls back to SherpaEngine if tokenizer can't handle the text,
+        // DirectOrtEngine isn't initialized, or synthesis fails.
         val voiceId = item.profile.voiceName
-        val yatagamiResult = synthesizeWithYatagami(ctx, item)
+        val yatagamiResult = synthesizeWithYatagami(ctx, item, processed)
         val result = if (yatagamiResult != null) {
             Pair(yatagamiResult.pcm, yatagamiResult.sampleRate)
         } else if (PiperVoices.isPiperVoice(voiceId)) {
@@ -204,32 +205,27 @@ object AudioPipeline {
      * When null is returned, the caller falls through to SherpaEngine.
      */
     private fun synthesizeWithYatagami(
-        ctx: Context, item: Item
+        ctx: Context, item: Item, text: String
     ): YatagamiSynthesizer.SynthResult? {
         val yatagami = yatagamiSynthesizer ?: return null
         val engine = directOrtEngine ?: return null
 
         // Phase 3: Lazy-load Piper voice into DirectOrtEngine if needed.
-        // This mirrors SherpaEngine.initPiper() but loads into an OrtSession
-        // for tensor-level scale control via ScaleMapper.
         val voiceId = item.profile.voiceName
-        if (PiperVoices.isPiperVoice(voiceId) && !engine.isPiperReady) {
-            if (!engine.initPiper(ctx, voiceId)) {
-                Log.d(TAG, "Piper voice $voiceId not ready for direct ORT")
-                // Don't block — fall through to SherpaEngine's Piper path
-            }
-        } else if (PiperVoices.isPiperVoice(voiceId)) {
-            // Piper is ready but might be a different voice — lazy switch
+        val isPiper = PiperVoices.isPiperVoice(voiceId)
+        if (isPiper) {
             engine.initPiper(ctx, voiceId)
         }
 
-        // Phase 4 gate: tokenizer not yet implemented.
-        // When added, this will be:
-        //   val tokenIds = tokenizer.tokenize(text, voiceId) ?: return null
-        // For now, return null to always fall through to SherpaEngine.
-        val tokenIds: LongArray? = null  // TODO: Phase 4 — eSpeak-NG tokenizer
-
-        if (tokenIds == null) return null
+        // Phase 4: Tokenize text → phoneme IDs via PhonemeTokenizer.
+        // Uses rule-based English G2P. Returns null for text it can't handle,
+        // which falls through to SherpaEngine (eSpeak-NG phonemization).
+        val tokenizer = kokoroTokenizer ?: return null
+        val tokenIds = tokenizer.tokenize(text)
+        if (tokenIds == null) {
+            Log.d(TAG, "Tokenizer returned null, falling back to SherpaEngine")
+            return null
+        }
 
         return try {
             yatagami.synthesize(

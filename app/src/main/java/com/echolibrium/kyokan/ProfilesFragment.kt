@@ -150,7 +150,11 @@ class ProfilesFragment : Fragment() {
         val ctx = requireContext()
 
         // ── KOKORO section ──────────────────────────────────────────────────
-        voiceGrid.addView(buildSectionHeader("KOKORO", "Multi-voice model  ·  11 speakers", 0xFF00ff88.toInt()))
+        val kokoroDownloadIcon: (() -> Unit)? = if (!VoiceDownloadManager.isModelReady(ctx)
+            && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
+            { startKokoroDownload() }
+        } else null
+        voiceGrid.addView(buildSectionHeader("KOKORO", "Multi-voice model  ·  11 speakers", 0xFF00ff88.toInt(), kokoroDownloadIcon))
 
         if (!VoiceDownloadManager.isModelReady(ctx)) {
             voiceGrid.addView(buildDownloadBanner())
@@ -166,11 +170,17 @@ class ProfilesFragment : Fragment() {
         })
 
         // ── PIPER section ───────────────────────────────────────────────────
-        voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt()))
+        val piperNotDownloaded = PiperVoices.ALL.filter {
+            PiperDownloadManager.getState(ctx, it.id) == PiperDownloadManager.State.NOT_DOWNLOADED
+        }
+        val piperDownloadIcon: (() -> Unit)? = if (piperNotDownloaded.isNotEmpty()) {
+            { piperNotDownloaded.forEach { v -> startPiperDownload(v.id) } }
+        } else null
+        voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt(), piperDownloadIcon))
         renderPiperVoices()
     }
 
-    private fun buildSectionHeader(title: String, subtitle: String, accent: Int): android.view.View {
+    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
         val ctx = requireContext()
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -193,7 +203,15 @@ class ProfilesFragment : Fragment() {
         titleRow.addView(TextView(ctx).apply {
             text = title; textSize = 14f; setTextColor(accent)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
+        if (onDownloadAll != null) {
+            titleRow.addView(TextView(ctx).apply {
+                text = "⬇"; textSize = 18f; setTextColor(accent)
+                setPadding(16, 0, 8, 0)
+                setOnClickListener { onDownloadAll() }
+            })
+        }
         container.addView(titleRow)
 
         container.addView(TextView(ctx).apply {
@@ -220,26 +238,13 @@ class ProfilesFragment : Fragment() {
         filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
             voiceGrid.addView(langHeader(lang, voices.size, 0xFF446644.toInt()))
             addVoiceRows(voices.map { v ->
-                val card = buildVoiceCard(
+                buildVoiceCard(
                     name = v.displayName, icon = v.genderIcon, iconColor = v.genderColor,
                     badge = "${v.flagEmoji} ${v.nationality}", voiceId = v.id,
                     active = currentProfile.voiceName == v.id,
                     accent = 0xFF00ff88.toInt(), enabled = true,
                     onClick = { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
                 )
-                // Add preview button
-                (card as LinearLayout).addView(TextView(ctx).apply {
-                    text = "▶ preview"
-                    textSize = 9f; gravity = android.view.Gravity.CENTER
-                    setTextColor(0xFF448844.toInt())
-                    setPadding(0, 6, 0, 0)
-                    setOnClickListener {
-                        val previewText = txtPreview.text.toString().ifBlank { "Hello! This is ${v.displayName}." }
-                        val tempProfile = currentProfile.copy(voiceName = v.id)
-                        NotificationReaderService.instance?.testSpeak(previewText, tempProfile, loadWordingRules())
-                    }
-                })
-                card
             })
         }
     }
@@ -255,24 +260,6 @@ class ProfilesFragment : Fragment() {
         if (filtered.isEmpty()) {
             voiceGrid.addView(emptyLabel("No Piper voices match filter."))
             return
-        }
-
-        // "Download All" button for Piper
-        val notDownloaded = filtered.filter {
-            PiperDownloadManager.getState(ctx, it.id) == PiperDownloadManager.State.NOT_DOWNLOADED
-        }
-        if (notDownloaded.isNotEmpty()) {
-            voiceGrid.addView(Button(ctx).apply {
-                text = "⬇ DOWNLOAD ALL (${notDownloaded.size} voices)"
-                setBackgroundColor(0xFF1a2a3a.toInt()); setTextColor(0xFF88ccff.toInt())
-                textSize = 12f; setPadding(16, 8, 16, 8)
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                lp.setMargins(0, 8, 0, 12); layoutParams = lp
-                setOnClickListener {
-                    notDownloaded.forEach { v -> startPiperDownload(v.id) }
-                }
-            })
         }
 
         filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
@@ -441,6 +428,25 @@ class ProfilesFragment : Fragment() {
         }
     }
 
+    private fun startKokoroDownload() {
+        val ctx = requireContext()
+        VoiceDownloadManager.onProgress { pct ->
+            activity?.runOnUiThread {
+                if (!isAdded) return@runOnUiThread
+                updateDownloadProgress(pct)
+            }
+        }
+        VoiceDownloadManager.onStateChange { _ ->
+            activity?.runOnUiThread {
+                if (!isAdded) return@runOnUiThread
+                buildFilterButtons(); renderVoiceGrid()
+            }
+        }
+        VoiceDownloadManager.downloadModel(ctx)
+        renderVoiceGrid()
+        startDownloadRefresh()
+    }
+
     private fun startPiperDownload(voiceId: String) {
         val ctx = requireContext()
         PiperDownloadManager.onStateChange = { _, _ ->
@@ -481,26 +487,9 @@ class ProfilesFragment : Fragment() {
                     textSize = 12f; setTextColor(0xFF888888.toInt()); setPadding(0, 0, 0, 12)
                 })
                 card.addView(Button(ctx).apply {
-                    text = "⬇ DOWNLOAD ALL"
+                    text = "⬇ DOWNLOAD"
                     setBackgroundColor(0xFF1a3a1a.toInt()); setTextColor(0xFF00ff88.toInt())
-                    setOnClickListener {
-                        VoiceDownloadManager.onProgress { pct ->
-                            // Update only the progress text and bar, not the whole grid
-                            activity?.runOnUiThread {
-                                if (!isAdded) return@runOnUiThread
-                                updateDownloadProgress(pct)
-                            }
-                        }
-                        VoiceDownloadManager.onStateChange { _ ->
-                            activity?.runOnUiThread {
-                                if (!isAdded) return@runOnUiThread
-                                buildFilterButtons(); renderVoiceGrid()
-                            }
-                        }
-                        VoiceDownloadManager.downloadModel(ctx)
-                        renderVoiceGrid()
-                        startDownloadRefresh()
-                    }
+                    setOnClickListener { startKokoroDownload() }
                 })
             }
             VoiceDownloadManager.State.DOWNLOADING -> {

@@ -17,14 +17,14 @@ Notification reader for Android with full voice personality system.
 1. Push this repo to GitHub
 2. Actions → Build APK → Run workflow
 3. Download **both** APKs from Artifacts:
-   - `KokoroReader-v3` — the main app
+   - `Kyokan-v3` — the main app
    - `SherpaTTS-arm64-v8a` — the TTS engine (required)
 4. Install SherpaTTS first, then Kyōkan
 5. Grant notification permission when prompted
 
 ## Install
 1. Install **SherpaTTS** (`SherpaTTS-arm64-v8a.apk`) — this is the TTS engine that Kyōkan uses to speak
-2. Install **Kyōkan** (`KokoroReader-v3.apk`)
+2. Install **Kyōkan** (`Kyokan-v3.apk`)
 3. Open Kyōkan → Grant notification listener permission
 4. Go to **Profiles** tab → Download the Kokoro voice model (~120 MB, one-time)
 

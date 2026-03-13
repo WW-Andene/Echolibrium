@@ -5,10 +5,10 @@
 # data classes, and cross-class references that R8 can incorrectly strip
 # or rename. This is a small app; aggressive minification provides no
 # meaningful APK size benefit but causes runtime crashes.
--keep class com.kokoro.reader.** { *; }
+-keep class com.echolibrium.kyokan.** { *; }
 
 # Keep enum entries (used by valueOf in deserialization)
--keepclassmembers enum com.kokoro.reader.** {
+-keepclassmembers enum com.echolibrium.kyokan.** {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }

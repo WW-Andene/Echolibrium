@@ -3,10 +3,10 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 android {
-    namespace 'com.kokoro.reader'
+    namespace 'com.echolibrium.kyokan'
     compileSdk 34
     defaultConfig {
-        applicationId "com.kokoro.reader"
+        applicationId "com.echolibrium.kyokan"
         minSdk 26
         targetSdk 34
         versionCode 3

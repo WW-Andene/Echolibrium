@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.util.Log
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -49,12 +50,48 @@ object AudioPipeline {
     private var prevTail: FloatArray? = null
     private var prevSampleRate: Int = 0
 
+    // ── Direct ORT engine (Mirror Project Phase 2) ──────────────────────────
+    private var directOrtEngine: DirectOrtEngine? = null
+    private var yatagamiSynthesizer: YatagamiSynthesizer? = null
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     fun start(ctx: Context) {
         if (running) return
         running = true
+        initDirectOrt(ctx)
         Thread { loop(ctx) }.apply { isDaemon = true; start() }
+    }
+
+    /**
+     * Initialize DirectOrtEngine + YatagamiSynthesizer for pre-synthesis emotional control.
+     * Loads Kokoro model via direct ONNX Runtime if the model is already downloaded.
+     * If not ready yet (model still downloading), this is a no-op — SherpaEngine handles it.
+     */
+    private fun initDirectOrt(ctx: Context) {
+        if (!VoiceDownloadManager.isModelReady(ctx)) {
+            Log.d(TAG, "DirectOrt: model not ready yet, will use SherpaEngine only")
+            return
+        }
+        try {
+            val modelDir = VoiceDownloadManager.getModelDir(ctx)
+            val engine = DirectOrtEngine(ctx)
+            val ok = engine.initialize(
+                kokoroModelPath = File(modelDir, "model.onnx").absolutePath,
+                voicesBinPath = File(modelDir, "voices.bin").absolutePath,
+                numThreads = 2
+            )
+            if (ok) {
+                directOrtEngine = engine
+                yatagamiSynthesizer = YatagamiSynthesizer(engine)
+                Log.i(TAG, "DirectOrt + YatagamiSynthesizer initialized")
+            } else {
+                Log.w(TAG, "DirectOrt init returned false, using SherpaEngine only")
+                engine.cleanup()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "DirectOrt init failed, using SherpaEngine only", e)
+        }
     }
 
     fun stop() {
@@ -67,6 +104,9 @@ object AudioPipeline {
         running = false
         stop()
         SherpaEngine.release()
+        directOrtEngine?.cleanup()
+        directOrtEngine = null
+        yatagamiSynthesizer = null
     }
 
     // ── Enqueue ───────────────────────────────────────────────────────────────
@@ -118,8 +158,16 @@ object AudioPipeline {
         if (processed.isBlank()) return
 
         // ── Step 2+3: Route to correct engine and synthesize ────────────
+        // Try YatagamiSynthesizer (direct ORT + style sculpting) first,
+        // fall back to SherpaEngine if Yatagami isn't ready or fails.
+        // NOTE: Yatagami requires tokenized input (LongArray of phoneme IDs).
+        // Until Phase 4 adds the eSpeak-NG tokenizer, we pass null tokenIds
+        // and Yatagami returns null → SherpaEngine handles all synthesis.
         val voiceId = item.profile.voiceName
-        val result = if (PiperVoices.isPiperVoice(voiceId)) {
+        val yatagamiResult = synthesizeWithYatagami(item)
+        val result = if (yatagamiResult != null) {
+            Pair(yatagamiResult.pcm, yatagamiResult.sampleRate)
+        } else if (PiperVoices.isPiperVoice(voiceId)) {
             synthesizeWithPiper(ctx, voiceId, processed, item.modulated.speed)
         } else {
             synthesizeWithKokoro(ctx, voiceId, processed, item.modulated.speed)
@@ -143,6 +191,40 @@ object AudioPipeline {
 
         // ── Step 7: Play at native sample rate (no playbackRate hack) ────
         playPcm(pcm, sampleRate)
+    }
+
+    /**
+     * Attempt synthesis via YatagamiSynthesizer (direct ORT + StyleSculptor/ScaleMapper).
+     *
+     * Returns null if:
+     *   - DirectOrtEngine not initialized (model not downloaded at start time)
+     *   - No tokenizer available yet (Phase 4 — eSpeak-NG phonemization)
+     *   - Direct ORT synthesis fails for any reason
+     *
+     * When null is returned, the caller falls through to SherpaEngine.
+     */
+    private fun synthesizeWithYatagami(item: Item): YatagamiSynthesizer.SynthResult? {
+        val yatagami = yatagamiSynthesizer ?: return null
+
+        // Phase 4 gate: tokenizer not yet implemented.
+        // When added, this will be:
+        //   val tokenIds = tokenizer.tokenize(text, voiceId) ?: return null
+        // For now, return null to always fall through to SherpaEngine.
+        val tokenIds: LongArray? = null  // TODO: Phase 4 — eSpeak-NG tokenizer
+
+        if (tokenIds == null) return null
+
+        return try {
+            yatagami.synthesize(
+                tokenIds = tokenIds,
+                modulated = item.modulated,
+                signal = item.signal,
+                profile = item.profile,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Yatagami synthesis error, falling back to SherpaEngine", e)
+            null
+        }
     }
 
     private fun synthesizeWithKokoro(

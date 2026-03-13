@@ -21,13 +21,13 @@
             </LinearLayout>
         </LinearLayout>
 
-        <TextView android:id="@+id/status_text" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="#111111"
-            android:fontFamily="monospace" android:textSize="13sp" android:layout_marginBottom="8dp"/>
-
-        <Button android:id="@+id/btn_permission" android:layout_width="match_parent"
+        <Button android:id="@+id/btn_setup" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:backgroundTint="#00ff88"
-            android:textColor="#000000" android:fontFamily="monospace" android:layout_marginBottom="20dp"/>
+            android:textColor="#000000" android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
+        <TextView android:id="@+id/txt_setup_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="#111111"
+            android:fontFamily="monospace" android:textSize="11sp" android:textColor="#888888"
+            android:layout_marginBottom="20dp"/>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// MASTER SWITCH" style="@style/SectionLabel"/>
@@ -109,25 +109,6 @@
             android:layout_marginBottom="20dp"
             android:text="Listening: off"/>
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// BACKGROUND" style="@style/SectionLabel" android:layout_marginTop="20dp"/>
-        <Button android:id="@+id/btn_battery" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="⚡ Disable Battery Optimization"
-            android:backgroundTint="#1a1a2a" android:textColor="#88ccff"
-            android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/txt_battery_status" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:textSize="11sp"
-            android:textColor="#555555" android:fontFamily="monospace"
-            android:layout_marginBottom="8dp" android:paddingStart="4dp"/>
-
-        <Button android:id="@+id/btn_restricted" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="🔓 Allow Restricted Settings"
-            android:backgroundTint="#1a1a2a" android:textColor="#cc88ff"
-            android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/txt_restricted_status" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:textSize="11sp"
-            android:textColor="#555555" android:fontFamily="monospace"
-            android:layout_marginBottom="16dp" android:paddingStart="4dp"/>
 
     </LinearLayout>
 </ScrollView>

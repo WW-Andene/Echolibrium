@@ -27,8 +27,8 @@ class HomeFragment : Fragment() {
         i.inflate(R.layout.fragment_home, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        val statusText    = v.findViewById<TextView>(R.id.status_text)
-        val btnPermission = v.findViewById<Button>(R.id.btn_permission)
+        val btnSetup      = v.findViewById<Button>(R.id.btn_setup)
+        val txtSetup      = v.findViewById<TextView>(R.id.txt_setup_status)
         val switchEnabled = v.findViewById<SwitchCompat>(R.id.switch_enabled)
         val spinnerMode   = v.findViewById<Spinner>(R.id.spinner_read_mode)
         val switchAppName = v.findViewById<SwitchCompat>(R.id.switch_read_app_name)
@@ -38,10 +38,8 @@ class HomeFragment : Fragment() {
         val seekDndEnd    = v.findViewById<SeekBar>(R.id.seek_dnd_end)
         val txtDndStart   = v.findViewById<TextView>(R.id.txt_dnd_start)
         val txtDndEnd     = v.findViewById<TextView>(R.id.txt_dnd_end)
-        updateStatus(statusText, btnPermission)
-        btnPermission.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-        }
+        updateSetup(btnSetup, txtSetup)
+        btnSetup.setOnClickListener { openNextSetupStep() }
 
         switchEnabled.isChecked = prefs.getBoolean("service_enabled", true)
         switchEnabled.setOnCheckedChangeListener { _, v2 -> prefs.edit().putBoolean("service_enabled", v2).apply() }
@@ -104,41 +102,13 @@ class HomeFragment : Fragment() {
             updateListeningStatus(listeningStatus)
         }
 
-        // Battery optimization bypass
-        val btnBattery = v.findViewById<Button>(R.id.btn_battery)
-        val txtBatteryStatus = v.findViewById<TextView>(R.id.txt_battery_status)
-        updateBatteryStatus(btnBattery, txtBatteryStatus)
-        btnBattery.setOnClickListener {
-            val pm = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
-            if (!pm.isIgnoringBatteryOptimizations(requireContext().packageName)) {
-                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:${requireContext().packageName}")
-                }
-                startActivity(intent)
-            } else {
-                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            }
-        }
-
-        // Restricted settings (Android 13+ sideloaded apps)
-        val btnRestricted = v.findViewById<Button>(R.id.btn_restricted)
-        val txtRestrictedStatus = v.findViewById<TextView>(R.id.txt_restricted_status)
-        updateRestrictedStatus(txtRestrictedStatus)
-        btnRestricted.setOnClickListener {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:${requireContext().packageName}")
-            }
-            startActivity(intent)
-        }
     }
 
     override fun onResume() {
         super.onResume()
         view?.let {
-            updateStatus(it.findViewById(R.id.status_text), it.findViewById(R.id.btn_permission))
+            updateSetup(it.findViewById(R.id.btn_setup), it.findViewById(R.id.txt_setup_status))
             updateListeningStatus(it.findViewById(R.id.listening_status))
-            updateBatteryStatus(it.findViewById(R.id.btn_battery), it.findViewById(R.id.txt_battery_status))
-            updateRestrictedStatus(it.findViewById(R.id.txt_restricted_status))
         }
     }
 
@@ -158,34 +128,66 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun updateStatus(tv: TextView, btn: Button) {
-        val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-        tv.text = if (granted) "✓ Active — reading notifications with Kokoro"
-                  else "✗ Notification access required"
-        tv.setTextColor(requireContext().getColor(if (granted) android.R.color.holo_green_dark else android.R.color.holo_red_dark))
-        btn.text = if (granted) "Notification Settings" else "Grant Permission"
+    private fun isNotifGranted() = (activity as? MainActivity)?.isNotificationAccessGranted() == true
+
+    private fun isBatteryExempt(): Boolean {
+        val pm = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(requireContext().packageName)
     }
 
-    private fun updateBatteryStatus(btn: Button, txt: TextView) {
-        val pm = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
-        val exempt = pm.isIgnoringBatteryOptimizations(requireContext().packageName)
-        if (exempt) {
-            btn.text = "✓ Battery Optimization Disabled"
+    private fun updateSetup(btn: Button, txt: TextView) {
+        val notif = isNotifGranted()
+        val battery = isBatteryExempt()
+        val steps = mutableListOf<String>()
+        if (!notif) steps.add("Notification access")
+        if (!battery) steps.add("Battery optimization")
+        if (!notif && android.os.Build.VERSION.SDK_INT >= 33) steps.add("Restricted settings")
+
+        if (steps.isEmpty()) {
+            btn.text = "✓ All permissions granted"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1a2a1a.toInt())
             btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
-            txt.text = "App can run freely in background"
+            txt.text = "Notification access ✓  Battery ✓  Ready to go"
+            txt.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
         } else {
-            btn.text = "⚡ Disable Battery Optimization"
-            btn.setTextColor(0xFF88ccff.toInt())
-            txt.text = "Required to keep reading when screen is off"
+            btn.text = "Setup: ${steps.first()}"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
+            btn.setTextColor(0xFF000000.toInt())
+            val status = buildString {
+                append(if (notif) "✓ Notifications" else "✗ Notifications")
+                append("  ·  ")
+                append(if (battery) "✓ Battery" else "✗ Battery")
+                if (android.os.Build.VERSION.SDK_INT >= 33 && !notif) {
+                    append("  ·  ✗ Restricted")
+                }
+            }
+            txt.text = status
+            txt.setTextColor(requireContext().getColor(android.R.color.holo_orange_dark))
         }
     }
 
-    private fun updateRestrictedStatus(txt: TextView) {
-        val granted = (activity as? MainActivity)?.isNotificationAccessGranted() == true
-        if (granted) {
-            txt.text = "Notification access is granted"
-        } else {
-            txt.text = "On Android 13+, sideloaded apps need restricted settings allowed"
+    private fun openNextSetupStep() {
+        val ctx = requireContext()
+        when {
+            !isNotifGranted() -> {
+                // On Android 13+ sideloaded apps, open app details first for restricted settings
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${ctx.packageName}")
+                    })
+                    Toast.makeText(ctx, "Allow restricted settings, then enable Notification access", Toast.LENGTH_LONG).show()
+                } else {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+            }
+            !isBatteryExempt() -> {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${ctx.packageName}")
+                })
+            }
+            else -> {
+                Toast.makeText(ctx, "All set!", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

@@ -8,60 +8,46 @@ import androidx.preference.PreferenceManager
  * Processes recognized voice commands and generates spoken responses.
  *
  * Supported commands:
- *   • "can you repeat?" / "repeat that" / "say that again" / "what did you say?"
+ *   - "can you repeat?" / "repeat that" / "say that again"
  *     → Repeats the last notification that was spoken
  *
- *   • "how long ago?" / "when was that?" / "how long ago was that?"
+ *   - "how long ago?" / "when was that?"
  *     → Says how much time passed since the last notification
  *
- *   • "stop" / "shut up" / "be quiet" / "silence"
+ *   - "stop" / "shut up" / "be quiet"
  *     → Stops current speech
  *
- *   • "what time is it?" / "what's the time?"
+ *   - "what time is it?"
  *     → Speaks the current time
  *
- *   • "how are you feeling?" / "how are you?" / "what's your mood?"
+ *   - "how are you feeling?" / "what's your mood?"
  *     → Describes the current MoodState in natural language
  */
 object VoiceCommandHandler {
 
     private const val TAG = "VoiceCommandHandler"
 
-    // Command patterns — checked with fuzzy matching (contains, not exact)
     private val REPEAT_TRIGGERS = listOf(
         "can you repeat", "repeat that", "say that again", "what did you say",
-        "say it again", "repeat please", "repeat", "one more time",
-        "play it again", "come again"
+        "say it again", "repeat please", "repeat", "one more time"
     )
-
     private val TIME_AGO_TRIGGERS = listOf(
         "how long ago", "when was that", "how long ago was that",
-        "when did that come", "how old is that", "when was the last"
+        "when did that come"
     )
-
     private val STOP_TRIGGERS = listOf(
         "stop", "shut up", "be quiet", "silence", "quiet", "enough", "stop talking"
     )
-
     private val TIME_TRIGGERS = listOf(
         "what time is it", "what's the time", "tell me the time", "current time"
     )
-
     private val MOOD_TRIGGERS = listOf(
         "how are you feeling", "how are you", "what's your mood",
-        "how do you feel", "what mood", "your mood", "how you feeling"
+        "how do you feel", "what mood", "your mood"
     )
 
-    /**
-     * Try to match recognized speech against known commands.
-     * @param ctx Application context
-     * @param candidates List of recognition alternatives (most confident first)
-     * @return true if a command was handled
-     */
     fun handleCommand(ctx: Context, candidates: List<String>): Boolean {
-        // Normalize all candidates to lowercase for matching
         val normalized = candidates.map { it.lowercase().trim() }
-
         return when {
             matchesAny(normalized, REPEAT_TRIGGERS) -> { handleRepeat(ctx); true }
             matchesAny(normalized, MOOD_TRIGGERS) -> { handleMood(ctx); true }
@@ -72,13 +58,8 @@ object VoiceCommandHandler {
         }
     }
 
-    private fun matchesAny(candidates: List<String>, triggers: List<String>): Boolean {
-        return candidates.any { candidate ->
-            triggers.any { trigger -> candidate.contains(trigger) }
-        }
-    }
-
-    // ── Command handlers ────────────────────────────────────────────────────
+    private fun matchesAny(candidates: List<String>, triggers: List<String>): Boolean =
+        candidates.any { candidate -> triggers.any { trigger -> candidate.contains(trigger) } }
 
     private fun handleRepeat(ctx: Context) {
         val lastText = NotificationReaderService.lastSpokenText
@@ -96,8 +77,7 @@ object VoiceCommandHandler {
             speak(ctx, "No notification has been received yet.")
         } else {
             val elapsed = System.currentTimeMillis() - lastTime
-            val text = formatElapsed(elapsed)
-            speak(ctx, "The last notification was $text ago.")
+            speak(ctx, "The last notification was ${formatElapsed(elapsed)} ago.")
         }
         Log.d(TAG, "Handled: time ago command")
     }
@@ -108,28 +88,20 @@ object VoiceCommandHandler {
     }
 
     private fun handleTime(ctx: Context) {
-        val timeStr = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+        val timeStr = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+            .format(java.util.Date())
         speak(ctx, "It is $timeStr.")
         Log.d(TAG, "Handled: time command")
     }
 
     private fun handleMood(ctx: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-        val profiles = VoiceProfile.loadAll(prefs)
-        val profileId = prefs.getString("active_profile_id", "") ?: ""
-        val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        val mood = MoodState.load(prefs).decayed(profile.sensitivity.moodDecayRate)
+        val mood = MoodState.load(prefs).decayed()
         speak(ctx, describeMood(mood))
         Log.d(TAG, "Handled: mood command (v=${mood.valence}, a=${mood.arousal}, s=${mood.stability})")
     }
 
-    /**
-     * Convert MoodState dimensions into a natural-language description.
-     * Combines valence (positive/negative), arousal (energized/tired),
-     * and stability (steady/volatile) into a single spoken sentence.
-     */
     private fun describeMood(mood: MoodState): String {
-        // Valence descriptor
         val valenceWord = when {
             mood.valence > 0.6f  -> "really good"
             mood.valence > 0.3f  -> "pretty positive"
@@ -139,8 +111,6 @@ object VoiceCommandHandler {
             mood.valence > -0.6f -> "not great"
             else                 -> "pretty rough"
         }
-
-        // Arousal descriptor
         val arousalWord = when {
             mood.arousal > 0.8f  -> "wired"
             mood.arousal > 0.6f  -> "alert"
@@ -148,15 +118,11 @@ object VoiceCommandHandler {
             mood.arousal > 0.2f  -> "a bit tired"
             else                 -> "exhausted"
         }
-
-        // Stability descriptor (only mention if notably unstable)
         val stabilityNote = when {
             mood.stability < 0.3f -> " and honestly a bit all over the place"
             mood.stability < 0.5f -> " and kind of unsettled"
             else -> ""
         }
-
-        // Session count context
         val countNote = when {
             mood.sessionCount == 0 -> "Haven't read anything yet today."
             mood.sessionCount < 5  -> "Only read a few so far."
@@ -164,36 +130,32 @@ object VoiceCommandHandler {
             mood.sessionCount < 50 -> "It's been a busy day."
             else                   -> "It's been nonstop today."
         }
-
         val base = "I'm feeling $valenceWord. Energy-wise, $arousalWord$stabilityNote."
         return if (countNote.isNotEmpty()) "$base $countNote" else base
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
     private fun speak(ctx: Context, text: String) {
+        val service = NotificationReaderService.instance ?: return
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val profiles = VoiceProfile.loadAll(prefs)
         val profileId = prefs.getString("active_profile_id", "") ?: ""
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        val rules = emptyList<Pair<String, String>>()
-        AudioPipeline.testSpeak(ctx, text, profile, rules)
+        service.testSpeak(text, profile, emptyList())
     }
 
     private fun formatElapsed(ms: Long): String {
         val seconds = ms / 1000
         val minutes = seconds / 60
         val hours = minutes / 60
-
         return when {
             hours > 0 -> {
-                val remainMinutes = minutes % 60
-                if (remainMinutes > 0) "$hours hour${if (hours > 1) "s" else ""} and $remainMinutes minute${if (remainMinutes > 1) "s" else ""}"
+                val rm = minutes % 60
+                if (rm > 0) "$hours hour${if (hours > 1) "s" else ""} and $rm minute${if (rm > 1) "s" else ""}"
                 else "$hours hour${if (hours > 1) "s" else ""}"
             }
             minutes > 0 -> {
-                val remainSeconds = seconds % 60
-                if (remainSeconds > 0) "$minutes minute${if (minutes > 1) "s" else ""} and $remainSeconds second${if (remainSeconds > 1) "s" else ""}"
+                val rs = seconds % 60
+                if (rs > 0) "$minutes minute${if (minutes > 1) "s" else ""} and $rs second${if (rs > 1) "s" else ""}"
                 else "$minutes minute${if (minutes > 1) "s" else ""}"
             }
             seconds > 0 -> "$seconds second${if (seconds > 1) "s" else ""}"

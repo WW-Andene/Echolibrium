@@ -2,6 +2,8 @@ package com.kokoro.reader
 
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import android.widget.Toast
@@ -10,44 +12,51 @@ import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 
 class AppsFragment : Fragment() {
-    private lateinit var prefs: android.content.SharedPreferences
+    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private var rules = mutableListOf<AppRule>()
     private var profiles = listOf<VoiceProfile>()
-    private var container: LinearLayout? = null
+    private lateinit var container: LinearLayout
+    private var searchFilter = ""
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
-        try { i.inflate(R.layout.fragment_apps, c, false) }
-        catch (e: Exception) { android.util.Log.e("AppsFragment", "Layout inflation failed", e); null }
+    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
+        i.inflate(R.layout.fragment_apps, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        try {
-            val ctx = context ?: return
-            prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-            container = v.findViewById(R.id.apps_container)
-            rules = AppRule.loadAll(prefs)
-            profiles = VoiceProfile.loadAll(prefs)
-            v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
-            renderRules()
-        } catch (e: Exception) {
-            android.util.Log.e("AppsFragment", "Error initializing apps view", e)
-            showErrorFallback(v, "Apps failed to load: ${e.message}")
-        }
+        container = v.findViewById(R.id.apps_container)
+        rules = AppRule.loadAll(prefs)
+        profiles = VoiceProfile.loadAll(prefs)
+        v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
+
+        // Search bar
+        v.findViewById<EditText>(R.id.et_search).addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                searchFilter = s?.toString()?.trim() ?: ""
+                renderRules()
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+
+        // Select / Deselect all
+        v.findViewById<Button>(R.id.btn_select_all).setOnClickListener { setAllEnabled(true) }
+        v.findViewById<Button>(R.id.btn_deselect_all).setOnClickListener { setAllEnabled(false) }
+
+        renderRules()
     }
 
-    private fun showErrorFallback(v: View, message: String) {
-        try {
-            val ctx = context ?: return
-            val fallback = v.findViewById<ViewGroup>(R.id.apps_container) ?: (v as? ViewGroup) ?: return
-            fallback.removeAllViews()
-            fallback.addView(TextView(ctx).apply {
-                text = "⚠ $message\n\nTry restarting the app."
-                setTextColor(0xFFff4444.toInt())
-                textSize = 14f
-                setPadding(20, 40, 20, 40)
-            })
-        } catch (e2: Exception) {
-            android.util.Log.e("AppsFragment", "Error showing fallback UI", e2)
+    private fun setAllEnabled(enabled: Boolean) {
+        val filtered = filteredRules()
+        filtered.forEach { rule ->
+            val idx = rules.indexOfFirst { it.packageName == rule.packageName }
+            if (idx >= 0) rules[idx] = rules[idx].copy(enabled = enabled)
         }
+        AppRule.saveAll(rules, prefs)
+        renderRules()
+    }
+
+    private fun filteredRules(): List<AppRule> {
+        if (searchFilter.isBlank()) return rules
+        return rules.filter { it.appLabel.contains(searchFilter, ignoreCase = true) }
     }
 
     private fun loadInstalledApps() {
@@ -55,79 +64,59 @@ class AppsFragment : Fragment() {
         btn.isEnabled = false
         btn.text = "LOADING..."
 
-        val ctx = context?.applicationContext ?: return
         Thread {
-            try {
-                val pm = ctx.packageManager
-                val apps = try {
-                    @Suppress("DEPRECATION") pm.getInstalledApplications(0)
-                } catch (e: Exception) { emptyList() }
+            val pm = requireContext().packageManager
+            val apps = try {
+                @Suppress("DEPRECATION") pm.getInstalledApplications(0)
+            } catch (e: Exception) { emptyList() }
 
-                val newRules = apps
-                    .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
-                    .sortedBy { try { pm.getApplicationLabel(it).toString().lowercase() } catch (e: Exception) { it.packageName } }
-                    .mapNotNull { info ->
-                        val pkg = info.packageName
-                        val label = try { pm.getApplicationLabel(info).toString() } catch (e: Exception) { pkg }
-                        if (rules.none { it.packageName == pkg }) AppRule(packageName = pkg, appLabel = label) else null
-                    }
+            val newRules = apps
+                .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
+                .sortedBy { try { pm.getApplicationLabel(it).toString().lowercase() } catch (e: Exception) { it.packageName } }
+                .mapNotNull { info ->
+                    val pkg = info.packageName
+                    val label = try { pm.getApplicationLabel(info).toString() } catch (e: Exception) { pkg }
+                    if (rules.none { it.packageName == pkg }) AppRule(packageName = pkg, appLabel = label) else null
+                }
 
-                activity?.runOnUiThread {
-                    try {
-                        if (!isAdded || view == null) return@runOnUiThread
-                        rules.addAll(newRules)
-                        if (rules.isEmpty()) {
-                            Toast.makeText(context ?: return@runOnUiThread, "No user apps found.", Toast.LENGTH_SHORT).show()
-                        }
-                        AppRule.saveAll(rules, prefs)
-                        renderRules()
-                        btn.isEnabled = true
-                        btn.text = "RELOAD APPS"
-                    } catch (e: Exception) {
-                        android.util.Log.e("AppsFragment", "Error updating UI after app load", e)
-                    }
+            activity?.runOnUiThread {
+                if (!isAdded) return@runOnUiThread
+                rules.addAll(newRules)
+                if (rules.isEmpty()) {
+                    Toast.makeText(requireContext(), "No user apps found.", Toast.LENGTH_SHORT).show()
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("AppsFragment", "Error loading installed apps", e)
-                activity?.runOnUiThread {
-                    try {
-                        if (isAdded && view != null) {
-                            btn.isEnabled = true
-                            btn.text = "RELOAD APPS"
-                        }
-                    } catch (_: Exception) {}
-                }
+                AppRule.saveAll(rules, prefs)
+                renderRules()
+                btn.isEnabled = true
+                btn.text = "RELOAD APPS"
             }
-        }.apply { name = "AppsFragment-load"; isDaemon = true; start() }
+        }.start()
     }
 
     private fun renderRules() {
-        if (!isAdded || view == null) return
-        val ctx = context ?: return
-        val c = container ?: return
-        c.removeAllViews()
-        rules.forEach { c.addView(buildRow(ctx, it)) }
+        container.removeAllViews()
+        filteredRules().forEach { container.addView(buildRow(it)) }
     }
 
-    private fun buildRow(ctx: android.content.Context, rule: AppRule): View {
-        val root = LinearLayout(ctx).apply {
+    private fun buildRow(rule: AppRule): View {
+        val root = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 0, 3); layoutParams = lp
         }
 
-        val top = LinearLayout(ctx).apply {
+        val top = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF111111.toInt()); setPadding(16, 14, 16, 14)
         }
-        val label = TextView(ctx).apply {
+        val label = TextView(requireContext()).apply {
             text = rule.appLabel; textSize = 14f; setTextColor(0xFFcccccc.toInt())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val toggle = SwitchCompat(ctx).apply { isChecked = rule.enabled }
+        val toggle = SwitchCompat(requireContext()).apply { isChecked = rule.enabled }
         top.addView(label); top.addView(toggle); root.addView(top)
 
-        val bottom = LinearLayout(ctx).apply {
+        val bottom = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF0d0d0d.toInt()); setPadding(16, 8, 16, 8)
             visibility = if (rule.enabled) View.VISIBLE else View.GONE
@@ -139,22 +128,21 @@ class AppsFragment : Fragment() {
 
         val modes = arrayOf("Full", "Title only", "App only", "Text only", "Skip")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only", "skip")
-        val modeSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, modes)
+        val modeSpinner = Spinner(requireContext()).apply {
+            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
             setSelection(modeVals.indexOf(rule.readMode).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    val mode = modeVals.getOrNull(pos) ?: return
-                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = mode)) }
+                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = modeVals[pos])) }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
 
         val profileNames = listOf("Global") + profiles.map { "${it.emoji} ${it.name}" }
-        val profileSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, profileNames)
+        val profileSpinner = Spinner(requireContext()).apply {
+            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, profileNames)
             val idx = profiles.indexOfFirst { it.id == rule.profileId }
             setSelection((idx + 1).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)

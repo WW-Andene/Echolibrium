@@ -68,15 +68,15 @@ data class SignalMap(
     val hourOfDay:      Int = 12,
     val floodCount:     Int = 0,
 
-    // ── New fields from improvement plan ──────────────────────────────────
+    // Blended emotional state
     val emotionBlend:    EmotionBlend = EmotionBlend.NONE,
     val detectedSarcasm: Boolean      = false,
     val floodTier:       FloodTier    = FloodTier.CALM,
 
-    // Sender history (populated by NotificationReaderService)
-    val senderRepeat:    Int   = 0,       // how many times this sender notified today
-    val senderRecency:   Long  = Long.MAX_VALUE, // ms since last notification from sender
-    val senderPressure:  Float = 0f       // repeat × recency_decay
+    // Sender history
+    val senderRepeat:    Int   = 0,
+    val senderRecency:   Long  = Long.MAX_VALUE,
+    val senderPressure:  Float = 0f
 ) {
     // Convenience checks for condition matching
     fun has(intent: Intent) = intents.contains(intent)

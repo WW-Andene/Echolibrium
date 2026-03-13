@@ -12,11 +12,10 @@ import android.util.Log
 import androidx.preference.PreferenceManager
 
 /**
- * Continuous voice command listener that uses Android's SpeechRecognizer
- * to detect a wake word (the profile name) followed by a command.
+ * Continuous voice command listener using Android's SpeechRecognizer.
  *
- * The mic only triggers action when the profile name is heard first,
- * preventing the constant beep from SpeechRecognizer's ready sound.
+ * The mic only triggers action when the active profile name (wake word)
+ * is heard first, preventing false positives.
  *
  * Commands: "repeat", "how long ago?", "stop", "what time?", "how are you feeling?"
  */
@@ -29,13 +28,11 @@ object VoiceCommandListener {
     @Volatile var isListening = false
         private set
 
-    /** The wake word that must be spoken before a command is processed */
     @Volatile var wakeWord: String = ""
         private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** Callback for UI status updates — set from UI thread, invoked on main thread */
     var onStatusChanged: ((Boolean) -> Unit)? = null
 
     fun start(ctx: Context) {
@@ -48,7 +45,6 @@ object VoiceCommandListener {
             isListening = true
         }
 
-        // Load the active profile name as the wake word
         loadWakeWord(ctx)
 
         mainHandler.post {
@@ -57,14 +53,12 @@ object VoiceCommandListener {
                 sr.setRecognitionListener(CommandRecognitionListener(ctx.applicationContext))
                 recognizer = sr
                 onStatusChanged?.invoke(true)
-                syncVoiceCmdStatus(ctx)
                 startListeningInternal()
                 Log.d(TAG, "Voice command listener started (wake word: '$wakeWord')")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start voice command listener", e)
                 isListening = false
                 onStatusChanged?.invoke(false)
-                syncVoiceCmdStatus(ctx)
             }
         }
     }
@@ -84,20 +78,6 @@ object VoiceCommandListener {
         }
     }
 
-    /** Syncs voice command listener status to the cross-process status file. */
-    private fun syncVoiceCmdStatus(ctx: Context) {
-        TtsBridge.writeStatus(
-            ctx = ctx,
-            ready = SherpaEngine.isReady,
-            status = SherpaEngine.statusMessage,
-            error = SherpaEngine.errorMessage,
-            alive = true,
-            voiceCmdListening = isListening,
-            voiceCmdWakeWord = wakeWord
-        )
-    }
-
-    /** Reload the wake word from the active profile name */
     fun loadWakeWord(ctx: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val profiles = VoiceProfile.loadAll(prefs)
@@ -115,7 +95,6 @@ object VoiceCommandListener {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            // Longer silence window — reduces how often the recognizer restarts (less beeping)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L)
@@ -140,51 +119,26 @@ object VoiceCommandListener {
         override fun onReadyForSpeech(params: Bundle?) {
             Log.d(TAG, "Listening for wake word '$wakeWord'…")
         }
-
         override fun onBeginningOfSpeech() {}
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
-
-        override fun onEndOfSpeech() {
-            Log.d(TAG, "End of speech detected")
-        }
+        override fun onEndOfSpeech() {}
 
         override fun onError(error: Int) {
-            val errorName = when (error) {
-                SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH"
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "SPEECH_TIMEOUT"
-                SpeechRecognizer.ERROR_AUDIO -> "AUDIO"
-                SpeechRecognizer.ERROR_CLIENT -> "CLIENT"
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "PERMISSIONS"
-                SpeechRecognizer.ERROR_NETWORK -> "NETWORK"
-                SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT"
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "BUSY"
-                SpeechRecognizer.ERROR_SERVER -> "SERVER"
-                else -> "UNKNOWN($error)"
-            }
-
-            // NO_MATCH and SPEECH_TIMEOUT are normal — just restart silently
             if (error == SpeechRecognizer.ERROR_NO_MATCH ||
                 error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 scheduleRestart()
                 return
             }
-
-            // CLIENT errors often occur when recognizer is destroyed during stop —
-            // avoid restarting in that case to prevent crash loops
             if (error == SpeechRecognizer.ERROR_CLIENT) {
                 Log.d(TAG, "Recognition client error — skipping restart")
                 return
             }
-
-            Log.w(TAG, "Recognition error: $errorName")
-            // Longer delay for real errors
+            Log.w(TAG, "Recognition error: $error")
             if (isListening) {
                 mainHandler.postDelayed({
                     if (isListening) {
-                        try {
-                            startListeningInternal()
-                        } catch (e: Exception) {
+                        try { startListeningInternal() } catch (e: Exception) {
                             Log.e(TAG, "Error restarting after error", e)
                         }
                     }
@@ -198,7 +152,6 @@ object VoiceCommandListener {
                 if (!matches.isNullOrEmpty()) {
                     Log.d(TAG, "Heard: ${matches.joinToString(" | ")}")
 
-                    // Only process if the wake word is detected in the speech
                     val wake = wakeWord
                     if (wake.isNotBlank()) {
                         val heardWakeWord = matches.any { it.lowercase().contains(wake) }
@@ -210,22 +163,15 @@ object VoiceCommandListener {
                         Log.d(TAG, "Wake word '$wake' detected!")
                     }
 
-                    val handled = VoiceCommandHandler.handleCommand(ctx, matches)
-                    if (handled) {
-                        Log.d(TAG, "Command handled successfully")
-                    }
+                    VoiceCommandHandler.handleCommand(ctx, matches)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing speech results", e)
             }
-            // Continue listening
             scheduleRestart()
         }
 
-        override fun onPartialResults(partialResults: Bundle?) {
-            // Wait for final results only
-        }
-
+        override fun onPartialResults(partialResults: Bundle?) {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 }

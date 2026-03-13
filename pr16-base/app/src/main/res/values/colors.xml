@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="green">#00ff88</color>
-    <color name="bg">#0d0d0d</color>
-    <color name="surface">#111111</color>
-    <color name="nav_inactive">#555555</color>
-    <color name="ic_launcher_background">#f5f0eb</color>
-</resources>

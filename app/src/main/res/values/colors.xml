@@ -4,17 +4,5 @@
     <color name="bg">#0d0d0d</color>
     <color name="surface">#111111</color>
     <color name="nav_inactive">#555555</color>
-    <color name="status_active">#00ff88</color>
-    <color name="status_warning">#ffaa00</color>
-    <color name="status_error">#ff4444</color>
-    <color name="status_inactive">#666666</color>
-    <color name="status_info">#00ccff</color>
-    <color name="text_primary">#cccccc</color>
-    <color name="text_secondary">#446644</color>
-    <color name="text_dim">#aaaaaa</color>
-    <color name="text_hint">#444444</color>
-    <color name="text_muted">#999999</color>
-    <color name="surface_dark">#1a1a1a</color>
-    <color name="btn_danger_bg">#2a1a1a</color>
     <color name="ic_launcher_background">#f5f0eb</color>
 </resources>

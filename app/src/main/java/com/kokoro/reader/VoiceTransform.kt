@@ -30,21 +30,6 @@ object VoiceTransform {
         "tsk"    to listOf("tsk.", "tsk tsk.", "tch."),
     )
 
-    // ── Filler injection definitions (§4.1) ───────────────────────────────────
-    private val FILLER_HESITATION    = listOf("um", "uh", "uhh")
-    private val FILLER_THINKING      = listOf("hmm", "hm...")
-    private val FILLER_STALLING      = listOf("well...", "so...", "I mean...", "like...")
-    private val FILLER_ACKNOWLEDGMENT = listOf("okay so", "right so", "alright")
-    private val FILLER_UNCERTAINTY    = listOf("I think...", "maybe...")
-
-    // ── Pre-speech breath definitions (§4.3A) ─────────────────────────────────
-    private val BREATH_LIGHT  = listOf("hm. ")
-    private val BREATH_FULL   = listOf("hmh... ")
-    private val BREATH_SHARP  = listOf("hh— ")
-
-    // Consonants eligible for prolongation (fricatives + nasals + liquids)
-    private val PROLONGABLE_CONSONANTS = setOf('s', 'm', 'n', 'f', 'v', 'l', 'r', 'z', 'h', 'w')
-
     fun applyGimmicks(text: String, configs: List<GimmickConfig>, signal: SignalMap): String {
         var result = text
         for (cfg in configs) {
@@ -67,34 +52,34 @@ object VoiceTransform {
         return result
     }
 
-    // Maps gimmick type to the signal condition that should gate it.
-    // Each gimmick fires only when its emotional context is appropriate.
+    // Maps gimmick type to the signal condition that should gate it
+    // Conditions are broad enough to actually fire — frequency cap handles expressiveness
     private fun String.toGimmickSignal() = when (this) {
-        "sigh"   -> "warmth_distressed"
-        "giggle" -> "emoji_happy"
-        "huh"    -> "sender_unknown"
-        "mmm"    -> "sender_human"
-        "woah"   -> "intensity_high"
-        "ugh"    -> "stakes_high"
-        "aww"    -> "warmth_high"
-        "gasp"   -> "urgency_expiring"
-        "yawn"   -> "stakes_low"
-        "hmm"    -> "intent_request"
-        "laugh"  -> "stakes_fake"
-        "tsk"    -> "emoji_angry"
+        "sigh"   -> "always"              // personality decides when to sigh — freq cap gates it
+        "giggle" -> "always"              // personality decides when to giggle — freq cap gates it
+        "huh"    -> "always"              // uncertainty reflex
+        "mmm"    -> "always"              // considering reflex
+        "woah"   -> "intensity_high"      // only on genuinely intense messages
+        "ugh"    -> "stakes_high"         // real stakes only (financial, emotional)
+        "aww"    -> "always"              // personality decides
+        "gasp"   -> "urgency_expiring"    // only on calls/expiring urgency
+        "yawn"   -> "stakes_low"          // boring content
+        "hmm"    -> "always"              // general
+        "laugh"  -> "stakes_fake"         // game / fake stakes
+        "tsk"    -> "always"              // personality decides
         else     -> "always"
     }
 
     // ── Commentary ────────────────────────────────────────────────────────────
-    fun applyCommentary(text: String, profile: VoiceProfile, signal: SignalMap, mood: MoodState? = null): String {
+    fun applyCommentary(text: String, profile: VoiceProfile, signal: SignalMap): String {
         val pre = profile.commentaryPools
-            .filter { it.position == "pre" && it.condition.matches(signal, mood) && it.lines.isNotEmpty() }
+            .filter { it.position == "pre" && it.condition.matches(signal) && it.lines.isNotEmpty() }
             .filter { Random.nextInt(100) < it.frequency }
             .flatMap { it.lines }
             .randomOrNull()
 
         val post = profile.commentaryPools
-            .filter { it.position == "post" && it.condition.matches(signal, mood) && it.lines.isNotEmpty() }
+            .filter { it.position == "post" && it.condition.matches(signal) && it.lines.isNotEmpty() }
             .filter { Random.nextInt(100) < it.frequency }
             .flatMap { it.lines }
             .randomOrNull()
@@ -103,115 +88,18 @@ object VoiceTransform {
     }
 
     // ── Smoothing curve — maps linear 0-100 slider to gradual 0.0-1.0 ─────────
-    private fun smooth(v: Int): Float = (v / 100f) * (v / 100f)
-
-    // ── Filler injection (§4.1) ───────────────────────────────────────────────
-    fun applyFillers(text: String, fillerIntensity: Int, signal: SignalMap, mood: MoodState? = null): String {
-        if (fillerIntensity < 5) return text
-        val smoothIntensity = smooth(fillerIntensity)
-        val words = text.split(" ").toMutableList()
-        val result = mutableListOf<String>()
-
-        // Calculate filler probability based on signal + mood
-        var baseProbability = smoothIntensity * 0.15f
-        if (signal.unknownFactor) baseProbability += 0.15f
-        if (signal.register == Register.RAW || signal.fragmented) baseProbability += 0.20f
-        if (mood != null && mood.arousal > 0.65f) baseProbability += 0.25f
-        if (mood != null && mood.stability < 0.5f) baseProbability += 0.15f
-
-        // Select filler type based on signal
-        val fillerPool = when {
-            signal.trajectory == Trajectory.COLLAPSED -> FILLER_STALLING
-            signal.has(Intent.PLEA) || signal.has(Intent.DENIAL) -> FILLER_HESITATION
-            signal.unknownFactor -> FILLER_UNCERTAINTY
-            mood != null && mood.arousal > 0.7f -> FILLER_HESITATION
-            else -> FILLER_THINKING + FILLER_ACKNOWLEDGMENT
-        }
-
-        // Pre-text filler
-        if (fillerPool.isNotEmpty() && Random.nextFloat() < baseProbability) {
-            result.add(fillerPool.random())
-        }
-
-        // Inject fillers at clause breaks and before long words
-        for (i in words.indices) {
-            val word = words[i]
-            // At comma boundaries (clause breaks)
-            if (word.endsWith(",") && fillerPool.isNotEmpty() && Random.nextFloat() < baseProbability * 0.6f) {
-                result.add(word)
-                result.add(fillerPool.random())
-                continue
-            }
-            // Before unusually long words (>10 chars)
-            if (word.length > 10 && fillerPool.isNotEmpty() && Random.nextFloat() < baseProbability * 0.4f) {
-                result.add(fillerPool.random())
-            }
-            result.add(word)
-        }
-
-        return result.joinToString(" ")
-    }
-
-    // ── Pre-speech breath injection (§4.3A) ───────────────────────────────────
-    fun applyBreathInjection(text: String, signal: SignalMap, mood: MoodState? = null): String {
-        val shouldBreathe = signal.urgencyType >= UrgencyType.REAL ||
-            signal.stakesType == StakesType.EMOTIONAL ||
-            signal.stakesType == StakesType.FINANCIAL ||
-            signal.trajectory == Trajectory.PEAKED ||
-            (mood != null && mood.arousal > 0.8f)
-
-        if (!shouldBreathe) return text
-
-        val breath = when {
-            signal.urgencyType == UrgencyType.EXPIRING || signal.emojiShock -> BREATH_SHARP.random()
-            signal.stakesType == StakesType.EMOTIONAL || signal.trajectory == Trajectory.PEAKED -> BREATH_FULL.random()
-            else -> BREATH_LIGHT.random()
-        }
-        return "$breath$text"
-    }
-
-    // ── Question/Statement intonation (§8.1) ──────────────────────────────────
-    fun applyQuestionIntonation(text: String): String {
-        val trimmed = text.trimEnd()
-        if (trimmed.isEmpty()) return text
-        return when {
-            // Question ending: append ... to encourage rising terminal contour
-            trimmed.endsWith("?") -> "$trimmed.."
-            // Exclamation in high-intensity: duplicate last vowel before !
-            trimmed.endsWith("!") -> {
-                val beforeBang = trimmed.dropLast(1)
-                val lastVowelIdx = beforeBang.indexOfLast { it.lowercaseChar() in "aeiou" }
-                if (lastVowelIdx >= 0) {
-                    beforeBang.substring(0, lastVowelIdx + 1) +
-                        beforeBang[lastVowelIdx] +
-                        beforeBang.substring(lastVowelIdx + 1) + "!"
-                } else text
-            }
-            else -> text
-        }
-    }
-
-    // ── Trailing off text marker (§4.3B / §5.3) ──────────────────────────────
-    fun applyTrailingText(text: String, signal: SignalMap, mood: MoodState? = null): String {
-        val shouldTrail = signal.trajectory == Trajectory.COLLAPSED ||
-            (mood != null && mood.arousal < 0.3f)
-        if (!shouldTrail) return text
-        val trimmed = text.trimEnd()
-        return if (trimmed.isNotEmpty() && !trimmed.endsWith("...")) "$trimmed..." else text
-    }
-
-    /** Replace NaN or Infinity with a safe default to prevent IllegalArgumentException in roundToInt */
-    private fun Float.safeFloat(default: Float): Float =
-        if (this.isNaN() || this.isInfinite()) default else this
+    // Quadratic: low values are subtle, high values are dramatic
+    private fun smooth(v: Int): Float = (v / 100f) * (v / 100f)  // x^2
 
     // ── Breathiness ───────────────────────────────────────────────────────────
     fun applyBreathiness(text: String, intensity: Int, curvePosition: Float, pause: Int): String {
-        if (intensity < 5) return text
+        if (intensity < 5) return text  // dead zone — below 5 is inaudible
         return text.split(" ").joinToString(" ") { breathWord(it, intensity, curvePosition, pause) }
     }
 
     private fun breathWord(word: String, intensity: Int, curvePos: Float, pause: Int): String {
         if (word.isBlank()) return word
+        // Smooth curve: intensity 5→10 gives 1h, 50 gives 2h, 100 gives 4h (gradual)
         val hCount = (smooth(intensity) * 4f + 0.5f).toInt().coerceIn(1, 4)
         val hStr = "h".repeat(hCount)
         val pauseStr = " ".repeat((smooth(pause) * 3f).toInt().coerceIn(0, 3))
@@ -233,88 +121,35 @@ object VoiceTransform {
         return word.map { c -> if (c in vowels) c.toString().repeat(r) else c.toString() }.joinToString("")
     }
 
-    // ── Stuttering with type expansion (§4.2) ────────────────────────────────
-    fun applyStuttering(
-        text: String, intensity: Int, position: Float, frequency: Int, pause: Int,
-        stutterType: StutterType = StutterType.REPETITION
-    ): String {
-        if (intensity < 5 || frequency < 5) return text
+    // ── Stuttering ────────────────────────────────────────────────────────────
+    fun applyStuttering(text: String, intensity: Int, position: Float, frequency: Int, pause: Int): String {
+        if (intensity < 5 || frequency < 5) return text  // dead zone
+        // Smooth the frequency so low values stutter very rarely
         val smoothFreq = (smooth(frequency) * 100f).toInt().coerceIn(0, 100)
         return text.split(" ").joinToString(" ") { word ->
-            if (word.length > 2 && Random.nextInt(100) < smoothFreq) {
-                val effectiveType = if (stutterType == StutterType.MIXED) selectMixedType() else stutterType
-                stutterWord(word, intensity, position, pause, effectiveType)
-            } else word
+            if (word.length > 2 && Random.nextInt(100) < smoothFreq)
+                stutterWord(word, intensity, position, pause)
+            else word
         }
     }
 
-    private fun selectMixedType(): StutterType {
-        val roll = Random.nextInt(100)
-        return when {
-            roll < 40 -> StutterType.REPETITION
-            roll < 70 -> StutterType.PROLONGATION
-            roll < 90 -> StutterType.BLOCK
-            else      -> StutterType.REVISION
-        }
-    }
-
-    private fun stutterWord(
-        word: String, intensity: Int, position: Float, pause: Int,
-        type: StutterType
-    ): String {
-        if (word.length < 2) return word
-        return when (type) {
-            StutterType.REPETITION -> stutterRepetition(word, intensity, position, pause)
-            StutterType.PROLONGATION -> stutterProlongation(word, intensity)
-            StutterType.BLOCK -> stutterBlock(word)
-            StutterType.REVISION -> stutterRevision(word)
-            StutterType.MIXED -> stutterRepetition(word, intensity, position, pause)  // fallback
-        }
-    }
-
-    private fun stutterRepetition(word: String, intensity: Int, position: Float, pause: Int): String {
-        val safePosition = position.safeFloat(0f)
+    private fun stutterWord(word: String, intensity: Int, position: Float, pause: Int): String {
+        // Smooth curve: intensity 1-20 = 1 repeat, 50 = 2, 80+ = 3
         val repeats = (smooth(intensity) * 3f + 1f).toInt().coerceIn(1, 4)
         val pauseStr = "-".repeat((smooth(pause) * 3f).toInt().coerceIn(0, 3))
-        val idx = (word.length * safePosition).roundToInt().coerceIn(0, word.length - 1)
-        val endIdx = minOf(idx + 2, word.length)
-        val syllable = word.substring(idx, endIdx)
+        val idx = (word.length * position).roundToInt().coerceIn(0, word.length - 1)
+        val sylLen = if (idx + 2 <= word.length) 2 else 1
+        val syllable = word.substring(idx, idx + sylLen)
         val stutter = (1..repeats).joinToString(pauseStr) { syllable } + pauseStr
-        return word.substring(0, idx) + stutter + word.substring(endIdx)
-    }
-
-    // PROLONGATION: stretch first consonant cluster (§4.2)
-    private fun stutterProlongation(word: String, intensity: Int): String {
-        val firstChar = word.first().lowercaseChar()
-        // Only prolong fricatives, nasals, liquids — plosives can't be prolonged
-        return if (firstChar in PROLONGABLE_CONSONANTS) {
-            val repeatCount = (smooth(intensity) * 3f + 1f).toInt().coerceIn(2, 4)
-            firstChar.toString().repeat(repeatCount) + word.drop(1)
-        } else {
-            // Fall back to repetition for plosives
-            "${word.take(2)}-${word.take(2)}-$word"
-        }
-    }
-
-    // BLOCK: silence/pause before word onset (§4.2)
-    private fun stutterBlock(word: String): String {
-        // Partial onset attempt then block
-        return "${word.first()}—$word"
-    }
-
-    // REVISION: start-abandon-restart (§4.2)
-    private fun stutterRevision(word: String): String {
-        val fragment = word.take((word.length / 2).coerceAtLeast(1))
-        return "$fragment— $word"
+        return word.substring(0, idx) + stutter + word.substring(idx)
     }
 
     // ── Intonation ────────────────────────────────────────────────────────────
     fun applyIntonation(text: String, intensity: Int, variation: Float): String {
-        if (intensity < 5) return text
-        val safeVariation = variation.safeFloat(0.5f)
+        if (intensity < 5) return text  // dead zone
         return text.split(" ").mapIndexed { i, word ->
-            val stressed = i % (3 - (safeVariation * 2).roundToInt()).coerceAtLeast(1) == 0
-            if (stressed) intonateWord(word, intensity, safeVariation) else word
+            val stressed = i % (3 - (variation * 2).roundToInt()).coerceAtLeast(1) == 0
+            if (stressed) intonateWord(word, intensity, variation) else word
         }.joinToString(" ")
     }
 
@@ -338,76 +173,20 @@ object VoiceTransform {
         return result
     }
 
-    // ── Pause injection via punctuation (§4.4) ────────────────────────────────
-    // Insert commas at natural pause points so the TTS engine handles timing
-    // organically. Only activates for emotionally loaded or urgent signals.
-    private val PAUSE_CONJUNCTIONS = setOf("but", "and", "so", "because", "yet", "though")
-    private val PAUSE_HEAVY_WORDS = setOf(
-        "sorry", "please", "help", "urgent", "emergency", "died", "dead",
-        "hurt", "scared", "afraid", "love", "miss", "goodbye", "forgive",
-        "never", "always", "promise", "unfortunately", "seriously"
-    )
-
-    fun applyPauseInjection(text: String, signal: SignalMap): String {
-        // Only inject pauses for emotionally loaded or high-urgency content
-        val shouldPause = signal.urgencyType >= UrgencyType.REAL ||
-            signal.stakesType == StakesType.EMOTIONAL ||
-            signal.warmth == WarmthLevel.DISTRESSED ||
-            signal.trajectory == Trajectory.PEAKED
-        if (!shouldPause) return text
-
-        val words = text.split(" ").toMutableList()
-        if (words.size < 3) return text  // too short for pauses to make sense
-
-        val result = mutableListOf<String>()
-        for (i in words.indices) {
-            val word = words[i]
-            val lower = word.lowercase().trimEnd(',', '.', '!', '?', ';', ':')
-
-            // Add comma before conjunctions (if not already punctuated)
-            if (i > 0 && lower in PAUSE_CONJUNCTIONS && !words[i - 1].endsWith(",")) {
-                val prev = result.removeLastOrNull() ?: ""
-                result.add("$prev,")
-            }
-
-            // Add comma before emotionally heavy words (if not already punctuated)
-            if (i > 0 && lower in PAUSE_HEAVY_WORDS && !words[i - 1].endsWith(",")) {
-                val prev = result.removeLastOrNull() ?: ""
-                result.add("$prev,")
-            }
-
-            result.add(word)
-        }
-        return result.joinToString(" ")
-    }
-
     // ── Full pipeline ─────────────────────────────────────────────────────────
     fun process(
         text: String,
         profile: VoiceProfile,
         modulated: ModulatedVoice,
         signal: SignalMap,
-        rules: List<Pair<String, String>>,
-        mood: MoodState? = null
+        rules: List<Pair<String, String>>
     ): String {
-        return try {
-            var r = applyWordingRules(text, rules)
-            r = applyPauseInjection(r, signal)                              // §4.4
-            r = applyCommentary(r, profile, signal, mood)
-            r = applyFillers(r, profile.fillerIntensity, signal, mood)      // §4.1
-            r = applyBreathInjection(r, signal, mood)                       // §4.3A
-            r = applyGimmicks(r, profile.gimmicks, signal)
-            r = applyQuestionIntonation(r)                                  // §8.1
-            r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
-            r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition,
-                modulated.stutterFrequency, modulated.stutterPause, profile.stutterType)  // §4.2
-            // Note: breathiness is handled exclusively by AudioDsp (noise + spectral tilt)
-            // to avoid triple-stacking with text "h" insertion + DSP noise + DSP tilt.
-            r = applyTrailingText(r, signal, mood)                          // §4.3B/§5.3
-            r
-        } catch (e: Exception) {
-            android.util.Log.e("VoiceTransform", "Error in text processing pipeline", e)
-            text  // Fallback to original text on processing error
-        }
+        var r = applyWordingRules(text, rules)
+        r = applyCommentary(r, profile, signal)
+        r = applyGimmicks(r, profile.gimmicks, signal)
+        r = applyIntonation(r, modulated.intonationIntensity, modulated.intonationVariation)
+        r = applyStuttering(r, modulated.stutterIntensity, modulated.stutterPosition, modulated.stutterFrequency, modulated.stutterPause)
+        r = applyBreathiness(r, modulated.breathIntensity, modulated.breathCurvePosition, modulated.breathPause)
+        return r
     }
 }

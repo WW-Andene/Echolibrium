@@ -2,97 +2,46 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
-
-// ── Auto-download TTS models before build ───────────────────────────────────
-// Ensures the AAR and core Piper voices are present.
-// Only 8 Piper voices are bundled — the rest are downloaded by the app on demand.
-// Skips files that already exist (idempotent).
-
-task downloadTtsModels(type: Exec) {
-    description = 'Downloads sherpa-onnx AAR and core Piper voices if missing'
-    group = 'setup'
-
-    workingDir projectDir
-    commandLine 'bash', 'download-models.sh'
-
-    // Only run if key files are missing
-    onlyIf {
-        def aar = file("${projectDir}/libs/sherpa_onnx.aar")
-        def tokens = file("${projectDir}/src/main/assets/piper-models/tokens.txt")
-        def espeak = file("${projectDir}/src/main/assets/piper-models/espeak-ng-data")
-        def missing = !aar.exists() || !tokens.exists() || !espeak.exists() || !espeak.isDirectory()
-        if (missing) {
-            logger.lifecycle("TTS models missing — running download-models.sh")
-        }
-        return missing
-    }
-}
-
-// Hook into the build: download models before any compilation starts
-preBuild.dependsOn downloadTtsModels
-
 android {
     namespace 'com.kokoro.reader'
     compileSdk 34
-
+    defaultConfig {
+        applicationId "com.kokoro.reader"
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName "3.0"
+        // Only include arm64 — Dimensity 8200 is arm64, keeps APK small
+        ndk { abiFilters "arm64-v8a" }
+    }
     signingConfigs {
         release {
             def ksFile = file("${rootProject.projectDir}/keystore.jks")
             if (ksFile.exists()) {
                 storeFile ksFile
-                storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias System.getenv("KEY_ALIAS") ?: "echolibrium"
-                keyPassword System.getenv("KEY_PASSWORD") ?: ""
+                storePassword "echolibrium123"
+                keyAlias "echolibrium"
+                keyPassword "echolibrium123"
             }
         }
-    }
-
-    defaultConfig {
-        applicationId "com.kokoro.reader"
-        minSdk 26
-        targetSdk 34
-        versionCode 6
-        versionName "5.0.0"
-        // Only include arm64 — Dimensity 8200 is arm64, keeps APK small
-        ndk { abiFilters "arm64-v8a" }
-
-        // GitHub token for auto-reporting crash logs to Issues.
-        // Set in local.properties (not committed): github.issues.token=ghp_xxx
-        // Or via environment variable: GITHUB_ISSUES_TOKEN=ghp_xxx
-        def ghToken = ""
-        def localProps = new File(rootProject.projectDir, "local.properties")
-        if (localProps.exists()) {
-            def props = new Properties()
-            props.load(localProps.newDataInputStream())
-            ghToken = props.getProperty("github.issues.token", "")
-        }
-        if (ghToken.isEmpty()) ghToken = System.getenv("GITHUB_ISSUES_TOKEN") ?: ""
-        buildConfigField "String", "GITHUB_ISSUES_TOKEN", "\"${ghToken}\""
     }
     buildTypes {
         release {
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             def ksFile = file("${rootProject.projectDir}/keystore.jks")
-            if (ksFile.exists()) {
-                signingConfig signingConfigs.release
-            }
+            signingConfig ksFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    buildFeatures { buildConfig true }
     kotlinOptions { jvmTarget = '17' }
-    // Do not compress model files or espeak-ng data — they are extracted to filesystem
-    // at first run. Compressed assets use more memory during extraction and are slower
-    // to read via AssetManager.open(). "txt" covers tokens.txt and espeak dict files.
+    // Do not compress model files — they are extracted to filesystem at runtime
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
     packagingOptions {
-        jniLibs {
-            useLegacyPackaging = true
-        }
+        jniLibs { useLegacyPackaging = true }
     }
 }
 dependencies {
@@ -103,6 +52,9 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
 
-    // Sherpa-onnx Android library (auto-downloaded by downloadTtsModels task)
+    // Sherpa-onnx Android library (pre-built AAR downloaded by CI — see build.yml)
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
+
+    // Tar.bz2 extraction for Kokoro model download
+    implementation 'org.apache.commons:commons-compress:1.26.2'
 }

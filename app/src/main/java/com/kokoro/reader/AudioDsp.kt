@@ -3,7 +3,7 @@ package com.kokoro.reader
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.exp
-import kotlin.math.sin
+import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.tanh
 import kotlin.random.Random
@@ -18,15 +18,16 @@ import kotlin.random.Random
  *   - Effect intensities adapt to the signal's natural dynamic range
  *
  * Effects applied in order:
- *   1. Soft saturation — smooths harsh transitions and cross-language artifacts
- *   2. Formant smoothing — reduces abrupt frequency jumps between syllables
- *   3. Breathiness — mix a filtered breath-noise layer into the speech signal
- *   4. Spectral tilt — low-pass proportional to breathiness (§5.2)
- *   5. Jitter — micro-amplitude variation for humanizing (§5.1)
- *   6. Vocal fry — phrase-end amplitude modulation (§5.3)
- *   7. Trailing off — fade-out on fatigued/collapsed states (§4.3B)
- *
- * All effects are applied in-place on a single working copy and normalised to [-1, 1].
+ *   0. Pitch shift — resample-based, preserves duration
+ *   1. Volume/gain
+ *   2. Soft saturation — very gentle, smooths harsh transitions
+ *   3. Formant smoothing — reduces abrupt frequency jumps
+ *   4. Breathiness — filtered breath-noise layer
+ *   5. Spectral tilt — low-pass proportional to breathiness
+ *   6. Jitter — micro-amplitude variation with crossfaded windows
+ *   7. Vocal fry — phrase-end amplitude modulation
+ *   8. Trailing off — fade-out on fatigued/collapsed states
+ *   9. Soft limiter — prevents hard clipping artifacts
  */
 object AudioDsp {
 
@@ -50,8 +51,89 @@ object AudioDsp {
             applyInternal(samples, sampleRate, modulated, landmarks)
         } catch (e: Exception) {
             android.util.Log.e("AudioDsp", "Error in DSP pipeline", e)
-            samples.copyOf()  // Return unmodified copy on error
+            samples.copyOf()
         }
+    }
+
+    /**
+     * Pitch-shift audio via high-quality resampling. Preserves duration
+     * by resampling to change pitch, then time-stretching back via
+     * overlap-add. This replaces the old playbackRate approach which
+     * shifted pitch AND speed together.
+     *
+     * @param samples   Input PCM
+     * @param pitch     Pitch multiplier (1.0 = no change, 1.5 = up 50%, 0.75 = down 25%)
+     * @return Pitch-shifted PCM at the same duration and sample rate
+     */
+    fun pitchShift(samples: FloatArray, pitch: Float): FloatArray {
+        if (samples.isEmpty()) return samples
+        if (pitch in 0.99f..1.01f) return samples  // no-op for near-unity
+
+        val clampedPitch = pitch.coerceIn(0.5f, 2.0f)
+
+        // Step 1: Resample — changes both pitch and speed
+        val resampledLen = (samples.size / clampedPitch).toInt().coerceAtLeast(1)
+        val resampled = FloatArray(resampledLen) { i ->
+            val srcPos = i * clampedPitch
+            val srcIdx = srcPos.toInt()
+            val frac = srcPos - srcIdx
+            when {
+                srcIdx + 1 < samples.size -> samples[srcIdx] * (1f - frac) + samples[srcIdx + 1] * frac
+                srcIdx < samples.size -> samples[srcIdx]
+                else -> 0f
+            }
+        }
+
+        // Step 2: Time-stretch back to original duration via overlap-add (OLA)
+        // This restores the original tempo while keeping the pitch shift
+        return olaTimeStretch(resampled, samples.size, 22050)
+    }
+
+    /**
+     * Simple overlap-add time stretching.
+     * Stretches/compresses `input` to `targetLen` samples.
+     */
+    private fun olaTimeStretch(input: FloatArray, targetLen: Int, sampleRate: Int): FloatArray {
+        if (input.isEmpty() || targetLen <= 0) return FloatArray(targetLen)
+
+        val windowMs = 25  // 25ms windows — good for speech
+        val windowSamples = (sampleRate * windowMs / 1000).coerceAtLeast(64)
+        val hopOut = windowSamples / 2  // 50% overlap in output
+        val stretchRatio = targetLen.toFloat() / input.size
+        val hopIn = (hopOut / stretchRatio).toInt().coerceAtLeast(1)
+
+        val output = FloatArray(targetLen)
+        val window = FloatArray(windowSamples) { i ->
+            // Hann window for smooth crossfade
+            (0.5f * (1f - kotlin.math.cos(2.0 * PI * i / windowSamples))).toFloat()
+        }
+
+        var inPos = 0
+        var outPos = 0
+
+        while (outPos < targetLen) {
+            val chunkLen = min(windowSamples, targetLen - outPos)
+            for (j in 0 until chunkLen) {
+                val srcIdx = inPos + j
+                val sample = if (srcIdx < input.size) input[srcIdx] else 0f
+                val w = if (j < window.size) window[j] else 0f
+                output[outPos + j] += sample * w
+            }
+            outPos += hopOut
+            inPos += hopIn
+            // Wrap around for very short inputs
+            if (inPos >= input.size) inPos = input.size - windowSamples.coerceAtMost(input.size)
+            if (inPos < 0) inPos = 0
+        }
+
+        // Normalize to prevent amplitude buildup from overlap
+        val maxAmp = output.maxOfOrNull { abs(it) } ?: 1f
+        if (maxAmp > 1f) {
+            val scale = 1f / maxAmp
+            for (i in output.indices) output[i] *= scale
+        }
+
+        return output
     }
 
     private fun applyInternal(
@@ -60,68 +142,77 @@ object AudioDsp {
         modulated: ModulatedVoice,
         landmarks: PhonicLandmarks?
     ): FloatArray {
-        // Single allocation — all effects modify this array in-place
         val pcm = samples.copyOf()
+        // Keep dry copy for ramp-in blending
+        val dry = samples.copyOf()
 
-        // Adaptive intensity: scale effects based on signal's natural expressiveness.
-        // Monotone signals (low dynamic range) get subtler effects to avoid artifacts.
-        // Expressive signals (high dynamic range) can handle stronger effects.
         val intensityScale = if (landmarks != null) {
-            // dynamicRange: 1.0 (monotone) to ~10.0 (very expressive)
-            // Map to 0.6..1.2 multiplier
             lerp(0.6f, 1.2f, (landmarks.dynamicRange - 1f) / 5f)
         } else 1.0f
 
-        // 0. Volume/gain (§5.4) — applied first so all subsequent effects
-        //    operate on the correctly-scaled signal
+        // 1. Volume/gain
         if (modulated.volume != 1.0f) {
             applyVolume(pcm, modulated.volume)
         }
 
-        // 1. Soft saturation
+        // 2. Soft saturation — very gentle to avoid distortion
         applySoftSaturation(pcm)
 
-        // 2. Formant smoothing
+        // 3. Formant smoothing
         applyFormantSmoothing(pcm, sampleRate)
 
-        // 3. Breathiness noise mixing
+        // 4. Breathiness noise mixing — use squared curve for smoother intensity
         if (modulated.breathIntensity >= 5) {
             applyBreathiness(pcm, sampleRate, modulated.breathIntensity, landmarks, intensityScale)
         }
 
-        // 4. Spectral tilt — proportional to breathiness (§5.2)
-        if (modulated.breathIntensity >= 5) {
+        // 5. Spectral tilt — proportional to breathiness
+        if (modulated.breathIntensity >= 10) {
             applySpectralTilt(pcm, sampleRate, modulated.breathIntensity / 100f)
         }
 
-        // 5. Jitter simulation (§5.1) — landmark-aware: voiced regions only
+        // 6. Jitter simulation — with crossfaded windows to prevent clicks
         if (modulated.jitterAmount > 0.01f) {
             applyJitter(pcm, sampleRate, modulated.jitterAmount * intensityScale, landmarks)
         }
 
-        // 6. Vocal fry at phrase endings (§5.3) — landmark-aware: actual phrase endings
+        // 7. Vocal fry at phrase endings
         if (modulated.shouldTrailOff) {
             applyVocalFry(pcm, sampleRate, landmarks)
         }
 
-        // 7. Trailing off — PCM fade (§4.3B) — landmark-aware: from speech end
+        // 8. Trailing off
         if (modulated.shouldTrailOff) {
             applyTrailingOff(pcm, landmarks)
         }
 
+        // 9. Effect ramp-in — crossfade from dry to wet over first 30ms
+        // Prevents abrupt effect onset when parameters change between utterances
+        val rampSamples = (sampleRate * 0.030f).toInt().coerceAtMost(pcm.size)
+        if (rampSamples > 0) {
+            for (i in 0 until rampSamples) {
+                val wet = i.toFloat() / rampSamples  // 0→1 over 30ms
+                pcm[i] = dry[i] * (1f - wet) + pcm[i] * wet
+            }
+        }
+
+        // 10. Final soft limiter — prevents hard clipping from compound effects
+        applySoftLimiter(pcm)
+
         return pcm
     }
 
-    // ── Volume/gain (§5.4) ─────────────────────────────────────────────────────
+    // ── Volume/gain ────────────────────────────────────────────────────────────
     private fun applyVolume(pcm: FloatArray, volume: Float) {
         for (i in pcm.indices) {
-            pcm[i] = (pcm[i] * volume).coerceIn(-1f, 1f)
+            pcm[i] *= volume
         }
     }
 
     // ── Soft saturation ───────────────────────────────────────────────────────
+    // Very gentle drive (1.05) — just smooths peaks, doesn't color the sound
     private fun applySoftSaturation(pcm: FloatArray) {
-        val drive = 1.2f
+        val drive = 1.05f
         for (i in pcm.indices) {
             pcm[i] = tanh((pcm[i] * drive).toDouble()).toFloat()
         }
@@ -133,20 +224,19 @@ object AudioDsp {
         val windowSamples = (sampleRate * 0.005).toInt().coerceAtLeast(1)
         val alpha = 1.0f / windowSamples
 
-        // Envelope needs a temporary array (unavoidable — used as lookup)
         val envelope = FloatArray(pcm.size)
         envelope[0] = abs(pcm[0])
         for (i in 1 until pcm.size) {
-            val amp = abs(pcm[i])
-            envelope[i] = envelope[i - 1] + alpha * (amp - envelope[i - 1])
+            envelope[i] = envelope[i - 1] + alpha * (abs(pcm[i]) - envelope[i - 1])
         }
 
+        // Gentler blending ratio (0.85 + 0.15*ratio instead of 0.7 + 0.3*ratio)
         for (i in pcm.indices) {
             val originalAmp = abs(pcm[i])
             if (originalAmp > 0.001f) {
                 val ratio = envelope[i] / originalAmp
-                val blended = 0.7f + 0.3f * ratio.coerceIn(0.5f, 2.0f)
-                pcm[i] = (pcm[i] * blended).coerceIn(-1f, 1f)
+                val blended = 0.85f + 0.15f * ratio.coerceIn(0.5f, 2.0f)
+                pcm[i] *= blended
             }
         }
     }
@@ -159,15 +249,14 @@ object AudioDsp {
         landmarks: PhonicLandmarks?,
         intensityScale: Float
     ) {
-        val curve = (intensity / 100f) * (intensity / 100f)
-        val noiseLevel = curve * 0.18f * intensityScale
+        val curve = smoothCurve(intensity)
+        // Reduced from 0.18 to 0.12 — less noise, cleaner output
+        val noiseLevel = curve * 0.12f * intensityScale
         val alpha = 0.55f
         var prevNoise = 0f
 
         val envWindow = (sampleRate * 0.02).toInt().coerceAtLeast(1)
         val envelope = computeEnvelope(pcm, envWindow)
-
-        // With landmarks: use energy contour for more precise shaping
         val energyContour = landmarks?.energyContour
 
         for (i in pcm.indices) {
@@ -175,21 +264,16 @@ object AudioDsp {
             prevNoise = prevNoise * (1f - alpha) + rawNoise * alpha
             val breathNoise = prevNoise * noiseLevel
 
-            // Use landmark energy contour if available (more precise than local envelope)
             val envValue = if (landmarks != null && energyContour != null && i < energyContour.size) {
                 energyContour[i] / landmarks.dynamicRange.coerceAtLeast(0.01f)
             } else {
                 envelope[i]
             }
-            val envShaped = breathNoise * (0.3f + envValue.coerceIn(0f, 1f) * 0.7f)
-            pcm[i] = (pcm[i] + envShaped).coerceIn(-1f, 1f)
+            pcm[i] += breathNoise * (0.3f + envValue.coerceIn(0f, 1f) * 0.7f)
         }
     }
 
-    // ── Spectral tilt filter (§5.2) ───────────────────────────────────────────
-    // Low-pass that activates proportionally to breathiness.
-    // Real breathiness attenuates high frequencies (steep spectral tilt).
-    // Applied AFTER noise-mixing so it shapes both speech and added noise.
+    // ── Spectral tilt filter ──────────────────────────────────────────────────
     private fun applySpectralTilt(
         pcm: FloatArray,
         sampleRate: Int,
@@ -197,7 +281,7 @@ object AudioDsp {
     ) {
         if (breathiness < 0.1f) return
         val normalizedBreath = breathiness.coerceIn(0f, 1f)
-        val cutoffHz = lerp(8000f, 2500f, normalizedBreath)
+        val cutoffHz = lerp(8000f, 3000f, normalizedBreath)  // Higher floor (3000 vs 2500)
         val alpha = exp(-2.0 * PI * cutoffHz / sampleRate).toFloat()
         var prev = 0f
         for (i in pcm.indices) {
@@ -206,73 +290,67 @@ object AudioDsp {
         }
     }
 
-    // ── Jitter simulation (§5.1) ──────────────────────────────────────────────
-    // Applies small, randomized amplitude modulations at speech-rate timescales
-    // (~8ms windows) to approximate micro-F0 variation. Produces amplitude jitter
-    // that perceptually correlates with vocal roughness/humanness.
-    // With landmarks: only applies to voiced regions (silence stays clean).
+    // ── Jitter simulation ─────────────────────────────────────────────────────
+    // Uses crossfaded windows to prevent clicking at boundaries
     private fun applyJitter(
         pcm: FloatArray,
         sampleRate: Int,
         jitterAmount: Float,
         landmarks: PhonicLandmarks?
     ) {
-        val windowMs = 8
+        val windowMs = 12  // Larger windows = smoother transitions
         val windowSamples = (sampleRate * windowMs / 1000).coerceAtLeast(1)
+        val fadeLen = windowSamples / 4  // 25% crossfade at boundaries
         val rng = Random
 
-        if (landmarks != null && landmarks.voicedRegions.isNotEmpty()) {
-            // Landmark-aware: jitter only voiced regions
-            for (region in landmarks.voicedRegions) {
-                var i = region.first.coerceAtLeast(0)
-                val regionEnd = region.last.coerceAtMost(pcm.size)
-                while (i < regionEnd) {
-                    val gain = 1f + (rng.nextFloat() - 0.5f) * 2f * jitterAmount
-                    val end = minOf(i + windowSamples, regionEnd)
-                    for (j in i until end) pcm[j] = (pcm[j] * gain).coerceIn(-1f, 1f)
-                    i = end
+        // Apply jitter to a region with crossfaded window boundaries
+        fun applyRegionJitter(start: Int, end: Int) {
+            var i = start
+            while (i < end) {
+                val gain = 1f + (rng.nextFloat() - 0.5f) * 2f * jitterAmount
+                val windowEnd = min(i + windowSamples, end)
+                for (j in i until windowEnd) {
+                    // Crossfade at window edges to prevent clicks
+                    val distFromEdge = min(j - i, windowEnd - 1 - j).coerceAtLeast(0)
+                    val fadeFactor = if (distFromEdge < fadeLen) {
+                        distFromEdge.toFloat() / fadeLen
+                    } else 1f
+                    val effectiveGain = 1f + (gain - 1f) * fadeFactor
+                    pcm[j] *= effectiveGain
                 }
+                i = windowEnd
+            }
+        }
+
+        if (landmarks != null && landmarks.voicedRegions.isNotEmpty()) {
+            for (region in landmarks.voicedRegions) {
+                applyRegionJitter(region.first.coerceAtLeast(0), region.last.coerceAtMost(pcm.size))
             }
         } else {
-            // Fallback: blind jitter across entire buffer
-            var i = 0
-            while (i < pcm.size) {
-                val gain = 1f + (rng.nextFloat() - 0.5f) * 2f * jitterAmount
-                val end = minOf(i + windowSamples, pcm.size)
-                for (j in i until end) pcm[j] = (pcm[j] * gain).coerceIn(-1f, 1f)
-                i = end
-            }
+            applyRegionJitter(0, pcm.size)
         }
     }
 
-    // ── Vocal fry at phrase endings (§5.3) ────────────────────────────────────
-    // Pulse-based fry: short glottal bursts (~30% duty cycle) separated by
-    // near-silence at 30-50Hz, with slight timing irregularity. This produces
-    // the characteristic "creaky" sound of vocal fry / pulse register.
-    // With landmarks: applies fry before each detected phrase ending instead
-    // of blindly targeting the last 200ms of the buffer.
+    // ── Vocal fry at phrase endings ───────────────────────────────────────────
     private fun applyVocalFry(pcm: FloatArray, sampleRate: Int, landmarks: PhonicLandmarks?) {
-        if (pcm.size < sampleRate / 5) return  // skip very short samples
-        val fryDurationSamples = (sampleRate * 0.2f).toInt()  // 200ms fry zone
-        val basePeriodSamples = sampleRate / 40  // ~40Hz base pulse rate
-        val dutyCycle = 0.30f  // glottis open 30% of each cycle
+        if (pcm.size < sampleRate / 5) return
+        val fryDurationSamples = (sampleRate * 0.2f).toInt()
+        val basePeriodSamples = sampleRate / 40
+        val dutyCycle = 0.30f
 
         if (landmarks != null && landmarks.phraseEndings.isNotEmpty()) {
-            // Landmark-aware: apply fry before each phrase ending
             for (ending in landmarks.phraseEndings) {
                 val fryStart = (ending - fryDurationSamples).coerceAtLeast(0)
                 val fryEnd = ending.coerceAtMost(pcm.size)
-                if (fryEnd - fryStart < sampleRate / 10) continue  // skip if too short
+                if (fryEnd - fryStart < sampleRate / 10) continue
                 applyFryRegion(pcm, fryStart, fryEnd, basePeriodSamples, dutyCycle)
             }
         } else {
-            // Fallback: fry on last 200ms of buffer
             val fryStart = (pcm.size - fryDurationSamples).coerceAtLeast(0)
             applyFryRegion(pcm, fryStart, pcm.size, basePeriodSamples, dutyCycle)
         }
     }
 
-    /** Apply pulse-based vocal fry to a specific sample range */
     private fun applyFryRegion(
         pcm: FloatArray, fryStart: Int, fryEnd: Int,
         basePeriodSamples: Int, dutyCycle: Float
@@ -285,7 +363,7 @@ object AudioDsp {
 
         for (i in fryStart until fryEnd) {
             val progress = (i - fryStart).toFloat() / regionLen
-            val fadeFactor = 1f - progress * 0.3f  // gradual fade
+            val fadeFactor = 1f - progress * 0.3f
 
             val gain = if (cyclePos < openSamples()) {
                 0.7f + 0.3f * (1f - cyclePos.toFloat() / openSamples())
@@ -293,7 +371,7 @@ object AudioDsp {
                 0.05f
             }
 
-            pcm[i] = (pcm[i] * gain * fadeFactor).coerceIn(-1f, 1f)
+            pcm[i] *= gain * fadeFactor
             cyclePos++
 
             if (cyclePos >= currentPeriod) {
@@ -304,16 +382,12 @@ object AudioDsp {
         }
     }
 
-    // ── Trailing off (§4.3B) ──────────────────────────────────────────────────
-    // Fade-out for fatigued/collapsed states.
-    // With landmarks: fades from 85% of actual speech content, not buffer end.
-    // This prevents fading silence that's already silent.
+    // ── Trailing off ──────────────────────────────────────────────────────────
     private fun applyTrailingOff(pcm: FloatArray, landmarks: PhonicLandmarks?) {
         val speechEnd = landmarks?.speechEnd ?: pcm.size
         val speechStart = landmarks?.speechStart ?: 0
         val speechLen = (speechEnd - speechStart).coerceAtLeast(1)
 
-        // Fade starts at 85% through the actual speech content
         val fadeStart = speechStart + (speechLen * 0.85f).toInt()
         if (fadeStart >= pcm.size) return
 
@@ -324,13 +398,26 @@ object AudioDsp {
             val factor = 1f - ((i - fadeStart).toFloat() / fadeLen)
             pcm[i] *= factor.coerceAtLeast(0f)
         }
-        // Zero out anything after speech end
         for (i in fadeEnd until pcm.size) {
-            pcm[i] *= 0.05f  // near-silence, not hard zero (avoids click)
+            pcm[i] *= 0.05f
         }
     }
 
-    // Compute per-sample RMS envelope (normalised 0-1) with a trailing sliding window
+    // ── Soft limiter ──────────────────────────────────────────────────────────
+    // Prevents hard clipping from compound effects. Uses tanh for smooth limiting.
+    private fun applySoftLimiter(pcm: FloatArray) {
+        for (i in pcm.indices) {
+            val v = pcm[i]
+            pcm[i] = if (abs(v) > 0.9f) {
+                // Soft-clip anything above 0.9 using tanh curve
+                val sign = if (v > 0f) 1f else -1f
+                sign * (0.9f + 0.1f * tanh(((abs(v) - 0.9f) * 10f).toDouble()).toFloat())
+            } else v
+        }
+    }
+
+    // ── Utilities ─────────────────────────────────────────────────────────────
+
     private fun computeEnvelope(samples: FloatArray, windowSize: Int): FloatArray {
         val envelope = FloatArray(samples.size)
         var sumSq = 0f
@@ -342,7 +429,7 @@ object AudioDsp {
                 sumSq -= samples[i - windowSize] * samples[i - windowSize]
             }
             sumSq = sumSq.coerceAtLeast(0f)
-            val count = minOf(i + 1, windowSize)
+            val count = min(i + 1, windowSize)
             val rms = sqrt(sumSq / count)
             envelope[i] = rms
             if (rms > maxRms) maxRms = rms
@@ -357,4 +444,10 @@ object AudioDsp {
     }
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
+
+    /** Quadratic smoothing curve: maps 0-100 int to 0.0-1.0 with gentle low end */
+    private fun smoothCurve(v: Int): Float {
+        val n = (v / 100f).coerceIn(0f, 1f)
+        return n * n
+    }
 }

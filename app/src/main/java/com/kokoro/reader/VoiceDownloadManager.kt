@@ -2,181 +2,178 @@ package com.kokoro.reader
 
 import android.content.Context
 import android.util.Log
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
-import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Downloads Piper voice models from GitHub Releases to app internal storage.
+ * Downloads and extracts the Kokoro TTS model.
  *
- * Voice models that are not bundled in the APK can be fetched on demand.
- * Downloaded files are stored in: filesDir/piper-models/{voiceId}.onnx
+ * Model: kokoro-en-v0_19 (int8 quantized, ~120MB download)
+ * After extraction, the model directory contains:
+ *   model.onnx, voices.bin, tokens.txt, espeak-ng-data/
  *
- * Thread-safe: downloads run on caller-provided background threads.
- * Progress and completion are reported via callbacks on the download thread.
+ * Stored in: context.filesDir/sherpa/kokoro-en-v0_19/
  */
 object VoiceDownloadManager {
 
-    private const val TAG = "VoiceDownloadManager"
-    private const val PIPER_SUBDIR = "piper-models"
-    private const val CONNECT_TIMEOUT = 15_000
-    private const val READ_TIMEOUT = 60_000
+    private const val TAG = "VoiceDownload"
 
-    enum class State { NOT_DOWNLOADED, DOWNLOADING, DOWNLOADED, ERROR }
+    // Model package — int8 is ~120MB vs ~400MB for float32
+    const val MODEL_NAME   = "kokoro-en-v0_19"
+    const val DOWNLOAD_URL = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/kokoro-en-v0_19.tar.bz2"
+    const val MODEL_SIZE_MB = 120  // approximate, for display
 
-    /** Currently downloading voice IDs (for UI state) */
-    private val activeDownloads = mutableSetOf<String>()
-    private val lock = Object()
+    enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }
 
-    /** Callback: (voiceId, progress 0..100) — called on download thread */
-    @Volatile var onProgress: ((String, Int) -> Unit)? = null
+    @Volatile var state: State = State.NOT_DOWNLOADED
+    @Volatile var progressPercent: Int = 0
+    @Volatile var errorMessage: String = ""
 
-    /** Callback: (voiceId, success) — called on download thread */
-    @Volatile var onComplete: ((String, Boolean) -> Unit)? = null
+    @Volatile private var progressCallback: ((Int) -> Unit)? = null
+    @Volatile private var stateCallback: ((State) -> Unit)? = null
 
-    // ── Path helpers ─────────────────────────────────────────────────────────
+    fun onProgress(cb: (Int) -> Unit) { progressCallback = cb }
+    fun onStateChange(cb: (State) -> Unit) { stateCallback = cb }
 
-    fun getDownloadDir(ctx: Context): File =
-        File(ctx.filesDir, PIPER_SUBDIR).also { it.mkdirs() }
+    // ── Paths ─────────────────────────────────────────────────────────────────
 
-    fun getVoiceFile(ctx: Context, voiceId: String): File =
-        File(getDownloadDir(ctx), "$voiceId.onnx")
+    fun getSherpaDir(ctx: Context): File = File(ctx.filesDir, "sherpa").also { it.mkdirs() }
+    fun getModelDir(ctx: Context): File = File(getSherpaDir(ctx), MODEL_NAME)
 
-    /** Check if a voice model has been downloaded to internal storage */
-    fun isDownloaded(ctx: Context, voiceId: String): Boolean =
-        getVoiceFile(ctx, voiceId).exists()
-
-    // ── State queries ────────────────────────────────────────────────────────
-
-    fun getState(ctx: Context, voiceId: String): State {
-        val voice = PiperVoiceCatalog.byId(voiceId) ?: return State.NOT_DOWNLOADED
-        if (voice.bundled) return State.DOWNLOADED
-        synchronized(lock) { if (voiceId in activeDownloads) return State.DOWNLOADING }
-        if (isDownloaded(ctx, voiceId)) return State.DOWNLOADED
-        return State.NOT_DOWNLOADED
+    fun isModelReady(ctx: Context): Boolean {
+        val dir = getModelDir(ctx)
+        return dir.exists()
+            && File(dir, "model.onnx").exists()
+            && File(dir, "voices.bin").exists()
+            && File(dir, "tokens.txt").exists()
+            && File(dir, "espeak-ng-data").exists()
     }
 
-    fun isDownloading(voiceId: String): Boolean =
-        synchronized(lock) { voiceId in activeDownloads }
+    // ── Download ──────────────────────────────────────────────────────────────
 
-    // ── Download ─────────────────────────────────────────────────────────────
+    fun downloadModel(ctx: Context) {
+        if (state == State.DOWNLOADING) return
+        if (isModelReady(ctx)) { updateState(State.READY); return }
 
-    /**
-     * Download a voice model in the background.
-     * Must be called from a background thread (performs network I/O).
-     * Returns true on success, false on failure.
-     */
-    fun download(ctx: Context, voiceId: String): Boolean {
-        val voice = PiperVoiceCatalog.byId(voiceId)
-        if (voice == null) {
-            Log.e(TAG, "Voice not in catalog: $voiceId")
-            return false
-        }
-        if (voice.bundled) {
-            Log.d(TAG, "Voice $voiceId is bundled — no download needed")
-            return true
-        }
-        if (isDownloaded(ctx, voiceId)) {
-            Log.d(TAG, "Voice $voiceId already downloaded")
-            return true
-        }
+        updateState(State.DOWNLOADING)
+        progressPercent = 0
 
-        synchronized(lock) {
-            if (voiceId in activeDownloads) {
-                Log.d(TAG, "Voice $voiceId download already in progress")
-                return false
+        Thread {
+            val tmpFile = File(getSherpaDir(ctx), "download.tar.bz2.tmp")
+            try {
+                Log.d(TAG, "Downloading from $DOWNLOAD_URL")
+                download(DOWNLOAD_URL, tmpFile) { pct ->
+                    progressPercent = pct
+                    progressCallback?.invoke(pct)
+                }
+
+                Log.d(TAG, "Extracting to ${getSherpaDir(ctx)}")
+                progressCallback?.invoke(-1)  // signal "extracting"
+                extract(tmpFile, getSherpaDir(ctx))
+
+                tmpFile.delete()
+
+                if (isModelReady(ctx)) {
+                    Log.d(TAG, "Model ready at ${getModelDir(ctx)}")
+                    updateState(State.READY)
+                } else {
+                    updateState(State.ERROR)
+                    errorMessage = "Extraction incomplete — missing required files"
+                }
+
+            } catch (e: Exception) {
+                tmpFile.delete()
+                errorMessage = e.message ?: "Unknown error"
+                Log.e(TAG, "Download failed", e)
+                updateState(State.ERROR)
             }
-            activeDownloads.add(voiceId)
+        }.start()
+    }
+
+    fun deleteModel(ctx: Context) {
+        getModelDir(ctx).deleteRecursively()
+        updateState(State.NOT_DOWNLOADED)
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────────────
+
+    private fun updateState(s: State) {
+        state = s
+        stateCallback?.invoke(s)
+    }
+
+    private fun download(urlStr: String, dest: File, onProgress: (Int) -> Unit) {
+        val url = URL(urlStr)
+        var conn = url.openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout    = 30_000
+        conn.connect()
+
+        // Follow redirects manually (GitHub releases redirect)
+        var redirects = 0
+        while (conn.responseCode in 300..399 && redirects++ < 5) {
+            val location = conn.getHeaderField("Location") ?: break
+            conn.disconnect()
+            conn = URL(location).openConnection() as HttpURLConnection
+            conn.connectTimeout = 15_000
+            conn.readTimeout    = 30_000
+            conn.connect()
         }
 
-        val url = PiperVoiceCatalog.downloadUrl(voiceId)
-        val destFile = getVoiceFile(ctx, voiceId)
-        val tempFile = File(destFile.parentFile, "${destFile.name}.tmp")
+        if (conn.responseCode != 200) {
+            throw Exception("HTTP ${conn.responseCode} from $urlStr")
+        }
 
-        Log.i(TAG, "Downloading $voiceId from $url")
+        val totalBytes = conn.contentLengthLong.takeIf { it > 0 } ?: -1L
+        var downloadedBytes = 0L
+        var lastReportedPct = -1
 
         try {
-            // Manually follow redirects — HttpURLConnection doesn't follow
-            // cross-host redirects (github.com → release-assets.githubusercontent.com)
-            var currentUrl = url
-            var connection: HttpURLConnection
-            var redirects = 0
-
-            while (true) {
-                connection = URL(currentUrl).openConnection() as HttpURLConnection
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = CONNECT_TIMEOUT
-                connection.readTimeout = READ_TIMEOUT
-                connection.setRequestProperty("Accept", "application/octet-stream")
-                connection.connect()
-
-                if (connection.responseCode in 300..399 && redirects++ < 10) {
-                    val location = connection.getHeaderField("Location") ?: break
-                    connection.disconnect()
-                    currentUrl = location
-                } else {
-                    break
-                }
-            }
-
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                Log.e(TAG, "HTTP $responseCode for $voiceId")
-                connection.disconnect()
-                onComplete?.invoke(voiceId, false)
-                return false
-            }
-
-            val totalBytes = connection.contentLength.toLong()
-            var downloadedBytes = 0L
-
-            connection.inputStream.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
+            conn.inputStream.use { input ->
+                dest.outputStream().use { output ->
+                    val buf = ByteArray(32 * 1024)
+                    var n: Int
+                    while (input.read(buf).also { n = it } != -1) {
+                        output.write(buf, 0, n)
+                        downloadedBytes += n
                         if (totalBytes > 0) {
-                            val progress = ((downloadedBytes * 100) / totalBytes).toInt()
-                            onProgress?.invoke(voiceId, progress.coerceIn(0, 100))
+                            val pct = ((downloadedBytes * 100) / totalBytes).toInt()
+                            if (pct != lastReportedPct) {
+                                lastReportedPct = pct
+                                onProgress(pct)
+                            }
                         }
                     }
                 }
             }
-
-            // Atomic move: rename temp → final
-            if (tempFile.renameTo(destFile)) {
-                Log.i(TAG, "Downloaded $voiceId (${destFile.length() / 1024 / 1024}MB)")
-                onComplete?.invoke(voiceId, true)
-                return true
-            } else {
-                Log.e(TAG, "Failed to rename temp file for $voiceId")
-                tempFile.delete()
-                onComplete?.invoke(voiceId, false)
-                return false
-            }
-
-        } catch (e: Throwable) {
-            Log.e(TAG, "Download failed for $voiceId", e)
-            tempFile.delete()
-            onComplete?.invoke(voiceId, false)
-            return false
         } finally {
-            synchronized(lock) { activeDownloads.remove(voiceId) }
+            conn.disconnect()
         }
     }
 
-    /** Delete a downloaded voice model to free space */
-    fun delete(ctx: Context, voiceId: String): Boolean {
-        val file = getVoiceFile(ctx, voiceId)
-        return if (file.exists()) file.delete() else true
-    }
-
-    /** Total disk usage of downloaded voice models in bytes */
-    fun downloadedSizeBytes(ctx: Context): Long {
-        val dir = getDownloadDir(ctx)
-        return dir.listFiles()?.filter { it.extension == "onnx" }?.sumOf { it.length() } ?: 0L
+    private fun extract(tarBz2: File, destDir: File) {
+        tarBz2.inputStream().buffered().use { raw ->
+            BZip2CompressorInputStream(raw).use { bz2 ->
+                TarArchiveInputStream(bz2).use { tar ->
+                    var entry = tar.nextTarEntry
+                    while (entry != null) {
+                        val outFile = File(destDir, entry.name)
+                        if (entry.isDirectory) {
+                            outFile.mkdirs()
+                        } else {
+                            outFile.parentFile?.mkdirs()
+                            outFile.outputStream().use { out ->
+                                tar.copyTo(out, bufferSize = 32 * 1024)
+                            }
+                        }
+                        entry = tar.nextTarEntry
+                    }
+                }
+            }
+        }
     }
 }

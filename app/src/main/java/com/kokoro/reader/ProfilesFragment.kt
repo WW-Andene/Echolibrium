@@ -1,10 +1,6 @@
 package com.kokoro.reader
 
-import android.content.Context
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -13,136 +9,53 @@ import androidx.preference.PreferenceManager
 
 class ProfilesFragment : Fragment() {
 
-    private lateinit var prefs: android.content.SharedPreferences
+    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private var profiles = mutableListOf<VoiceProfile>()
     private var activeProfileId = ""
     private var currentProfile = VoiceProfile()
     private var genderFilter = "All"
     private var languageFilter = "All"
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var viewsBound = false
 
-    private var profileSpinner: Spinner? = null
-    private var txtPreview: EditText? = null
-    private var btnTest: Button? = null
-    private var btnStop: Button? = null
-    private var btnSave: Button? = null
-    private var btnDelete: Button? = null
-    private var btnNew: Button? = null
-    private var btnResetSettings: Button? = null
-    private var btnRenameVoice: Button? = null
-    private var seekPitch: SeekBar? = null;  private var tvPitch: TextView? = null
-    private var seekSpeed: SeekBar? = null;  private var tvSpeed: TextView? = null
-    private var seekBreathInt: SeekBar? = null;   private var tvBreathInt: TextView? = null
-    private var seekBreathCurve: SeekBar? = null; private var tvBreathCurve: TextView? = null
-    private var seekBreathPause: SeekBar? = null; private var tvBreathPause: TextView? = null
-    private var seekStutterInt: SeekBar? = null;  private var tvStutterInt: TextView? = null
-    private var seekStutterPos: SeekBar? = null;  private var tvStutterPos: TextView? = null
-    private var seekStutterFreq: SeekBar? = null; private var tvStutterFreq: TextView? = null
-    private var seekStutterPause: SeekBar? = null; private var tvStutterPause: TextView? = null
-    private var seekIntonInt: SeekBar? = null;    private var tvIntonInt: TextView? = null
-    private var seekIntonVar: SeekBar? = null;    private var tvIntonVar: TextView? = null
-    private var voiceGrid: LinearLayout? = null
-    private var presetsScroll: LinearLayout? = null
-    private var gimmicksContainer: LinearLayout? = null
-    private var genderRow: LinearLayout? = null
-    private var nationRow: LinearLayout? = null
-    private var tvEngineStatus: TextView? = null
-    private var selectedVoiceBanner: LinearLayout? = null
-    private var tvSelectedVoiceIcon: TextView? = null
-    private var tvSelectedVoiceName: TextView? = null
-    private var tvSelectedVoiceDetail: TextView? = null
+    private lateinit var profileSpinner: Spinner
+    private lateinit var txtPreview: EditText
+    private lateinit var btnTest: Button
+    private lateinit var btnSave: Button
+    private lateinit var btnDelete: Button
+    private lateinit var btnNew: Button
+    private lateinit var seekPitch: SeekBar;  private lateinit var tvPitch: TextView
+    private lateinit var seekSpeed: SeekBar;  private lateinit var tvSpeed: TextView
+    private lateinit var seekBreathInt: SeekBar;   private lateinit var tvBreathInt: TextView
+    private lateinit var seekBreathCurve: SeekBar; private lateinit var tvBreathCurve: TextView
+    private lateinit var seekBreathPause: SeekBar; private lateinit var tvBreathPause: TextView
+    private lateinit var seekStutterInt: SeekBar;  private lateinit var tvStutterInt: TextView
+    private lateinit var seekStutterPos: SeekBar;  private lateinit var tvStutterPos: TextView
+    private lateinit var seekStutterFreq: SeekBar; private lateinit var tvStutterFreq: TextView
+    private lateinit var seekStutterPause: SeekBar;private lateinit var tvStutterPause: TextView
+    private lateinit var seekIntonInt: SeekBar;    private lateinit var tvIntonInt: TextView
+    private lateinit var seekIntonVar: SeekBar;    private lateinit var tvIntonVar: TextView
+    private lateinit var voiceGrid: LinearLayout
+    private lateinit var presetsScroll: LinearLayout
+    private lateinit var gimmicksContainer: LinearLayout
+    private lateinit var genderRow: LinearLayout
+    private lateinit var nationRow: LinearLayout
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View? =
-        try { i.inflate(R.layout.fragment_profiles, c, false) }
-        catch (e: Exception) { Log.e("ProfilesFragment", "Layout inflation failed", e); null }
+    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
+        i.inflate(R.layout.fragment_profiles, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        try {
-            val ctx = context ?: return
-            prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-            bindViews(v)
-            profiles = VoiceProfile.loadAll(prefs)
-            activeProfileId = prefs.getString("active_profile_id", "") ?: ""
-            if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
+        bindViews(v)
+        profiles = VoiceProfile.loadAll(prefs)
+        activeProfileId = prefs.getString("active_profile_id", "") ?: ""
+        if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
 
-            setupCollapsibleSections(v)
-            setupProfileSpinner()
-            buildPresets()
-            buildFilterButtons()
-            renderVoiceGrid()
-            setupButtons()
-            buildGimmicksEditor()
-            loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: VoiceProfile(name = "Default"))
-
-            // Start engine warm-up and show status
-            setupEngineStatus()
-        } catch (e: Exception) {
-            Log.e("ProfilesFragment", "Error initializing voice profiles view", e)
-            showErrorFallback(v, "Voice profiles failed to load: ${e.message}")
-        }
-    }
-
-    private fun showErrorFallback(v: View, message: String) {
-        try {
-            val ctx = context ?: return
-            val container = v.findViewById<ViewGroup>(R.id.voice_grid) ?: (v as? ViewGroup) ?: return
-            container.removeAllViews()
-            container.addView(TextView(ctx).apply {
-                text = "⚠ $message\n\nTry restarting the app."
-                setTextColor(0xFFff4444.toInt())
-                textSize = 14f
-                setPadding(20, 40, 20, 40)
-            })
-        } catch (e2: Exception) {
-            Log.e("ProfilesFragment", "Error showing fallback UI", e2)
-        }
-    }
-
-    private var enginePollRunnable: Runnable? = null
-
-    private fun setupEngineStatus() {
-        updateEngineStatusUI()
-        // Refresh voice grid when a Piper voice finishes downloading
-        PiperVoiceManager.downloadCallback = { _, _ ->
-            mainHandler.post {
-                if (isAdded && view != null) {
-                    try { renderVoiceGrid() }
-                    catch (e: Exception) { android.util.Log.w("ProfilesFragment", "Voice grid refresh failed", e) }
-                }
-            }
-        }
-        // Engine polling is handled by restartEnginePolling() in onResume/onHiddenChanged
-    }
-
-    private fun updateEngineStatusUI() {
-        if (!viewsBound || !isAdded || view == null) return
-        val ctx = context ?: return
-        val s = TtsBridge.readStatus(ctx)
-        val progressBar = view?.findViewById<ProgressBar>(R.id.engine_progress_bar)
-        when {
-            s.ready -> {
-                tvEngineStatus?.text = "✓ Voice engine ready"
-                tvEngineStatus?.setTextColor(0xFF00ff88.toInt())
-                progressBar?.visibility = View.GONE
-            }
-            s.error != null -> {
-                tvEngineStatus?.text = "✗ Engine error: ${s.error}"
-                tvEngineStatus?.setTextColor(0xFFff4444.toInt())
-                progressBar?.visibility = View.GONE
-            }
-            s.alive -> {
-                tvEngineStatus?.text = if (s.initProgress > 0) "⏳ ${s.status} (${s.initProgress}%)" else "⏳ ${s.status}…"
-                tvEngineStatus?.setTextColor(0xFFffaa00.toInt())
-                progressBar?.visibility = View.VISIBLE
-                progressBar?.progress = s.initProgress.coerceAtLeast(2) // show a sliver even at 0%
-            }
-            else -> {
-                tvEngineStatus?.text = "◯ Waiting for service…"
-                tvEngineStatus?.setTextColor(0xFF888888.toInt())
-                progressBar?.visibility = View.GONE
-            }
-        }
+        setupCollapsibleSections(v)
+        setupProfileSpinner()
+        buildPresets()
+        buildFilterButtons()
+        renderVoiceGrid()
+        setupButtons()
+        buildGimmicksEditor()
+        loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
     }
 
     private fun setupCollapsibleSections(v: View) {
@@ -150,8 +63,6 @@ class ProfilesFragment : Fragment() {
         setupCollapsibleSection(v, R.id.label_breathiness, R.id.section_breathiness, "// BREATHINESS")
         setupCollapsibleSection(v, R.id.label_stuttering, R.id.section_stuttering, "// STUTTERING")
         setupCollapsibleSection(v, R.id.label_intonation, R.id.section_intonation, "// INTONATION")
-        setupCollapsibleSection(v, R.id.label_gimmicks, R.id.gimmicks_container,
-            "// GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)")
     }
 
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
@@ -171,22 +82,14 @@ class ProfilesFragment : Fragment() {
         profileSpinner  = v.findViewById(R.id.spinner_profile)
         txtPreview      = v.findViewById(R.id.txt_preview)
         btnTest         = v.findViewById(R.id.btn_test)
-        btnStop         = v.findViewById(R.id.btn_stop)
         btnSave         = v.findViewById(R.id.btn_save)
         btnDelete       = v.findViewById(R.id.btn_delete)
         btnNew          = v.findViewById(R.id.btn_new_profile)
-        btnResetSettings = v.findViewById(R.id.btn_reset_settings)
-        btnRenameVoice  = v.findViewById(R.id.btn_rename_voice)
         voiceGrid       = v.findViewById(R.id.voice_grid)
         presetsScroll   = v.findViewById(R.id.layout_presets)
         gimmicksContainer = v.findViewById(R.id.gimmicks_container)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
-        tvEngineStatus  = v.findViewById(R.id.tv_engine_status)
-        selectedVoiceBanner = v.findViewById(R.id.selected_voice_banner)
-        tvSelectedVoiceIcon = v.findViewById(R.id.tv_selected_voice_icon)
-        tvSelectedVoiceName = v.findViewById(R.id.tv_selected_voice_name)
-        tvSelectedVoiceDetail = v.findViewById(R.id.tv_selected_voice_detail)
         seekPitch       = v.findViewById(R.id.seek_pitch);         tvPitch       = v.findViewById(R.id.tv_pitch)
         seekSpeed       = v.findViewById(R.id.seek_speed);         tvSpeed       = v.findViewById(R.id.tv_speed)
         seekBreathInt   = v.findViewById(R.id.seek_breath_int);    tvBreathInt   = v.findViewById(R.id.tv_breath_int)
@@ -198,242 +101,423 @@ class ProfilesFragment : Fragment() {
         seekStutterPause= v.findViewById(R.id.seek_stutter_pause); tvStutterPause= v.findViewById(R.id.tv_stutter_pause)
         seekIntonInt    = v.findViewById(R.id.seek_intonation_int);tvIntonInt    = v.findViewById(R.id.tv_intonation_int)
         seekIntonVar    = v.findViewById(R.id.seek_intonation_var);tvIntonVar    = v.findViewById(R.id.tv_intonation_var)
-        viewsBound = true
     }
 
     private fun buildFilterButtons() {
-        if (!viewsBound || !isAdded || view == null) return
-        val ctx = context ?: return
-        genderRow?.removeAllViews()
-        nationRow?.removeAllViews()
+        if (view == null) return
+        genderRow.removeAllViews()
+        nationRow.removeAllViews()
 
-        PiperVoiceCatalog.genders().forEach { g ->
-            genderRow?.addView(filterBtn(ctx, g, genderFilter == g) {
+        // Merge genders from both engines
+        val genders = (KokoroVoices.genders() + PiperVoices.genders()).distinct()
+        genders.forEach { g ->
+            genderRow.addView(filterBtn(g, genderFilter == g) {
                 genderFilter = g; buildFilterButtons(); renderVoiceGrid()
             })
         }
-        (listOf("All") + PiperVoiceCatalog.languages().sorted()).forEach { l ->
-            nationRow?.addView(filterBtn(ctx, l, languageFilter == l) {
+
+        // Merge languages from both engines
+        val languages = (KokoroVoices.languages() + PiperVoices.languages()).distinct()
+        languages.forEach { l ->
+            nationRow.addView(filterBtn(l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
             })
         }
     }
 
-    private fun filterBtn(ctx: Context, label: String, active: Boolean, onClick: () -> Unit): Button {
-        return Button(ctx).apply {
+    private fun filterBtn(label: String, active: Boolean, onClick: () -> Unit): Button {
+        return Button(requireContext()).apply {
             text = label; textSize = 11f
             setBackgroundColor(if (active) 0xFF1a3a1a.toInt() else 0xFF111111.toInt())
             setTextColor(if (active) 0xFF00ff88.toInt() else 0xFF666666.toInt())
-            setPadding(24, 10, 24, 10)
+            setPadding(20, 8, 20, 8)
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 8, 0); layoutParams = lp
             setOnClickListener { onClick() }
         }
     }
 
-    private fun updateSelectedVoiceBanner() {
-        if (!viewsBound || !isAdded || view == null) return
-        val voiceId = currentProfile.voiceName
-        val alias = currentProfile.voiceAlias
-        val piperVoice = PiperVoiceCatalog.byId(voiceId)
-        when {
-            piperVoice != null -> {
-                tvSelectedVoiceIcon?.text = piperVoice.genderIcon
-                tvSelectedVoiceIcon?.setTextColor(piperVoice.genderColor)
-                tvSelectedVoiceName?.text = if (alias.isNotBlank()) "$alias (${piperVoice.displayName})" else piperVoice.displayName
-                val status = if (piperVoice.bundled) "bundled" else {
-                    val appCtx = context?.applicationContext
-                    if (appCtx != null && VoiceDownloadManager.isDownloaded(appCtx, piperVoice.id)) "downloaded" else "not downloaded"
-                }
-                tvSelectedVoiceDetail?.text = "${piperVoice.flagEmoji} ${piperVoice.nationality} · ${piperVoice.quality} · Piper ($status)"
-                selectedVoiceBanner?.setBackgroundColor(0xFF0d1a2a.toInt())
-            }
-            else -> {
-                tvSelectedVoiceIcon?.text = "?"
-                tvSelectedVoiceIcon?.setTextColor(0xFF666666.toInt())
-                tvSelectedVoiceName?.text = if (alias.isNotBlank()) alias else voiceId.ifEmpty { "None selected" }
-                tvSelectedVoiceDetail?.text = "Tap a voice below to select"
-                selectedVoiceBanner?.setBackgroundColor(0xFF1a1a1a.toInt())
-            }
-        }
-    }
+    // ── Voice grid rendering ───────────────────────────────────────────────
 
     private fun renderVoiceGrid() {
-        if (!viewsBound || !isAdded || view == null) return
-        val ctx = context ?: return
-        voiceGrid?.removeAllViews()
+        voiceGrid.removeAllViews()
+        val ctx = requireContext()
 
-        // ── Filter Piper voices ───────────────────────────────────────────
-        val piperFiltered = PiperVoiceCatalog.ALL.filter { v ->
-            val gOk = genderFilter   == "All" || v.gender   == genderFilter
+        // ── KOKORO section ──────────────────────────────────────────────────
+        voiceGrid.addView(buildSectionHeader("KOKORO", "Multi-voice model  ·  11 speakers", 0xFF00ff88.toInt()))
+
+        if (!VoiceDownloadManager.isModelReady(ctx)) {
+            voiceGrid.addView(buildDownloadBanner())
+        } else {
+            renderKokoroVoices()
+        }
+
+        // ── Spacing ─────────────────────────────────────────────────────────
+        voiceGrid.addView(android.view.View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0
+            ).also { it.setMargins(0, 20, 0, 0) }
+        })
+
+        // ── PIPER section ───────────────────────────────────────────────────
+        voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt()))
+        renderPiperVoices()
+    }
+
+    private fun buildSectionHeader(title: String, subtitle: String, accent: Int): android.view.View {
+        val ctx = requireContext()
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.setMargins(0, 0, 0, 10); layoutParams = lp
+        }
+
+        // Accent bar + title row
+        val titleRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        titleRow.addView(android.view.View(ctx).apply {
+            setBackgroundColor(accent)
+            layoutParams = LinearLayout.LayoutParams(4, 36).also { it.setMargins(0, 0, 10, 0) }
+        })
+        titleRow.addView(TextView(ctx).apply {
+            text = title; textSize = 14f; setTextColor(accent)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+        container.addView(titleRow)
+
+        container.addView(TextView(ctx).apply {
+            text = subtitle; textSize = 10f; setTextColor(0xFF555555.toInt())
+            setPadding(14, 2, 0, 0)
+        })
+
+        return container
+    }
+
+    private fun renderKokoroVoices() {
+        val ctx = requireContext()
+        val filtered = KokoroVoices.ALL.filter { v ->
+            val gOk = genderFilter == "All" || v.gender == genderFilter
             val lOk = languageFilter == "All" || v.language == languageFilter
             gOk && lOk
         }
 
-        if (piperFiltered.isEmpty()) {
-            voiceGrid?.addView(TextView(ctx).apply {
-                text = "No voices match filter."; setTextColor(0xFF446644.toInt()); textSize = 12f
-            }); return
+        if (filtered.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No Kokoro voices match filter."))
+            return
         }
 
-        // ── Piper voices (grouped by language, bundled + downloadable) ──
-        if (piperFiltered.isNotEmpty()) {
-            piperFiltered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-                // De-duplicate by name (show only recommended quality per voice name)
-                val deduped = voices.groupBy { it.name }.map { (_, variants) ->
-                    variants.find { it.quality == "medium" } ?: variants.firstOrNull()
-                }.filterNotNull()
-
-                val bundledCount = deduped.count { it.bundled || VoiceDownloadManager.isDownloaded(ctx, it.id) }
-                val totalCount = deduped.size
-                voiceGrid?.addView(TextView(ctx).apply {
-                    text = "PIPER · ${lang.uppercase()}  ($bundledCount/$totalCount ready)"
-                    textSize = 10f; setTextColor(0xFF446644.toInt())
-                    setPadding(4, 14, 0, 6)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                })
-                renderVoiceCardRows(deduped.map { v ->
-                    val state = VoiceDownloadManager.getState(ctx, v.id)
-                    val isReady = state == VoiceDownloadManager.State.DOWNLOADED
-                    val statusText = when (state) {
-                        VoiceDownloadManager.State.DOWNLOADED -> if (v.bundled) "bundled" else "downloaded"
-                        VoiceDownloadManager.State.DOWNLOADING -> "downloading…"
-                        else -> "tap to download"
-                    }
-                    val accentColor = when (state) {
-                        VoiceDownloadManager.State.DOWNLOADED -> 0xFF00ccff.toInt()
-                        VoiceDownloadManager.State.DOWNLOADING -> 0xFFffaa00.toInt()
-                        else -> 0xFF555555.toInt()
-                    }
-                    VoiceCardData(v.id, v.genderIcon, v.genderColor, v.displayName,
-                        "${v.flagEmoji} ${v.nationality}", statusText, accentColor, isReady)
-                })
-            }
+        filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
+            voiceGrid.addView(langHeader(lang, voices.size, 0xFF446644.toInt()))
+            addVoiceRows(voices.map { v ->
+                buildVoiceCard(
+                    name = v.displayName, icon = v.genderIcon, iconColor = v.genderColor,
+                    badge = "${v.flagEmoji} ${v.nationality}", voiceId = v.id,
+                    active = currentProfile.voiceName == v.id,
+                    accent = 0xFF00ff88.toInt(), enabled = true,
+                    onClick = { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+                )
+            })
         }
-
-        updateSelectedVoiceBanner()
     }
 
-    private data class VoiceCardData(
-        val voiceId: String, val genderIcon: String, val genderColor: Int,
-        val displayName: String, val subtitle: String, val statusText: String,
-        val accentColor: Int, val isReady: Boolean
-    )
+    private fun renderPiperVoices() {
+        val ctx = requireContext()
+        val filtered = PiperVoices.ALL.filter { v ->
+            val gOk = genderFilter == "All" || v.gender == genderFilter
+            val lOk = languageFilter == "All" || v.language == languageFilter
+            gOk && lOk
+        }
 
-    private fun renderVoiceCardRows(cards: List<VoiceCardData>) {
-        val ctx = context ?: return
-        // Use 2-column layout for small groups (≤4 voices) so they don't look sparse
-        val chunkSize = if (cards.size <= 4) 2 else 3
-        cards.chunked(chunkSize).forEach { rowCards ->
+        if (filtered.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No Piper voices match filter."))
+            return
+        }
+
+        filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
+            voiceGrid.addView(langHeader(lang, voices.size, 0xFF446688.toInt()))
+            addVoiceRows(voices.map { v -> buildPiperCardNew(v) })
+        }
+    }
+
+    private fun buildPiperCardNew(v: PiperVoice): android.view.View {
+        val ctx = requireContext()
+        val state = PiperDownloadManager.getState(ctx, v.id)
+        val ready = state == PiperDownloadManager.State.READY
+        val active = currentProfile.voiceName == v.id
+
+        val statusText: String
+        val statusColor: Int
+        val statusClickable: Boolean
+
+        when (state) {
+            PiperDownloadManager.State.READY -> {
+                statusText = "ready"
+                statusColor = 0xFF446644.toInt()
+                statusClickable = false
+            }
+            PiperDownloadManager.State.DOWNLOADING -> {
+                val pct = PiperDownloadManager.getProgress(v.id)
+                statusText = if (pct < 0) "extracting..." else "$pct%"
+                statusColor = 0xFFffcc00.toInt()
+                statusClickable = false
+            }
+            PiperDownloadManager.State.ERROR -> {
+                statusText = "retry"
+                statusColor = 0xFFff4444.toInt()
+                statusClickable = true
+            }
+            PiperDownloadManager.State.NOT_DOWNLOADED -> {
+                statusText = "~${v.sizeMb}MB"
+                statusColor = 0xFF88ccff.toInt()
+                statusClickable = true
+            }
+        }
+
+        val card = buildVoiceCard(
+            name = v.displayName, icon = v.genderIcon,
+            iconColor = if (ready) v.genderColor else 0xFF444444.toInt(),
+            badge = "${v.flagEmoji} ${v.quality}", voiceId = v.id,
+            active = active, accent = 0xFF88ccff.toInt(), enabled = ready,
+            onClick = if (ready) {
+                { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+            } else null
+        )
+
+        // Add status / download indicator
+        val statusView = TextView(ctx).apply {
+            tag = "piper_status_${v.id}"
+            text = if (!ready && state != PiperDownloadManager.State.DOWNLOADING
+                && state != PiperDownloadManager.State.ERROR) "⬇ $statusText" else statusText
+            textSize = 10f; gravity = android.view.Gravity.CENTER
+            setTextColor(statusColor)
+            setPadding(0, 4, 0, 0)
+            if (statusClickable) {
+                setOnClickListener { startPiperDownload(v.id) }
+            }
+        }
+        (card as LinearLayout).addView(statusView)
+        return card
+    }
+
+    /**
+     * Shared card builder for both Kokoro and Piper voices.
+     */
+    private fun buildVoiceCard(
+        name: String, icon: String, iconColor: Int, badge: String, voiceId: String,
+        active: Boolean, accent: Int, enabled: Boolean, onClick: (() -> Unit)?
+    ): android.view.View {
+        val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
+
+        return LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding((10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt())
+            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            lp.setMargins((2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt())
+            layoutParams = lp
+
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 8 * dp
+                if (active) {
+                    setColor(0xFF0d1a1a.toInt())
+                    setStroke((2 * dp).toInt(), accent)
+                } else {
+                    setColor(if (enabled) 0xFF151515.toInt() else 0xFF0e0e0e.toInt())
+                    setStroke(1, 0xFF222222.toInt())
+                }
+            }
+
+            if (onClick != null) setOnClickListener { onClick() }
+
+            // Gender icon
+            addView(TextView(ctx).apply {
+                text = icon; textSize = 22f; gravity = android.view.Gravity.CENTER
+                setTextColor(iconColor)
+            })
+
+            // Name
+            addView(TextView(ctx).apply {
+                text = name; textSize = 13f; gravity = android.view.Gravity.CENTER
+                setTextColor(when {
+                    active  -> accent
+                    enabled -> 0xFFdddddd.toInt()
+                    else    -> 0xFF666666.toInt()
+                })
+                typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD
+                           else android.graphics.Typeface.DEFAULT
+                setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
+            })
+
+            // Badge (flag + nationality/quality)
+            addView(TextView(ctx).apply {
+                text = badge; textSize = 9f; gravity = android.view.Gravity.CENTER
+                setTextColor(if (active) accent.and(0x00FFFFFF).or(0x99000000.toInt())
+                             else 0xFF555555.toInt())
+            })
+        }
+    }
+
+    private fun addVoiceRows(cards: List<android.view.View>) {
+        val ctx = requireContext()
+        val cols = 3
+        cards.chunked(cols).forEach { rowCards ->
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             }
-            rowCards.forEach { c ->
-                val active = currentProfile.voiceName == c.voiceId
-                val card = LinearLayout(ctx).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = android.view.Gravity.CENTER
-                    setPadding(12, 16, 12, 16)
-                    val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    lp.setMargins(0, 0, 6, 6); layoutParams = lp
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(if (active) 0xFF0d2a0d.toInt() else 0xFF111111.toInt())
-                        setStroke(if (active) 2 else 1, if (active) c.accentColor else 0xFF222222.toInt())
-                        cornerRadius = 8f
-                    }
-                    setOnClickListener {
-                        if (c.isReady) {
-                            // Voice is available — select it
-                            currentProfile = currentProfile.copy(voiceName = c.voiceId)
-                            renderVoiceGrid()
-                            // Pre-warm Piper engine in :tts process to reduce test lag
-                            if (PiperVoiceCatalog.byId(c.voiceId) != null) {
-                                val appCtx = context?.applicationContext ?: return@setOnClickListener
-                                TtsBridge.preloadVoice(appCtx, c.voiceId)
-                            }
-                        } else {
-                            // Voice needs downloading — start download
-                            val appCtx = context?.applicationContext ?: return@setOnClickListener
-                            Thread {
-                                val success = VoiceDownloadManager.download(appCtx, c.voiceId)
-                                if (success) {
-                                    // Auto-select the voice after download
-                                    activity?.runOnUiThread {
-                                        currentProfile = currentProfile.copy(voiceName = c.voiceId)
-                                        renderVoiceGrid()
-                                    }
-                                } else {
-                                    activity?.runOnUiThread { renderVoiceGrid() }
-                                }
-                            }.apply {
-                                name = "VoiceDownload-${c.voiceId}"
-                                isDaemon = true
-                                start()
-                            }
-                            // Immediately refresh to show "downloading…" state
-                            renderVoiceGrid()
-                        }
-                    }
-                }
-                card.addView(TextView(ctx).apply {
-                    text = c.genderIcon; textSize = 22f; gravity = android.view.Gravity.CENTER
-                    setTextColor(c.genderColor)
-                })
-                card.addView(TextView(ctx).apply {
-                    text = c.displayName; textSize = 13f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) c.accentColor else 0xFFcccccc.toInt())
-                    typeface = android.graphics.Typeface.create("monospace",
-                        if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-                })
-                card.addView(TextView(ctx).apply {
-                    text = c.subtitle; textSize = 10f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (active) c.accentColor else 0xFF446644.toInt())
-                })
-                card.addView(TextView(ctx).apply {
-                    text = c.statusText; textSize = 8f; gravity = android.view.Gravity.CENTER
-                    setTextColor(if (c.isReady) 0xFF336633.toInt() else 0xFF333333.toInt())
-                })
-                row.addView(card)
-            }
-            // Fill remaining slots with empty space
-            repeat(chunkSize - rowCards.size) {
+            rowCards.forEach { row.addView(it) }
+            // Fill remaining space in incomplete rows
+            repeat(cols - rowCards.size) {
                 row.addView(android.view.View(ctx).apply {
                     layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
                 })
             }
-            voiceGrid?.addView(row)
+            voiceGrid.addView(row)
         }
     }
 
+    private fun langHeader(lang: String, count: Int, color: Int): android.view.View {
+        return TextView(requireContext()).apply {
+            text = "${lang.uppercase()}  ($count)"
+            textSize = 10f; setTextColor(color)
+            setPadding(6, 14, 0, 4)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+    }
+
+    private fun emptyLabel(msg: String): android.view.View {
+        return TextView(requireContext()).apply {
+            text = msg; setTextColor(0xFF446644.toInt()); textSize = 12f
+            setPadding(6, 8, 0, 8)
+        }
+    }
+
+    private fun startPiperDownload(voiceId: String) {
+        val ctx = requireContext()
+        PiperDownloadManager.onStateChange = { _, _ ->
+            activity?.runOnUiThread {
+                if (isAdded) renderVoiceGrid()
+            }
+        }
+        PiperDownloadManager.onProgress = { id, pct ->
+            activity?.runOnUiThread {
+                if (!isAdded) return@runOnUiThread
+                val tv = voiceGrid.findViewWithTag<TextView>("piper_status_$id")
+                tv?.text = if (pct < 0) "extracting..." else "$pct%"
+            }
+        }
+        PiperDownloadManager.downloadVoice(ctx, voiceId)
+        renderVoiceGrid()
+    }
+
+    private fun buildDownloadBanner(): android.view.View {
+        val ctx = requireContext()
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF1a1a00.toInt()); setPadding(20, 16, 20, 16)
+        }
+        val state = VoiceDownloadManager.state
+
+        when (state) {
+            VoiceDownloadManager.State.NOT_DOWNLOADED, VoiceDownloadManager.State.ERROR -> {
+                card.addView(TextView(ctx).apply {
+                    text = if (state == VoiceDownloadManager.State.ERROR)
+                        "⚠ Download failed: ${VoiceDownloadManager.errorMessage}"
+                    else "🎙 No voice model installed"
+                    textSize = 13f; setTextColor(0xFFffcc00.toInt()); setPadding(0, 0, 0, 8)
+                })
+                card.addView(TextView(ctx).apply {
+                    text = "The Kokoro voice model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) needs to be downloaded once.\nWi-Fi recommended."
+                    textSize = 12f; setTextColor(0xFF888888.toInt()); setPadding(0, 0, 0, 12)
+                })
+                card.addView(Button(ctx).apply {
+                    text = "⬇ DOWNLOAD KOKORO VOICES"
+                    setBackgroundColor(0xFF1a3a1a.toInt()); setTextColor(0xFF00ff88.toInt())
+                    setOnClickListener {
+                        VoiceDownloadManager.onProgress { pct ->
+                            // Update only the progress text and bar, not the whole grid
+                            activity?.runOnUiThread {
+                                if (!isAdded) return@runOnUiThread
+                                updateDownloadProgress(pct)
+                            }
+                        }
+                        VoiceDownloadManager.onStateChange { _ ->
+                            activity?.runOnUiThread {
+                                if (!isAdded) return@runOnUiThread
+                                buildFilterButtons(); renderVoiceGrid()
+                            }
+                        }
+                        VoiceDownloadManager.downloadModel(ctx)
+                        renderVoiceGrid()
+                    }
+                })
+            }
+            VoiceDownloadManager.State.DOWNLOADING -> {
+                val pct = VoiceDownloadManager.progressPercent
+                val statusText = TextView(ctx).apply {
+                    tag = "download_status"
+                    text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
+                    textSize = 13f; setTextColor(0xFF00ff88.toInt())
+                }
+                card.addView(statusText)
+                val bar = android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    tag = "download_bar"
+                    max = 100; progress = if (pct >= 0) pct else 100
+                    isIndeterminate = pct < 0
+                    val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24)
+                    lp.setMargins(0, 12, 0, 0); layoutParams = lp
+                }
+                card.addView(bar)
+            }
+            VoiceDownloadManager.State.READY -> { /* won't reach here */ }
+        }
+        return card
+    }
+
+    private fun updateDownloadProgress(pct: Int) {
+        val statusView = voiceGrid.findViewWithTag<TextView>("download_status") ?: return
+        val barView = voiceGrid.findViewWithTag<android.widget.ProgressBar>("download_bar") ?: return
+        statusView.text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
+        barView.isIndeterminate = pct < 0
+        if (pct >= 0) barView.progress = pct
+    }
+
     private fun buildPresets() {
-        if (!viewsBound || !isAdded || view == null) return
-        val ctx = context ?: return
-        presetsScroll?.removeAllViews()
+        presetsScroll.removeAllViews()
         VoiceProfile.PRESETS.forEach { preset ->
-            val btn = Button(ctx).apply {
+            val btn = Button(requireContext()).apply {
                 text = "${preset.emoji}\n${preset.name}"; textSize = 11f
                 setBackgroundColor(0xFF1a2a1a.toInt()); setTextColor(0xFF00ff88.toInt())
                 setPadding(20, 12, 20, 12)
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 lp.setMargins(0, 0, 10, 8); layoutParams = lp
                 setOnClickListener {
-                    loadProfileToUI(preset.copy(id = currentProfile.id, name = currentProfile.name, voiceName = currentProfile.voiceName, voiceAlias = currentProfile.voiceAlias))
+                    loadProfileToUI(preset.copy(id = currentProfile.id, name = currentProfile.name, voiceName = currentProfile.voiceName))
                 }
             }
-            presetsScroll?.addView(btn)
+            presetsScroll.addView(btn)
         }
     }
 
     private fun buildCommentaryEditor() {
         val v = view ?: return
-        val ctx = context ?: return
-        if (!isAdded) return
         val container = v.findViewById<LinearLayout>(R.id.commentary_pools_container)
         container.removeAllViews()
 
         currentProfile.commentaryPools.forEachIndexed { idx, pool ->
-            container.addView(buildPoolCard(ctx, pool, idx))
+            container.addView(buildPoolCard(pool, idx))
         }
 
         v.findViewById<Button>(R.id.btn_add_pre_comment).setOnClickListener {
@@ -444,8 +528,8 @@ class ProfilesFragment : Fragment() {
         }
     }
 
-    private fun buildPoolCard(ctx: Context, pool: CommentaryPool, idx: Int): View {
-        val card = LinearLayout(ctx).apply {
+    private fun buildPoolCard(pool: CommentaryPool, idx: Int): View {
+        val card = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF111111.toInt()); setPadding(14, 12, 14, 12)
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -453,43 +537,39 @@ class ProfilesFragment : Fragment() {
         }
 
         // Header: position badge + condition label + delete
-        val header = LinearLayout(ctx).apply {
+        val header = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
-        val posBadge = TextView(ctx).apply {
+        val posBadge = TextView(requireContext()).apply {
             text = if (pool.position == "pre") "BEFORE" else "AFTER"
             textSize = 10f; setPadding(10, 4, 10, 4)
             setBackgroundColor(if (pool.position == "pre") 0xFF1a3a2a.toInt() else 0xFF1a2a3a.toInt())
             setTextColor(if (pool.position == "pre") 0xFF00ff88.toInt() else 0xFF00ccff.toInt())
         }
-        val condLabel = TextView(ctx).apply {
+        val condLabel = TextView(requireContext()).apply {
             text = "  ${pool.condition.label()}"
             textSize = 12f; setTextColor(0xFF888888.toInt())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val freqLabel = TextView(ctx).apply {
+        val freqLabel = TextView(requireContext()).apply {
             text = "${pool.frequency}%"; textSize = 11f; setTextColor(0xFFffaa44.toInt())
             setPadding(0, 0, 10, 0)
         }
-        val btnDel = Button(ctx).apply {
+        val btnDel = Button(requireContext()).apply {
             text = "✕"; textSize = 11f; setTextColor(0xFFff4444.toInt())
             setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 4, 12, 4)
             setOnClickListener {
-                val pools = currentProfile.commentaryPools
-                if (idx >= 0 && idx < pools.size) {
-                    val updated = pools.toMutableList()
-                    updated.removeAt(idx)
-                    currentProfile = currentProfile.copy(commentaryPools = updated)
-                    buildCommentaryEditor()
-                }
+                val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
+                currentProfile = currentProfile.copy(commentaryPools = updated)
+                buildCommentaryEditor()
             }
         }
         header.addView(posBadge); header.addView(condLabel); header.addView(freqLabel); header.addView(btnDel)
         card.addView(header)
 
         // Frequency slider
-        val seekFreq = SeekBar(ctx).apply {
+        val seekFreq = SeekBar(requireContext()).apply {
             max = 100; progress = pool.frequency
             progressTintList = android.content.res.ColorStateList.valueOf(0xFFffaa44.toInt())
             thumbTintList = android.content.res.ColorStateList.valueOf(0xFFffaa44.toInt())
@@ -497,13 +577,11 @@ class ProfilesFragment : Fragment() {
             lp.setMargins(0, 8, 0, 8); layoutParams = lp
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, pv: Int, fromUser: Boolean) {
-                    if (fromUser && idx < currentProfile.commentaryPools.size) {
+                    if (fromUser) {
                         freqLabel.text = "$pv%"
                         val updated = currentProfile.commentaryPools.toMutableList()
-                        if (idx < updated.size) {
-                            updated[idx] = pool.copy(frequency = pv)
-                            currentProfile = currentProfile.copy(commentaryPools = updated)
-                        }
+                        updated[idx] = pool.copy(frequency = pv)
+                        currentProfile = currentProfile.copy(commentaryPools = updated)
                     }
                 }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -513,43 +591,39 @@ class ProfilesFragment : Fragment() {
         card.addView(seekFreq)
 
         // Lines
-        val linesContainer = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val linesContainer = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
         val lines = pool.lines.toMutableList()
 
         fun renderLines() {
             linesContainer.removeAllViews()
             lines.forEachIndexed { li, line ->
-                val row = LinearLayout(ctx).apply {
+                val row = LinearLayout(requireContext()).apply {
                     orientation = LinearLayout.HORIZONTAL; setPadding(0, 3, 0, 3)
                 }
-                val et = android.widget.EditText(ctx).apply {
+                val et = android.widget.EditText(requireContext()).apply {
                     setText(line); hint = "Say something..."; textSize = 12f
                     setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 6, 10, 6)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     addTextChangedListener(object : android.text.TextWatcher {
                         override fun afterTextChanged(s: android.text.Editable?) {
-                            if (li >= 0 && li < lines.size) lines[li] = s.toString()
+                            lines[li] = s.toString()
                             val updatedPools = currentProfile.commentaryPools.toMutableList()
-                            if (idx >= 0 && idx < updatedPools.size) {
-                                updatedPools[idx] = pool.copy(lines = lines.toList())
-                                currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                            }
+                            updatedPools[idx] = pool.copy(lines = lines.toList())
+                            currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                         }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     })
                 }
-                val del = Button(ctx).apply {
+                val del = Button(requireContext()).apply {
                     text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
                     setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
                     setOnClickListener {
-                        if (li >= 0 && li < lines.size) lines.removeAt(li)
+                        lines.removeAt(li)
                         val updatedPools = currentProfile.commentaryPools.toMutableList()
-                        if (idx >= 0 && idx < updatedPools.size) {
-                            updatedPools[idx] = pool.copy(lines = lines.toList())
-                            currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                        }
+                        updatedPools[idx] = pool.copy(lines = lines.toList())
+                        currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                         renderLines()
                     }
                 }
@@ -559,7 +633,7 @@ class ProfilesFragment : Fragment() {
         renderLines()
         card.addView(linesContainer)
 
-        val btnAddLine = Button(ctx).apply {
+        val btnAddLine = Button(requireContext()).apply {
             text = "+ line"; textSize = 11f; setTextColor(0xFF00ff88.toInt())
             setBackgroundColor(0xFF1a2a1a.toInt()); setPadding(14, 4, 14, 4)
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -567,10 +641,8 @@ class ProfilesFragment : Fragment() {
             setOnClickListener {
                 lines.add("")
                 val updatedPools = currentProfile.commentaryPools.toMutableList()
-                if (idx >= 0 && idx < updatedPools.size) {
-                    updatedPools[idx] = pool.copy(lines = lines.toList())
-                    currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                }
+                updatedPools[idx] = pool.copy(lines = lines.toList())
+                currentProfile = currentProfile.copy(commentaryPools = updatedPools)
                 renderLines()
             }
         }
@@ -579,7 +651,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun showAddPoolDialog(position: String) {
-        val ctx = context ?: return
+        val ctx = requireContext()
         val layout = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 10)
         }
@@ -618,42 +690,36 @@ class ProfilesFragment : Fragment() {
         }
         typeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                selectedType = conditions.getOrNull(pos)?.first ?: return
+                selectedType = conditions[pos].first
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
         layout.addView(typeSpinner)
 
-        try {
-            AlertDialog.Builder(ctx)
-                .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
-                .setView(layout)
-                .setPositiveButton("Add") { _, _ ->
-                    val condition = CommentaryCondition(selectedType)
-                    val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
-                    val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
-                    currentProfile = currentProfile.copy(commentaryPools = updated)
-                    buildCommentaryEditor()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        } catch (e: Exception) {
-            Log.w("ProfilesFragment", "Failed to show add pool dialog", e)
-        }
+        AlertDialog.Builder(ctx)
+            .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
+            .setView(layout)
+            .setPositiveButton("Add") { _, _ ->
+                val condition = CommentaryCondition(selectedType)
+                val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
+                val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
+                currentProfile = currentProfile.copy(commentaryPools = updated)
+                buildCommentaryEditor()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun buildGimmicksEditor() {
-        if (!viewsBound || !isAdded || view == null) return
-        val ctx = context ?: return
-        gimmicksContainer?.removeAllViews()
+        gimmicksContainer.removeAllViews()
         val allTypes = listOf("giggle","sigh","huh","mmm","woah","ugh","aww","gasp","yawn","hmm","laugh","tsk")
         allTypes.forEach { type ->
             val existing = currentProfile.gimmicks.find { it.type == type }
             val freq = existing?.frequency ?: 0
             val pos = existing?.position ?: "RANDOM"
 
-            val row = LinearLayout(ctx).apply {
+            val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(0xFF111111.toInt())
                 setPadding(16, 12, 16, 12)
@@ -661,23 +727,23 @@ class ProfilesFragment : Fragment() {
                 lp.setMargins(0, 0, 0, 4); layoutParams = lp
             }
 
-            val topRow = LinearLayout(ctx).apply {
+            val topRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
 
-            val label = TextView(ctx).apply {
+            val label = TextView(requireContext()).apply {
                 text = type.replaceFirstChar { it.uppercase() }
                 textSize = 13f; setTextColor(0xFFcccccc.toInt())
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
-            val freqLabel = TextView(ctx).apply {
+            val freqLabel = TextView(requireContext()).apply {
                 text = "$freq%"; textSize = 12f; setTextColor(0xFF00ff88.toInt())
                 setPadding(0, 0, 8, 0); minWidth = 44
             }
 
-            val seekFreq = SeekBar(ctx).apply {
+            val seekFreq = SeekBar(requireContext()).apply {
                 max = 100; progress = freq
                 progressTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
                 thumbTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
@@ -698,11 +764,11 @@ class ProfilesFragment : Fragment() {
             row.addView(topRow)
 
             // Position selector
-            val posRow = LinearLayout(ctx).apply {
+            val posRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0)
             }
             listOf("START", "MID", "END", "RANDOM").forEach { p ->
-                val pb = Button(ctx).apply {
+                val pb = Button(requireContext()).apply {
                     text = p.lowercase(); textSize = 9f
                     setBackgroundColor(if (p == pos) 0xFF223322.toInt() else 0xFF1a1a1a.toInt())
                     setTextColor(if (p == pos) 0xFF00ff88.toInt() else 0xFF444444.toInt())
@@ -717,7 +783,7 @@ class ProfilesFragment : Fragment() {
                 posRow.addView(pb)
             }
             row.addView(posRow)
-            gimmicksContainer?.addView(row)
+            gimmicksContainer.addView(row)
         }
     }
 
@@ -729,18 +795,17 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun setupProfileSpinner() {
-        val ctx = context ?: return
-        if (profiles.isEmpty()) return
-        profileSpinner?.adapter = ArrayAdapter(ctx,
-            android.R.layout.simple_spinner_dropdown_item, profiles.map { "${it.emoji} ${it.name}" })
+        profileSpinner.adapter = ArrayAdapter(requireContext(),
+            android.R.layout.simple_spinner_dropdown_item, profiles.map { p ->
+                val alias = p.voiceAlias
+                if (alias.isNotBlank()) "${p.emoji} ${p.name} ($alias)" else "${p.emoji} ${p.name}"
+            })
         val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
-        profileSpinner?.setSelection(idx)
-        profileSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        profileSpinner.setSelection(idx)
+        profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (!isAdded || view == null) return
-                val selected = profiles.getOrNull(pos) ?: return
-                loadProfileToUI(selected)
-                activeProfileId = selected.id
+                loadProfileToUI(profiles[pos])
+                activeProfileId = profiles[pos].id
                 prefs.edit().putString("active_profile_id", activeProfileId).apply()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -748,168 +813,109 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun setupButtons() {
-        btnTest?.setOnClickListener {
-            val ctx = context ?: return@setOnClickListener
-            val s = TtsBridge.readStatus(ctx)
-            if (!s.ready) {
-                Toast.makeText(ctx, "Voice engine is loading — it will be ready in a few seconds.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            try {
-                val p = readProfileFromUI()
-                val text = txtPreview?.text?.toString()?.ifBlank { "Hello! This is how I sound." } ?: "Hello! This is how I sound."
-                // Save profile first so the :tts process can read it
-                val idx = profiles.indexOfFirst { it.id == p.id }
-                if (idx >= 0) profiles[idx] = p else profiles.add(p)
-                VoiceProfile.saveAll(profiles, prefs)
-                // Send test speak command to :tts process
-                TtsBridge.testSpeak(ctx, text, p.id)
-            } catch (e: Exception) {
-                Log.w("ProfilesFragment", "Error starting test speech", e)
-                Toast.makeText(ctx, "Error testing voice", Toast.LENGTH_SHORT).show()
-            }
+        btnTest.setOnClickListener {
+            val p = readProfileFromUI()
+            val rules = loadWordingRules()
+            val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
+            NotificationReaderService.instance?.testSpeak(text, p, rules)
+                ?: Toast.makeText(context, "Service not running — grant permission first.", Toast.LENGTH_SHORT).show()
         }
-        btnStop?.setOnClickListener {
-            TtsBridge.stop(context ?: return@setOnClickListener)
-            Toast.makeText(context ?: return@setOnClickListener, "Stopped", Toast.LENGTH_SHORT).show()
-        }
-        btnResetSettings?.setOnClickListener {
-            loadProfileToUI(currentProfile.copy(
-                pitch = 1.0f, speed = 1.0f,
-                breathIntensity = 0, breathCurvePosition = 0f, breathPause = 0,
-                stutterIntensity = 0, stutterPosition = 0f, stutterFrequency = 0, stutterPause = 30,
-                intonationIntensity = 0, intonationVariation = 0.5f,
-                gimmicks = emptyList()
-            ))
-            Toast.makeText(context ?: return@setOnClickListener, "Voice settings reset to defaults", Toast.LENGTH_SHORT).show()
-        }
-        btnSave?.setOnClickListener {
+        btnSave.setOnClickListener {
             val p = readProfileFromUI()
             val idx = profiles.indexOfFirst { it.id == p.id }
             if (idx >= 0) profiles[idx] = p else profiles.add(p)
             VoiceProfile.saveAll(profiles, prefs)
-            Toast.makeText(context ?: return@setOnClickListener, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
         }
-        btnNew?.setOnClickListener {
-            val ctx = context ?: return@setOnClickListener
-            val et = EditText(ctx).apply { hint = "Profile name" }
-            try {
-                AlertDialog.Builder(ctx).setTitle("New Profile").setView(et)
-                    .setPositiveButton("Create") { _, _ ->
-                        val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
-                        val p = VoiceProfile(name = name)
-                        profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
-                        setupProfileSpinner(); profileSpinner?.setSelection(profiles.size - 1)
-                    }.setNegativeButton("Cancel", null).show()
-            } catch (e: Exception) {
-                Log.w("ProfilesFragment", "Failed to show new profile dialog", e)
-            }
+        btnNew.setOnClickListener {
+            val et = EditText(requireContext()).apply { hint = "Profile name" }
+            AlertDialog.Builder(requireContext()).setTitle("New Profile").setView(et)
+                .setPositiveButton("Create") { _, _ ->
+                    val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
+                    val p = VoiceProfile(name = name)
+                    profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
+                    setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
+                }.setNegativeButton("Cancel", null).show()
         }
-        btnDelete?.setOnClickListener {
-            if (profiles.size <= 1) { Toast.makeText(context ?: return@setOnClickListener, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            val ctx = context ?: return@setOnClickListener
-            try {
-                AlertDialog.Builder(ctx).setTitle("Delete ${currentProfile.name}?")
-                    .setPositiveButton("Delete") { _, _ ->
-                        profiles.removeAll { it.id == currentProfile.id }
-                        VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
-                    }.setNegativeButton("Cancel", null).show()
-            } catch (e: Exception) {
-                Log.w("ProfilesFragment", "Failed to show delete dialog", e)
-            }
+        btnDelete.setOnClickListener {
+            if (profiles.size <= 1) { Toast.makeText(context, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            AlertDialog.Builder(requireContext()).setTitle("Delete ${currentProfile.name}?")
+                .setPositiveButton("Delete") { _, _ ->
+                    profiles.removeAll { it.id == currentProfile.id }
+                    VoiceProfile.saveAll(profiles, prefs); setupProfileSpinner()
+                }.setNegativeButton("Cancel", null).show()
         }
-        btnRenameVoice?.setOnClickListener {
+        view?.findViewById<Button>(R.id.btn_rename_voice)?.setOnClickListener {
             val ctx = context ?: return@setOnClickListener
             val et = EditText(ctx).apply {
                 hint = "Voice nickname (leave empty to clear)"
                 setText(currentProfile.voiceAlias)
             }
-            try {
-                AlertDialog.Builder(ctx)
-                    .setTitle("Rename Voice")
-                    .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
-                    .setView(et)
-                    .setPositiveButton("Save") { _, _ ->
-                        val alias = et.text.toString().trim()
-                        currentProfile = currentProfile.copy(voiceAlias = alias)
-                        val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                        if (idx >= 0) profiles[idx] = currentProfile
-                        VoiceProfile.saveAll(profiles, prefs)
-                        updateSelectedVoiceBanner()
-                    }
-                    .setNeutralButton("Clear") { _, _ ->
-                        currentProfile = currentProfile.copy(voiceAlias = "")
-                        val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                        if (idx >= 0) profiles[idx] = currentProfile
-                        VoiceProfile.saveAll(profiles, prefs)
-                        updateSelectedVoiceBanner()
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            } catch (e: Exception) {
-                Log.w("ProfilesFragment", "Failed to show rename dialog", e)
-            }
+            AlertDialog.Builder(ctx)
+                .setTitle("Rename Voice")
+                .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
+                .setView(et)
+                .setPositiveButton("Save") { _, _ ->
+                    val alias = et.text.toString().trim()
+                    currentProfile = currentProfile.copy(voiceAlias = alias)
+                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
+                    if (idx >= 0) profiles[idx] = currentProfile
+                    VoiceProfile.saveAll(profiles, prefs)
+                    setupProfileSpinner()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+        view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
+            NotificationReaderService.instance?.stopSpeaking()
         }
     }
 
     private fun loadProfileToUI(p: VoiceProfile) {
-        if (!viewsBound || !isAdded || view == null) return
         currentProfile = p
-        seekPitch?.max = 200; seekPitch?.progress = ((p.pitch - 0.50f) / 1.50f * 200f).toInt().coerceIn(0, 200)
-        tvPitch?.text = "Pitch: %.2f".format(p.pitch)
-        seekSpeed?.max = 200; seekSpeed?.progress = ((p.speed - 0.50f) / 2.50f * 200f).toInt().coerceIn(0, 200)
-        tvSpeed?.text = "Speed: %.2f".format(p.speed)
-        seekBreathInt?.max = 200; seekBreathInt?.progress = progressiveToSlider(p.breathIntensity, 100); tvBreathInt?.text = "Intensity: ${p.breathIntensity}"
-        seekBreathCurve?.max = 200; seekBreathCurve?.progress = progressiveToSlider((p.breathCurvePosition * 100).toInt(), 100); tvBreathCurve?.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
-        seekBreathPause?.max = 200; seekBreathPause?.progress = progressiveToSlider(p.breathPause, 100); tvBreathPause?.text = "Pause: ${p.breathPause}"
-        seekStutterInt?.max = 200; seekStutterInt?.progress = progressiveToSlider(p.stutterIntensity, 100); tvStutterInt?.text = "Intensity: ${p.stutterIntensity}"
-        seekStutterPos?.max = 200; seekStutterPos?.progress = progressiveToSlider((p.stutterPosition*100).toInt(), 100); tvStutterPos?.text = "Position: ${(p.stutterPosition*100).toInt()}%"
-        seekStutterFreq?.max = 200; seekStutterFreq?.progress = progressiveToSlider(p.stutterFrequency, 100); tvStutterFreq?.text = "Frequency: ${p.stutterFrequency}%"
-        seekStutterPause?.max = 200; seekStutterPause?.progress = progressiveToSlider(p.stutterPause, 100); tvStutterPause?.text = "Pause: ${p.stutterPause}"
-        seekIntonInt?.max = 200; seekIntonInt?.progress = progressiveToSlider(p.intonationIntensity, 100); tvIntonInt?.text = "Intensity: ${p.intonationIntensity}"
-        seekIntonVar?.max = 200; seekIntonVar?.progress = progressiveToSlider((p.intonationVariation*100).toInt(), 100); tvIntonVar?.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
+        seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).toInt() - 50).coerceIn(0, 150)
+        tvPitch.text = "Pitch: %.2f".format(p.pitch)
+        seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)
+        tvSpeed.text = "Speed: %.2f".format(p.speed)
+        seekBreathInt.max = 100; seekBreathInt.progress = p.breathIntensity; tvBreathInt.text = "Intensity: ${p.breathIntensity}"
+        seekBreathCurve.max = 100; seekBreathCurve.progress = (p.breathCurvePosition * 100).toInt(); tvBreathCurve.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
+        seekBreathPause.max = 100; seekBreathPause.progress = p.breathPause; tvBreathPause.text = "Pause: ${p.breathPause}"
+        seekStutterInt.max = 100; seekStutterInt.progress = p.stutterIntensity; tvStutterInt.text = "Intensity: ${p.stutterIntensity}"
+        seekStutterPos.max = 100; seekStutterPos.progress = (p.stutterPosition*100).toInt(); tvStutterPos.text = "Position: ${(p.stutterPosition*100).toInt()}%"
+        seekStutterFreq.max = 100; seekStutterFreq.progress = p.stutterFrequency; tvStutterFreq.text = "Frequency: ${p.stutterFrequency}%"
+        seekStutterPause.max = 100; seekStutterPause.progress = p.stutterPause; tvStutterPause.text = "Pause: ${p.stutterPause}"
+        seekIntonInt.max = 100; seekIntonInt.progress = p.intonationIntensity; tvIntonInt.text = "Intensity: ${p.intonationIntensity}"
+        seekIntonVar.max = 100; seekIntonVar.progress = (p.intonationVariation*100).toInt(); tvIntonVar.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
 
-        seekPitch?.let { s -> attachSeek(s) { tvPitch?.text = "Pitch: %.2f".format(0.50f + it / 200f * 1.50f) } }
-        seekSpeed?.let { s -> attachSeek(s) { tvSpeed?.text = "Speed: %.2f".format(0.50f + it / 200f * 2.50f) } }
-        seekBreathInt?.let { s -> attachSeek(s) { tvBreathInt?.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" } }
-        seekBreathCurve?.let { s -> attachSeek(s) { tvBreathCurve?.text = "Curve: ${progressiveFromSlider(it, 200, 100)}%" } }
-        seekBreathPause?.let { s -> attachSeek(s) { tvBreathPause?.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" } }
-        seekStutterInt?.let { s -> attachSeek(s) { tvStutterInt?.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" } }
-        seekStutterPos?.let { s -> attachSeek(s) { tvStutterPos?.text = "Position: ${progressiveFromSlider(it, 200, 100)}%" } }
-        seekStutterFreq?.let { s -> attachSeek(s) { tvStutterFreq?.text = "Frequency: ${progressiveFromSlider(it, 200, 100)}%" } }
-        seekStutterPause?.let { s -> attachSeek(s) { tvStutterPause?.text = "Pause: ${progressiveFromSlider(it, 200, 100)}" } }
-        seekIntonInt?.let { s -> attachSeek(s) { tvIntonInt?.text = "Intensity: ${progressiveFromSlider(it, 200, 100)}" } }
-        seekIntonVar?.let { s -> attachSeek(s) { tvIntonVar?.text = "Variation: ${progressiveFromSlider(it, 200, 100)}%" } }
+        attachSeek(seekPitch)      { tvPitch.text = "Pitch: %.2f".format((it+50)/100f) }
+        attachSeek(seekSpeed)      { tvSpeed.text = "Speed: %.2f".format((it+50)/100f) }
+        attachSeek(seekBreathInt)  { tvBreathInt.text = "Intensity: $it" }
+        attachSeek(seekBreathCurve){ tvBreathCurve.text = "Curve: $it%" }
+        attachSeek(seekBreathPause){ tvBreathPause.text = "Pause: $it" }
+        attachSeek(seekStutterInt) { tvStutterInt.text = "Intensity: $it" }
+        attachSeek(seekStutterPos) { tvStutterPos.text = "Position: $it%" }
+        attachSeek(seekStutterFreq){ tvStutterFreq.text = "Frequency: $it%" }
+        attachSeek(seekStutterPause){tvStutterPause.text = "Pause: $it" }
+        attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: $it" }
+        attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: $it%" }
 
         buildCommentaryEditor()
         buildGimmicksEditor()
         renderVoiceGrid()
     }
 
-    /** Convert slider position (0..sliderMax) to actual value (0..valueMax) using quadratic curve */
-    private fun progressiveFromSlider(sliderPos: Int, sliderMax: Int, valueMax: Int): Int {
-        val t = sliderPos.toFloat() / sliderMax
-        return (t * t * valueMax).toInt().coerceIn(0, valueMax)
-    }
-
-    /** Convert actual value (0..valueMax) to slider position (0..sliderMax) using square-root curve */
-    private fun progressiveToSlider(value: Int, valueMax: Int): Int {
-        val t = (value.toFloat() / valueMax).coerceIn(0f, 1f)
-        return (kotlin.math.sqrt(t) * 200f).toInt().coerceIn(0, 200)
-    }
-
     private fun readProfileFromUI() = currentProfile.copy(
-        pitch               = 0.50f + (seekPitch?.progress ?: 0) / 200f * 1.50f,
-        speed               = 0.50f + (seekSpeed?.progress ?: 0) / 200f * 2.50f,
-        breathIntensity     = progressiveFromSlider(seekBreathInt?.progress ?: 0, 200, 100),
-        breathCurvePosition = progressiveFromSlider(seekBreathCurve?.progress ?: 0, 200, 100) / 100f,
-        breathPause         = progressiveFromSlider(seekBreathPause?.progress ?: 0, 200, 100),
-        stutterIntensity    = progressiveFromSlider(seekStutterInt?.progress ?: 0, 200, 100),
-        stutterPosition     = progressiveFromSlider(seekStutterPos?.progress ?: 0, 200, 100) / 100f,
-        stutterFrequency    = progressiveFromSlider(seekStutterFreq?.progress ?: 0, 200, 100),
-        stutterPause        = progressiveFromSlider(seekStutterPause?.progress ?: 0, 200, 100),
-        intonationIntensity = progressiveFromSlider(seekIntonInt?.progress ?: 0, 200, 100),
-        intonationVariation = progressiveFromSlider(seekIntonVar?.progress ?: 0, 200, 100) / 100f
+        pitch               = (seekPitch.progress + 50) / 100f,
+        speed               = (seekSpeed.progress + 50) / 100f,
+        breathIntensity     = seekBreathInt.progress,
+        breathCurvePosition = seekBreathCurve.progress / 100f,
+        breathPause         = seekBreathPause.progress,
+        stutterIntensity    = seekStutterInt.progress,
+        stutterPosition     = seekStutterPos.progress / 100f,
+        stutterFrequency    = seekStutterFreq.progress,
+        stutterPause        = seekStutterPause.progress,
+        intonationIntensity = seekIntonInt.progress,
+        intonationVariation = seekIntonVar.progress / 100f
     )
 
     private fun loadWordingRules(): List<Pair<String, String>> {
@@ -928,64 +934,5 @@ class ProfilesFragment : Fragment() {
         })
     }
 
-    override fun onResume() {
-        super.onResume()
-        restartEnginePolling()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        stopEnginePolling()
-    }
-
-    override fun onHiddenChanged(hidden: Boolean) {
-        super.onHiddenChanged(hidden)
-        if (!hidden) restartEnginePolling() else stopEnginePolling()
-    }
-
-    private fun stopEnginePolling() {
-        enginePollRunnable?.let { mainHandler.removeCallbacks(it) }
-        enginePollRunnable = null
-    }
-
-    /** (Re-)starts engine status polling. Safe to call multiple times. */
-    private fun restartEnginePolling() {
-        stopEnginePolling()
-        if (!viewsBound || !isAdded || view == null) return
-        updateEngineStatusUI()
-        val ctx = context ?: return
-        val s = TtsBridge.readStatus(ctx)
-        if (!s.ready && s.error == null) {
-            enginePollRunnable = object : Runnable {
-                override fun run() {
-                    if (!isAdded || view == null) return
-                    updateEngineStatusUI()
-                    val c = context ?: return
-                    val st = TtsBridge.readStatus(c)
-                    if (!st.ready && st.error == null) {
-                        mainHandler.postDelayed(this, 1000)
-                    }
-                }
-            }
-            mainHandler.postDelayed(enginePollRunnable!!, 1000)
-        }
-    }
-
-    override fun onDestroyView() {
-        mainHandler.removeCallbacksAndMessages(null)
-        enginePollRunnable = null
-        PiperVoiceManager.downloadCallback = null
-        profileSpinner = null; txtPreview = null; btnTest = null; btnStop = null
-        btnSave = null; btnDelete = null; btnNew = null; btnResetSettings = null; btnRenameVoice = null
-        seekPitch = null; tvPitch = null; seekSpeed = null; tvSpeed = null
-        seekBreathInt = null; tvBreathInt = null; seekBreathCurve = null; tvBreathCurve = null
-        seekBreathPause = null; tvBreathPause = null; seekStutterInt = null; tvStutterInt = null
-        seekStutterPos = null; tvStutterPos = null; seekStutterFreq = null; tvStutterFreq = null
-        seekStutterPause = null; tvStutterPause = null; seekIntonInt = null; tvIntonInt = null
-        seekIntonVar = null; tvIntonVar = null; voiceGrid = null; presetsScroll = null
-        gimmicksContainer = null; genderRow = null; nationRow = null; tvEngineStatus = null
-        selectedVoiceBanner = null; tvSelectedVoiceIcon = null; tvSelectedVoiceName = null; tvSelectedVoiceDetail = null
-        viewsBound = false
-        super.onDestroyView()
-    }
+    override fun onDestroyView() { super.onDestroyView() }
 }

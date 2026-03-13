@@ -7,11 +7,7 @@ data class CommentaryCondition(
     val type: String = "always",
     val value: String = ""
 ) {
-    /** Match against signal only (backward-compatible) */
-    fun matches(signal: SignalMap): Boolean = matches(signal, null)
-
-    /** Match against signal and optional mood state */
-    fun matches(signal: SignalMap, mood: MoodState?): Boolean = when (type) {
+    fun matches(signal: SignalMap): Boolean = when (type) {
         "always"            -> true
         "source_game"       -> signal.isGame()
         "source_personal"   -> signal.sourceType == SourceType.PERSONAL
@@ -28,7 +24,6 @@ data class CommentaryCondition(
         "intent_greeting"   -> signal.has(Intent.GREETING)
         "intent_invite"     -> signal.has(Intent.INVITE)
         "intent_action"     -> signal.has(Intent.ACTION_REQUIRED)
-        "intent_reassurance"-> signal.has(Intent.REASSURANCE)
         "stakes_fake"       -> signal.stakesType == StakesType.FAKE
         "stakes_financial"  -> signal.stakesType == StakesType.FINANCIAL
         "stakes_emotional"  -> signal.stakesType == StakesType.EMOTIONAL
@@ -51,21 +46,6 @@ data class CommentaryCondition(
         "time_night"        -> signal.isNight()
         "time_morning"      -> signal.isMorning()
         "flooded"           -> signal.isFlooded()
-        "sarcasm_detected"  -> signal.detectedSarcasm
-        // ── Mood-based conditions (§1.0) ──────────────────────────────────
-        "mood_tired"        -> mood != null && mood.arousal < 0.2f
-        "mood_tense"        -> mood != null && mood.arousal > 0.7f && mood.valence < -0.3f
-        "mood_content"      -> mood != null && mood.valence > 0.5f && mood.stability > 0.7f
-        "mood_overwhelmed"  -> mood != null && mood.arousal > 0.8f && mood.valence < -0.5f
-        "mood_flat"         -> mood != null && mood.arousal < 0.3f && mood.stability > 0.8f
-        // ── Sender history conditions (§7.0) ──────────────────────────────
-        "sender_repeat_2"   -> signal.senderRepeat == 2
-        "sender_repeat_3"   -> signal.senderRepeat >= 3
-        "sender_rapid"      -> signal.senderRecency < 300_000L  // 2+ within 5 minutes
-        "sender_persistent" -> signal.senderPressure > 0.6f
-        // ── Flood tiers (§8.3) ────────────────────────────────────────────
-        "flood_busy"        -> signal.floodTier >= FloodTier.BUSY
-        "flood_overwhelmed" -> signal.floodTier >= FloodTier.OVERWHELMED
         else -> false
     }
 
@@ -86,7 +66,6 @@ data class CommentaryCondition(
         "intent_greeting"   -> "Greeting"
         "intent_invite"     -> "Invitation / going live"
         "intent_action"     -> "Action required"
-        "intent_reassurance"-> "Reassuring message"
         "stakes_fake"       -> "Fake stakes (game)"
         "stakes_financial"  -> "Real money involved"
         "stakes_emotional"  -> "Emotional stakes"
@@ -109,18 +88,6 @@ data class CommentaryCondition(
         "time_night"        -> "Night time"
         "time_morning"      -> "Morning"
         "flooded"           -> "Many notifications today"
-        "sarcasm_detected"  -> "Sarcasm detected"
-        "mood_tired"        -> "Mood: tired"
-        "mood_tense"        -> "Mood: tense"
-        "mood_content"      -> "Mood: content"
-        "mood_overwhelmed"  -> "Mood: overwhelmed"
-        "mood_flat"         -> "Mood: flat"
-        "sender_repeat_2"   -> "2nd message from sender"
-        "sender_repeat_3"   -> "3rd+ message from sender"
-        "sender_rapid"      -> "Rapid sender (< 5min)"
-        "sender_persistent" -> "Persistent sender"
-        "flood_busy"        -> "Flood: busy (16+)"
-        "flood_overwhelmed" -> "Flood: overwhelmed (51+)"
         else -> type
     }
 
@@ -136,18 +103,14 @@ data class CommentaryCondition(
             "source_game", "source_personal", "source_financial", "source_service",
             "source_platform", "source_system", "sender_human", "sender_unknown",
             "intent_request", "intent_plea", "intent_denial", "intent_alert",
-            "intent_greeting", "intent_invite", "intent_action", "intent_reassurance",
+            "intent_greeting", "intent_invite", "intent_action",
             "stakes_fake", "stakes_financial", "stakes_emotional", "stakes_high", "stakes_low",
             "urgency_none", "urgency_real", "urgency_expiring",
             "warmth_high", "warmth_distressed",
             "emoji_sad", "emoji_happy", "emoji_angry", "emoji_love",
             "intensity_low", "intensity_high",
             "traj_building", "traj_peaked", "traj_collapsed",
-            "time_night", "time_morning", "flooded",
-            "sarcasm_detected",
-            "mood_tired", "mood_tense", "mood_content", "mood_overwhelmed", "mood_flat",
-            "sender_repeat_2", "sender_repeat_3", "sender_rapid", "sender_persistent",
-            "flood_busy", "flood_overwhelmed"
+            "time_night", "time_morning", "flooded"
         )
     }
 }
@@ -172,7 +135,7 @@ data class CommentaryPool(
             position  = j.optString("position", "pre"),
             condition = CommentaryCondition.fromJson(j.optJSONObject("condition") ?: JSONObject()),
             lines     = j.optJSONArray("lines")?.let { arr ->
-                (0 until arr.length()).mapNotNull { arr.optString(it, null) }
+                (0 until arr.length()).map { arr.getString(it) }
             } ?: emptyList(),
             frequency = j.optInt("frequency", 40)
         )

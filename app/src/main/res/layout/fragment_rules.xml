@@ -1,20 +1,143 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:background="@color/bg" android:padding="20dp">
-    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="WORD RULES" android:textSize="20sp" android:textStyle="bold"
-        android:textColor="@color/green" android:fontFamily="monospace" android:layout_marginBottom="6dp"/>
-    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Replace words/phrases before they are spoken."
-        android:textSize="12sp" android:textColor="@color/text_secondary" android:fontFamily="monospace"
-        android:layout_marginBottom="12dp"/>
-    <Button android:id="@+id/btn_add_rule" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="+ ADD RULE"
-        android:backgroundTint="#1a2a1a" android:textColor="@color/green"
-        android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
-    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-        <LinearLayout android:id="@+id/rules_container" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical"/>
-    </ScrollView>
-</LinearLayout>
+    android:background="#0d0d0d">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp">
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="RULES" android:textSize="20sp" android:textStyle="bold"
+            android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
+
+        <!-- Collapsible: Word Rules -->
+        <TextView android:id="@+id/label_word_rules" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // WORD RULES" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_word_rules" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="14dp" android:visibility="gone">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Replace words/phrases before they are spoken."
+                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:layout_marginBottom="10dp"/>
+            <Button android:id="@+id/btn_add_rule" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="+ ADD RULE"
+                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+                android:fontFamily="monospace" android:layout_marginBottom="10dp"/>
+            <LinearLayout android:id="@+id/rules_container" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical"/>
+        </LinearLayout>
+
+        <!-- Collapsible: Notification Rules -->
+        <TextView android:id="@+id/label_notif_rules" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // NOTIFICATION RULES" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_notif_rules" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="14dp" android:visibility="gone">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Control how notifications are read."
+                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- Read only once -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Read only once per notification"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_once"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- Skip swiped -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Skip swiped notifications"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_skip_swiped"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- Read ongoing -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Read ongoing notifications"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_ongoing"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- Cooldown -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="8dp" android:layout_marginBottom="4dp">
+                <TextView android:id="@+id/txt_cooldown" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Cooldown per app: 3s"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"
+                    android:layout_marginBottom="6dp"/>
+                <SeekBar android:id="@+id/seek_cooldown" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:max="30"
+                    android:progressTint="#00ff88" android:thumbTint="#00ff88"/>
+            </LinearLayout>
+
+            <!-- Max queue size -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="8dp">
+                <TextView android:id="@+id/txt_max_queue" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Max queue size: 10"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"
+                    android:layout_marginBottom="6dp"/>
+                <SeekBar android:id="@+id/seek_max_queue" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:max="50"
+                    android:progressTint="#00ff88" android:thumbTint="#00ff88"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Collapsible: Language Profiles -->
+        <TextView android:id="@+id/label_lang_profiles" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // LANGUAGE PROFILES" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_lang_profiles" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="14dp" android:visibility="gone">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Route notifications to different voice profiles by detected language. When enabled, the app auto-detects language and uses the mapped profile."
+                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- Enable toggle -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="10dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Enable language routing"
+                    android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_lang_routing"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- English profile -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="🇺🇸🇬🇧  English → Profile:"
+                android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
+                android:layout_marginBottom="4dp"/>
+            <Spinner android:id="@+id/spinner_lang_en" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp" android:layout_marginBottom="12dp"/>
+
+            <!-- French profile -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="🇫🇷  French → Profile:"
+                android:textColor="#aaaaaa" android:textSize="13sp" android:fontFamily="monospace"
+                android:layout_marginBottom="4dp"/>
+            <Spinner android:id="@+id/spinner_lang_fr" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:background="#1a1a1a"
+                android:padding="8dp"/>
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

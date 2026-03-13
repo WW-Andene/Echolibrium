@@ -155,12 +155,7 @@ class ProfilesFragment : Fragment() {
             { startKokoroDownload() }
         } else null
         voiceGrid.addView(buildSectionHeader("KOKORO", "Multi-voice model  ·  11 speakers", 0xFF00ff88.toInt(), kokoroDownloadIcon))
-
-        if (!VoiceDownloadManager.isModelReady(ctx)) {
-            voiceGrid.addView(buildDownloadBanner())
-        } else {
-            renderKokoroVoices()
-        }
+        renderKokoroVoices()
 
         // ── Spacing ─────────────────────────────────────────────────────────
         voiceGrid.addView(android.view.View(ctx).apply {
@@ -224,6 +219,9 @@ class ProfilesFragment : Fragment() {
 
     private fun renderKokoroVoices() {
         val ctx = requireContext()
+        val modelReady = VoiceDownloadManager.isModelReady(ctx)
+        val modelState = VoiceDownloadManager.state
+
         val filtered = KokoroVoices.ALL.filter { v ->
             val gOk = genderFilter == "All" || v.gender == genderFilter
             val lOk = languageFilter == "All" || v.language == languageFilter
@@ -237,16 +235,65 @@ class ProfilesFragment : Fragment() {
 
         filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
             voiceGrid.addView(langHeader(lang, voices.size, 0xFF446644.toInt()))
-            addVoiceRows(voices.map { v ->
-                buildVoiceCard(
-                    name = v.displayName, icon = v.genderIcon, iconColor = v.genderColor,
-                    badge = "${v.flagEmoji} ${v.nationality}", voiceId = v.id,
-                    active = currentProfile.voiceName == v.id,
-                    accent = 0xFF00ff88.toInt(), enabled = true,
-                    onClick = { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-                )
-            })
+            addVoiceRows(voices.map { v -> buildKokoroCard(v, modelReady, modelState) })
         }
+    }
+
+    private fun buildKokoroCard(v: KokoroVoice, modelReady: Boolean, modelState: VoiceDownloadManager.State): android.view.View {
+        val ctx = requireContext()
+        val active = currentProfile.voiceName == v.id
+
+        val statusText: String
+        val statusColor: Int
+        val statusClickable: Boolean
+
+        if (modelReady) {
+            statusText = "ready"
+            statusColor = 0xFF446644.toInt()
+            statusClickable = false
+        } else when (modelState) {
+            VoiceDownloadManager.State.DOWNLOADING -> {
+                val pct = VoiceDownloadManager.progressPercent
+                statusText = if (pct < 0) "extracting..." else "$pct%"
+                statusColor = 0xFFffcc00.toInt()
+                statusClickable = false
+            }
+            VoiceDownloadManager.State.ERROR -> {
+                statusText = "retry"
+                statusColor = 0xFFff4444.toInt()
+                statusClickable = true
+            }
+            else -> {
+                statusText = "~${VoiceDownloadManager.MODEL_SIZE_MB}MB"
+                statusColor = 0xFF00ff88.toInt()
+                statusClickable = true
+            }
+        }
+
+        val card = buildVoiceCard(
+            name = v.displayName, icon = v.genderIcon,
+            iconColor = if (modelReady) v.genderColor else 0xFF444444.toInt(),
+            badge = "${v.flagEmoji} ${v.nationality}", voiceId = v.id,
+            active = active, accent = 0xFF00ff88.toInt(), enabled = modelReady,
+            onClick = if (modelReady) {
+                { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+            } else null
+        )
+
+        // Add status / download indicator
+        val statusView = TextView(ctx).apply {
+            tag = "kokoro_status_${v.id}"
+            text = if (!modelReady && modelState != VoiceDownloadManager.State.DOWNLOADING
+                && modelState != VoiceDownloadManager.State.ERROR) "⬇ $statusText" else statusText
+            textSize = 10f; gravity = android.view.Gravity.CENTER
+            setTextColor(statusColor)
+            setPadding(0, 4, 0, 0)
+            if (statusClickable) {
+                setOnClickListener { startKokoroDownload() }
+            }
+        }
+        (card as LinearLayout).addView(statusView)
+        return card
     }
 
     private fun renderPiperVoices() {

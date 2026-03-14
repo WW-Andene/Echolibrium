@@ -86,15 +86,13 @@ class ProfilesFragment : Fragment() {
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
-        val genders = VoiceRegistry.genders()
-        genders.forEach { g ->
+        VoiceRegistry.genders().forEach { g ->
             genderRow.addView(filterBtn(g, genderFilter == g) {
                 genderFilter = g; buildFilterButtons(); renderVoiceGrid()
             })
         }
 
-        val languages = VoiceRegistry.languages()
-        languages.forEach { l ->
+        VoiceRegistry.languages().forEach { l ->
             nationRow.addView(filterBtn(l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
             })
@@ -119,136 +117,176 @@ class ProfilesFragment : Fragment() {
         voiceGrid.removeAllViews()
         val ctx = requireContext()
 
-        // ── Cloud voices (Orpheus) — primary ──────────────────────────────
+        // ── Orpheus ──────────────────────────────────────────────────────
         val cloudEnabled = CloudTtsEngine.isEnabled()
-        val cloudSubtitle = if (cloudEnabled)
-            "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices"
+        val orpheusSubtitle = if (cloudEnabled)
+            "Cloud  ·  DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices"
         else
-            "Requires API key — set in Settings"
-        voiceGrid.addView(buildSectionHeader("ORPHEUS (CLOUD)", cloudSubtitle, 0xFFffaa44.toInt()))
-        renderCloudVoices()
+            "Cloud  ·  Requires API key — set in Settings"
+        voiceGrid.addView(buildSectionHeader("ORPHEUS", orpheusSubtitle, 0xFFffaa44.toInt()))
 
-        // ── Kokoro voices (offline) ──────────────────────────────────────
+        val cloudFiltered = VoiceRegistry.CLOUD_VOICES.filter { v ->
+            (genderFilter == "All" || v.gender == genderFilter) &&
+            (languageFilter == "All" || v.language == languageFilter)
+        }
+        if (cloudFiltered.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No voices match filter."))
+        } else {
+            addVoiceRows(cloudFiltered.map { v ->
+                buildVoiceCard(
+                    name = v.displayName,
+                    icon = if (v.gender == "Female") "♀" else "♂",
+                    iconColor = if (cloudEnabled) {
+                        if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
+                    } else 0xFF444444.toInt(),
+                    status = if (cloudEnabled) "cloud" else "no API key",
+                    statusColor = if (cloudEnabled) 0xFF886633.toInt() else 0xFFff4444.toInt(),
+                    voiceId = v.id,
+                    active = currentProfile.voiceName == v.id,
+                    accent = 0xFFffaa44.toInt(),
+                    enabled = cloudEnabled,
+                    onClick = if (cloudEnabled) {
+                        { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+                    } else null
+                )
+            })
+        }
+
+        // ── Kokoro ───────────────────────────────────────────────────────
         val kokoroReady = VoiceDownloadManager.isModelReady(ctx)
-        val kokoroSubtitle = if (kokoroReady) "Offline  ·  Model ready" else "Offline  ·  Model not downloaded"
-        val kokoroDownloadAction: (() -> Unit)? = if (!kokoroReady
-            && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
+        val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
+        val kokoroCount = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).size
+        val kokoroSubtitle = when {
+            kokoroReady -> "Offline  ·  $kokoroCount voices  ·  Ready"
+            kokoroDownloading -> "Offline  ·  $kokoroCount voices  ·  Downloading..."
+            else -> "Offline  ·  $kokoroCount voices  ·  ~${VoiceDownloadManager.MODEL_SIZE_MB}MB shared model"
+        }
+        val kokoroDownloadAll: (() -> Unit)? = if (!kokoroReady && !kokoroDownloading) {
             { startKokoroDownload() }
         } else null
-        voiceGrid.addView(buildSectionHeader("KOKORO (OFFLINE)", kokoroSubtitle, 0xFF00ccff.toInt(), kokoroDownloadAction))
-        if (!kokoroReady) {
-            voiceGrid.addView(TextView(ctx).apply {
-                text = "Download the offline model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) so speech works without internet."
-                textSize = 11f; setTextColor(0xFF666666.toInt())
-                setPadding(14, 4, 14, 8)
-            })
+        voiceGrid.addView(buildSectionHeader("KOKORO", kokoroSubtitle, 0xFF00ccff.toInt(), kokoroDownloadAll))
+
+        val kokoroFiltered = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).filter { v ->
+            (genderFilter == "All" || v.gender == genderFilter) &&
+            (languageFilter == "All" || v.language == languageFilter)
+        }
+        if (kokoroFiltered.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No voices match filter."))
         } else {
-            renderKokoroVoices()
+            addVoiceRows(kokoroFiltered.map { v ->
+                val status: String
+                val statusColor: Int
+                when {
+                    kokoroReady -> {
+                        status = "ready"
+                        statusColor = 0xFF00cc66.toInt()
+                    }
+                    kokoroDownloading -> {
+                        val pct = VoiceDownloadManager.progressPercent
+                        status = if (pct < 0) "extracting..." else "$pct%"
+                        statusColor = 0xFF00ccff.toInt()
+                    }
+                    else -> {
+                        status = "tap to download"
+                        statusColor = 0xFF666666.toInt()
+                    }
+                }
+                buildVoiceCard(
+                    name = v.displayName,
+                    icon = if (v.gender == "Female") "♀" else "♂",
+                    iconColor = if (kokoroReady) {
+                        if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
+                    } else 0xFF444444.toInt(),
+                    status = status,
+                    statusColor = statusColor,
+                    voiceId = v.id,
+                    active = currentProfile.voiceName == v.id,
+                    accent = 0xFF00ccff.toInt(),
+                    enabled = kokoroReady,
+                    onClick = when {
+                        kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                        !kokoroDownloading -> {{ startKokoroDownload() }}
+                        else -> null
+                    }
+                )
+            })
         }
 
-        // ── Piper voices (offline) ──────────────────────────────────────
-        voiceGrid.addView(buildSectionHeader("PIPER (OFFLINE)", "Offline  ·  Per-voice download", 0xFF88ccff.toInt()))
-        renderPiperVoices()
-    }
+        // ── Piper ────────────────────────────────────────────────────────
+        val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
+        val piperReadyCount = piperEntries.count { VoiceRegistry.isReady(ctx, it.id) }
+        val piperSubtitle = "Offline  ·  $piperReadyCount/${piperEntries.size} voices downloaded  ·  Per-voice download"
+        val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !PiperDownloadManager.isDownloading(it.id) }
+        val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
+            { downloadAllPiper() }
+        } else null
+        voiceGrid.addView(buildSectionHeader("PIPER", piperSubtitle, 0xFF88ccff.toInt(), piperDownloadAll))
 
-    private fun renderCloudVoices() {
-        val cloudEnabled = CloudTtsEngine.isEnabled()
-        val filtered = VoiceRegistry.CLOUD_VOICES.filter { v ->
-            val gOk = genderFilter == "All" || v.gender == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
+        val piperFiltered = piperEntries.filter { v ->
+            (genderFilter == "All" || v.gender == genderFilter) &&
+            (languageFilter == "All" || v.language == languageFilter)
         }
-        if (filtered.isEmpty()) {
+        if (piperFiltered.isEmpty()) {
             voiceGrid.addView(emptyLabel("No voices match filter."))
-            return
+        } else {
+            addVoiceRows(piperFiltered.map { v ->
+                val ready = VoiceRegistry.isReady(ctx, v.id)
+                val downloading = PiperDownloadManager.isDownloading(v.id)
+                val status: String
+                val statusColor: Int
+                when {
+                    ready -> {
+                        status = "ready"
+                        statusColor = 0xFF00cc66.toInt()
+                    }
+                    downloading -> {
+                        val pct = PiperDownloadManager.getProgress(v.id)
+                        status = if (pct < 0) "extracting..." else "$pct%"
+                        statusColor = 0xFF88ccff.toInt()
+                    }
+                    else -> {
+                        status = "tap to download"
+                        statusColor = 0xFF666666.toInt()
+                    }
+                }
+                buildVoiceCard(
+                    name = v.displayName,
+                    icon = if (v.gender == "Female") "♀" else if (v.gender == "Male") "♂" else "◆",
+                    iconColor = if (ready) {
+                        when (v.gender) {
+                            "Female" -> 0xFFff88cc.toInt()
+                            "Male" -> 0xFF88ccff.toInt()
+                            else -> 0xFFaaaaaa.toInt()
+                        }
+                    } else 0xFF444444.toInt(),
+                    status = status,
+                    statusColor = statusColor,
+                    voiceId = v.id,
+                    active = currentProfile.voiceName == v.id,
+                    accent = 0xFF88ccff.toInt(),
+                    enabled = ready,
+                    onClick = when {
+                        ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                        !downloading -> {{ startPiperDownload(v.id) }}
+                        else -> null
+                    }
+                )
+            })
         }
-        addVoiceRows(filtered.map { v ->
-            val active = currentProfile.voiceName == v.id
-            buildVoiceCard(
-                name = v.displayName,
-                icon = if (v.gender == "Female") "♀" else "♂",
-                iconColor = if (cloudEnabled) {
-                    if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
-                } else 0xFF444444.toInt(),
-                badge = "☁ Orpheus",
-                voiceId = v.id, active = active, accent = 0xFFffaa44.toInt(),
-                enabled = cloudEnabled,
-                onClick = if (cloudEnabled) {
-                    { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-                } else null
-            )
-        })
     }
 
-    private fun renderKokoroVoices() {
-        val entries = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).filter { v ->
-            val gOk = genderFilter == "All" || v.gender == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-        if (entries.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No voices match filter."))
-            return
-        }
-        addVoiceRows(entries.map { v ->
-            val active = currentProfile.voiceName == v.id
-            buildVoiceCard(
-                name = v.displayName,
-                icon = if (v.gender == "Female") "♀" else "♂",
-                iconColor = if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt(),
-                badge = "🔇 Kokoro",
-                voiceId = v.id, active = active, accent = 0xFF00ccff.toInt(),
-                enabled = true,
-                onClick = { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-            )
-        })
-    }
-
-    private fun renderPiperVoices() {
-        val entries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER).filter { v ->
-            val gOk = genderFilter == "All" || v.gender == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-        if (entries.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No voices match filter."))
-            return
-        }
-        val ctx = requireContext()
-        addVoiceRows(entries.map { v ->
-            val active = currentProfile.voiceName == v.id
-            val ready = VoiceRegistry.isReady(ctx, v.id)
-            val downloading = PiperDownloadManager.isDownloading(v.id)
-            val badge = when {
-                ready -> "🔇 Piper"
-                downloading -> "⬇ ..."
-                else -> "⬇ tap"
-            }
-            buildVoiceCard(
-                name = v.displayName,
-                icon = if (v.gender == "Female") "♀" else "♂",
-                iconColor = if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt(),
-                badge = badge,
-                voiceId = v.id, active = active, accent = 0xFF88ccff.toInt(),
-                enabled = ready,
-                onClick = if (ready) {
-                    { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-                } else if (!downloading) {
-                    { startPiperDownload(v.id) }
-                } else null
-            )
-        })
-    }
+    // ── Shared UI builders ─────────────────────────────────────────────────
 
     private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
         val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lp.setMargins(0, 14, 0, 10); layoutParams = lp
+            lp.setMargins(0, (14 * dp).toInt(), 0, (10 * dp).toInt()); layoutParams = lp
         }
 
         val titleRow = LinearLayout(ctx).apply {
@@ -257,7 +295,7 @@ class ProfilesFragment : Fragment() {
         }
         titleRow.addView(android.view.View(ctx).apply {
             setBackgroundColor(accent)
-            layoutParams = LinearLayout.LayoutParams(4, 36).also { it.setMargins(0, 0, 10, 0) }
+            layoutParams = LinearLayout.LayoutParams(4, (36 * dp).toInt()).also { it.setMargins(0, 0, (10 * dp).toInt(), 0) }
         })
         titleRow.addView(TextView(ctx).apply {
             text = title; textSize = 14f; setTextColor(accent)
@@ -265,9 +303,11 @@ class ProfilesFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         if (onDownloadAll != null) {
-            titleRow.addView(TextView(ctx).apply {
-                text = "⬇"; textSize = 18f; setTextColor(accent)
-                setPadding(16, 0, 8, 0)
+            titleRow.addView(Button(ctx).apply {
+                text = "⬇ ALL"; textSize = 10f; setTextColor(accent)
+                setBackgroundColor(0xFF111111.toInt())
+                setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
+                minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
                 setOnClickListener { onDownloadAll() }
             })
         }
@@ -275,15 +315,17 @@ class ProfilesFragment : Fragment() {
 
         container.addView(TextView(ctx).apply {
             text = subtitle; textSize = 10f; setTextColor(0xFF555555.toInt())
-            setPadding(14, 2, 0, 0)
+            setPadding((14 * dp).toInt(), (2 * dp).toInt(), 0, 0)
         })
 
         return container
     }
 
     private fun buildVoiceCard(
-        name: String, icon: String, iconColor: Int, badge: String, voiceId: String,
-        active: Boolean, accent: Int, enabled: Boolean, onClick: (() -> Unit)?
+        name: String, icon: String, iconColor: Int,
+        status: String, statusColor: Int,
+        voiceId: String, active: Boolean, accent: Int,
+        enabled: Boolean, onClick: (() -> Unit)?
     ): android.view.View {
         val ctx = requireContext()
         val dp = ctx.resources.displayMetrics.density
@@ -291,7 +333,7 @@ class ProfilesFragment : Fragment() {
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setPadding((10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt())
+            setPadding((10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt(), (10 * dp).toInt())
             val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             lp.setMargins((2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt())
             layoutParams = lp
@@ -309,25 +351,29 @@ class ProfilesFragment : Fragment() {
 
             if (onClick != null) setOnClickListener { onClick() }
 
+            // Gender icon
             addView(TextView(ctx).apply {
                 text = icon; textSize = 22f; gravity = android.view.Gravity.CENTER
                 setTextColor(iconColor)
             })
+
+            // Voice name
             addView(TextView(ctx).apply {
                 text = name; textSize = 13f; gravity = android.view.Gravity.CENTER
                 setTextColor(when {
                     active  -> accent
                     enabled -> 0xFFdddddd.toInt()
-                    else    -> 0xFF666666.toInt()
+                    else    -> 0xFF888888.toInt()
                 })
                 typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD
                            else android.graphics.Typeface.DEFAULT
                 setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
             })
+
+            // Status line (ready / 42% / tap to download / cloud / no API key)
             addView(TextView(ctx).apply {
-                text = badge; textSize = 9f; gravity = android.view.Gravity.CENTER
-                setTextColor(if (active) accent.and(0x00FFFFFF).or(0x99000000.toInt())
-                             else 0xFF555555.toInt())
+                text = status; textSize = 10f; gravity = android.view.Gravity.CENTER
+                setTextColor(statusColor)
             })
         }
     }
@@ -360,18 +406,18 @@ class ProfilesFragment : Fragment() {
         }
     }
 
+    // ── Downloads ───────────────────────────────────────────────────────────
+
     private fun startKokoroDownload() {
         val ctx = requireContext()
         VoiceDownloadManager.onProgress { pct ->
             activity?.runOnUiThread {
-                if (!isAdded) return@runOnUiThread
-                updateDownloadProgress(pct)
+                if (isAdded) renderVoiceGrid()
             }
         }
         VoiceDownloadManager.onStateChange { _ ->
             activity?.runOnUiThread {
-                if (!isAdded) return@runOnUiThread
-                buildFilterButtons(); renderVoiceGrid()
+                if (isAdded) renderVoiceGrid()
             }
         }
         VoiceDownloadManager.downloadModel(ctx)
@@ -386,9 +432,9 @@ class ProfilesFragment : Fragment() {
                 if (isAdded) renderVoiceGrid()
             }
         }
-        PiperDownloadManager.onProgress = { id, pct ->
+        PiperDownloadManager.onProgress = { _, _ ->
             activity?.runOnUiThread {
-                if (!isAdded) return@runOnUiThread
+                if (isAdded) renderVoiceGrid()
             }
         }
         PiperDownloadManager.downloadVoice(ctx, voiceId)
@@ -396,12 +442,26 @@ class ProfilesFragment : Fragment() {
         startDownloadRefresh()
     }
 
-    private fun updateDownloadProgress(pct: Int) {
-        val statusView = voiceGrid.findViewWithTag<TextView>("download_status") ?: return
-        val barView = voiceGrid.findViewWithTag<android.widget.ProgressBar>("download_bar") ?: return
-        statusView.text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
-        barView.isIndeterminate = pct < 0
-        if (pct >= 0) barView.progress = pct
+    private fun downloadAllPiper() {
+        val ctx = requireContext()
+        PiperDownloadManager.onStateChange = { _, _ ->
+            activity?.runOnUiThread {
+                if (isAdded) renderVoiceGrid()
+            }
+        }
+        PiperDownloadManager.onProgress = { _, _ ->
+            activity?.runOnUiThread {
+                if (isAdded) renderVoiceGrid()
+            }
+        }
+        val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
+        piperEntries.forEach { v ->
+            if (!VoiceRegistry.isReady(ctx, v.id) && !PiperDownloadManager.isDownloading(v.id)) {
+                PiperDownloadManager.downloadVoice(ctx, v.id)
+            }
+        }
+        renderVoiceGrid()
+        startDownloadRefresh()
     }
 
     // ── Profile grid (cards) ───────────────────────────────────────────────
@@ -641,7 +701,7 @@ class ProfilesFragment : Fragment() {
                 val piperDownloading = PiperDownloadManager.isAnyDownloading()
                 if (kokoroDownloading || piperDownloading) {
                     renderVoiceGrid()
-                    refreshHandler.postDelayed(this, 2000)
+                    refreshHandler.postDelayed(this, 1000)
                 } else {
                     renderVoiceGrid()
                 }
@@ -650,7 +710,7 @@ class ProfilesFragment : Fragment() {
         val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
         val piperDownloading = PiperDownloadManager.isAnyDownloading()
         if (kokoroDownloading || piperDownloading) {
-            refreshHandler.postDelayed(refreshRunnable!!, 2000)
+            refreshHandler.postDelayed(refreshRunnable!!, 1000)
         }
     }
 

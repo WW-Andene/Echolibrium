@@ -139,14 +139,24 @@ object PiperVoices {
     fun bundleUrl(voiceId: String): String =
         "$RELEASE_BASE/vits-piper-$voiceId.tar.bz2"
 
-    /** Download URL for a raw .onnx model file */
-    fun onnxUrl(voiceId: String): String =
-        "$RELEASE_BASE/$voiceId.onnx"
+    /**
+     * Download URL for a raw .onnx model from rhasspy/piper on HuggingFace.
+     * Pattern: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{locale}/{locale}-{name}-{quality}.onnx
+     */
+    fun onnxUrl(voice: PiperVoice): String {
+        val base = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+        return "$base/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx"
+    }
 
-    /** Download URL for shared tokens file */
-    fun tokensUrl(): String = "$RELEASE_BASE/piper-tokens.txt"
+    /**
+     * Download URL for the voice's own .onnx.json config (contains tokens, phoneme map, etc.)
+     */
+    fun onnxJsonUrl(voice: PiperVoice): String {
+        val base = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+        return "$base/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx.json"
+    }
 
-    /** Download URL for shared espeak-ng-data archive */
+    /** Download URL for shared espeak-ng-data archive from our release */
     fun espeakDataUrl(): String = "$RELEASE_BASE/espeak-ng-data.tar.bz2"
 
     /** The directory name inside the tar.bz2 archive */

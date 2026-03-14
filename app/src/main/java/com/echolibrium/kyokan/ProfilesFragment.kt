@@ -1,6 +1,7 @@
 package com.echolibrium.kyokan
 
 import android.os.Bundle
+import android.text.InputType
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -122,8 +123,9 @@ class ProfilesFragment : Fragment() {
         val orpheusSubtitle = if (cloudEnabled)
             "Cloud  ·  DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices"
         else
-            "Cloud  ·  Requires API key — set in Settings"
-        voiceGrid.addView(buildSectionHeader("ORPHEUS", orpheusSubtitle, 0xFFffaa44.toInt()))
+            "Cloud  ·  Tap 🔑 to enter API key"
+        val cloudKeyAction: (() -> Unit) = { showDeepInfraKeyDialog() }
+        voiceGrid.addView(buildSectionHeader("ORPHEUS", orpheusSubtitle, 0xFFffaa44.toInt(), cloudKeyAction, "🔑"))
 
         val cloudFiltered = VoiceRegistry.CLOUD_VOICES.filter { v ->
             (genderFilter == "All" || v.gender == genderFilter) &&
@@ -147,7 +149,9 @@ class ProfilesFragment : Fragment() {
                     enabled = cloudEnabled,
                     onClick = if (cloudEnabled) {
                         { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-                    } else null
+                    } else {
+                        { showDeepInfraKeyDialog() }
+                    }
                 )
             })
         }
@@ -277,7 +281,7 @@ class ProfilesFragment : Fragment() {
 
     // ── Shared UI builders ─────────────────────────────────────────────────
 
-    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
+    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null, downloadIcon: String = "⬇ ALL"): android.view.View {
         val ctx = requireContext()
         val dp = ctx.resources.displayMetrics.density
         val container = LinearLayout(ctx).apply {
@@ -304,7 +308,7 @@ class ProfilesFragment : Fragment() {
         })
         if (onDownloadAll != null) {
             titleRow.addView(Button(ctx).apply {
-                text = "⬇ ALL"; textSize = 10f; setTextColor(accent)
+                text = downloadIcon; textSize = 10f; setTextColor(accent)
                 setBackgroundColor(0xFF111111.toInt())
                 setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
                 minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
@@ -404,6 +408,36 @@ class ProfilesFragment : Fragment() {
             text = msg; setTextColor(0xFF446644.toInt()); textSize = 12f
             setPadding(6, 8, 0, 8)
         }
+    }
+
+    // ── API key dialog ─────────────────────────────────────────────────────
+
+    private fun showDeepInfraKeyDialog() {
+        val ctx = requireContext()
+        val currentKey = try { SecureKeyStore.getDeepInfraKey(ctx) } catch (_: Exception) { null }
+
+        val input = EditText(ctx).apply {
+            hint = "DeepInfra API key"
+            setText(currentKey ?: "")
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(48, 32, 48, 32)
+            setTextColor(0xFFdddddd.toInt())
+            setHintTextColor(0xFF666666.toInt())
+            setBackgroundColor(0xFF1a1a1a.toInt())
+        }
+
+        AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
+            .setTitle("DeepInfra API Key")
+            .setMessage("Enter your DeepInfra API key to enable cloud voices (Orpheus).")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val key = input.text.toString().trim()
+                SecureKeyStore.setDeepInfraKey(ctx, key)
+                CloudTtsEngine.updateApiKey(key)
+                renderVoiceGrid()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ── Downloads ───────────────────────────────────────────────────────────
@@ -615,8 +649,21 @@ class ProfilesFragment : Fragment() {
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
             val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
-            NotificationReaderService.instance?.testSpeak(text, p)
-                ?: Toast.makeText(context, "Service not running — grant permission first.", Toast.LENGTH_SHORT).show()
+            val ctx = requireContext()
+
+            // Use the service if running, otherwise start AudioPipeline directly
+            val service = NotificationReaderService.instance
+            if (service != null) {
+                service.testSpeak(text, p)
+            } else {
+                AudioPipeline.start(ctx)
+                AudioPipeline.enqueue(AudioPipeline.Item(
+                    text = text,
+                    voiceId = p.voiceName,
+                    pitch = p.pitch,
+                    speed = p.speed
+                ))
+            }
         }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()

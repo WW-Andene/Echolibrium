@@ -95,54 +95,62 @@ object CloudTtsEngine {
         // Use proxy if available, otherwise hit DeepInfra directly
         val url = proxy ?: DIRECT_URL
 
-        for (attempt in 0..MAX_RETRIES) {
-            val requestBuilder = Request.Builder()
-                .url(url)
-                .addHeader("Content-Type", "application/json")
-                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+        // Try proxy first, then fall back to direct API with user's key
+        val urlsToTry = mutableListOf<Pair<String, Boolean>>()
+        if (proxy != null) urlsToTry.add(Pair(proxy, false))  // proxy: no auth header
+        if (!key.isNullOrBlank()) urlsToTry.add(Pair(DIRECT_URL, true))  // direct: with auth
 
-            // Only add Authorization when hitting DeepInfra directly (proxy handles its own key)
-            if (proxy == null && !key.isNullOrBlank()) {
-                requestBuilder.addHeader("Authorization", "Bearer $key")
-            }
+        for ((targetUrl, useAuth) in urlsToTry) {
+            for (attempt in 0..MAX_RETRIES) {
+                val requestBuilder = Request.Builder()
+                    .url(targetUrl)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody("application/json".toMediaType()))
 
-            val request = requestBuilder.build()
+                if (useAuth) {
+                    requestBuilder.addHeader("Authorization", "Bearer $key")
+                }
 
-            val start = System.nanoTime()
+                val request = requestBuilder.build()
+                val start = System.nanoTime()
 
-            try {
-                client.newCall(request).execute().use { response ->
-                    val elapsedMs = (System.nanoTime() - start) / 1_000_000
-                    if (!response.isSuccessful) {
-                        val body = response.body?.string()?.take(200) ?: "no body"
-                        Log.e(TAG, "HTTP ${response.code}: $body (${elapsedMs}ms)")
-                        // Retry on 5xx server errors
-                        if (response.code in 500..599 && attempt < MAX_RETRIES) {
-                            Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
-                            Thread.sleep(RETRY_DELAY_MS)
+                try {
+                    client.newCall(request).execute().use { response ->
+                        val elapsedMs = (System.nanoTime() - start) / 1_000_000
+                        if (!response.isSuccessful) {
+                            val body = response.body?.string()?.take(200) ?: "no body"
+                            Log.e(TAG, "HTTP ${response.code} from $targetUrl: $body (${elapsedMs}ms)")
+                            if (response.code in 500..599 && attempt < MAX_RETRIES) {
+                                Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
+                                Thread.sleep(RETRY_DELAY_MS)
+                                return@use
+                            }
+                            // Non-retryable error — try next URL
                             return@use
                         }
-                        return null
-                    }
 
-                    val audioBytes = response.body?.bytes() ?: return null
-                    val pcm = pcmBytesToFloat(audioBytes)
-                    Log.d(TAG, "${text.length} chars → ${pcm.size} samples, ${elapsedMs}ms")
-                    return Pair(pcm, SAMPLE_RATE)
+                        val audioBytes = response.body?.bytes() ?: return@use
+                        val pcm = pcmBytesToFloat(audioBytes)
+                        Log.d(TAG, "${text.length} chars → ${pcm.size} samples, ${elapsedMs}ms")
+                        return Pair(pcm, SAMPLE_RATE)
+                    }
+                } catch (e: IOException) {
+                    Log.e(TAG, "Network error from $targetUrl: ${e.message}")
+                    if (attempt < MAX_RETRIES) {
+                        Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
+                        try { Thread.sleep(RETRY_DELAY_MS) } catch (_: InterruptedException) { return null }
+                        continue
+                    }
+                    // Exhausted retries for this URL — try next
+                    break
+                } catch (e: Exception) {
+                    Log.e(TAG, "Synthesis failed from $targetUrl", e)
+                    break
                 }
-            } catch (e: IOException) {
-                Log.e(TAG, "Network error: ${e.message}")
-                if (attempt < MAX_RETRIES) {
-                    Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
-                    try { Thread.sleep(RETRY_DELAY_MS) } catch (_: InterruptedException) { return null }
-                    continue
-                }
-                return null
-            } catch (e: Exception) {
-                Log.e(TAG, "Synthesis failed", e)
-                return null
             }
+            Log.w(TAG, "Failed with $targetUrl, trying next endpoint")
         }
+        Log.e(TAG, "All endpoints exhausted")
         return null
     }
 

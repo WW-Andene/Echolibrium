@@ -204,7 +204,8 @@ class NotificationReaderService : NotificationListenerService() {
                 signal     = signal,
                 rules      = loadWordingRules(),
                 priority   = signal.urgencyType == UrgencyType.EXPIRING,
-                translated = wasTranslated
+                translated = wasTranslated,
+                language   = effectiveLang
             ), maxQueue)
         }
     }

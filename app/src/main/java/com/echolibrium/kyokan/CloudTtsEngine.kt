@@ -80,13 +80,26 @@ object CloudTtsEngine {
      *   4. Chatterbox tags in text? → Chatterbox
      *   5. Default → Chatterbox Turbo (best cost/quality for notifications)
      */
+    // Qwen3 supported languages (ISO 639-1 codes)
+    private val QWEN3_LANGS = setOf("en", "zh", "ja", "ko", "de", "fr", "ru", "pt", "es", "it")
+    // Chatterbox multilingual: 23 languages — broader coverage
+    // Orpheus: English only
+
     fun selectEngine(
         text: String,
         priority: Boolean = false,
-        voiceInstruction: String? = null
+        voiceInstruction: String? = null,
+        language: String? = null
     ): Engine {
         if (voiceInstruction != null) return Engine.QWEN3_TTS
         if (priority) return Engine.ORPHEUS
+
+        // Non-English text → route away from Orpheus (English only)
+        if (language != null && language != "en") {
+            // Qwen3 supports 10 languages; Chatterbox multilingual supports 23
+            return if (language in QWEN3_LANGS) Engine.QWEN3_TTS else Engine.CHATTERBOX
+        }
+
         if (ORPHEUS_TAGS.any { it in text }) return Engine.ORPHEUS
         if (CHATTERBOX_TAGS.any { it in text }) return Engine.CHATTERBOX
         return Engine.CHATTERBOX

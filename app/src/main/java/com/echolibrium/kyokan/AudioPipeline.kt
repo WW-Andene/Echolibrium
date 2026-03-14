@@ -37,7 +37,8 @@ object AudioPipeline {
         val signal: SignalMap,
         val rules: List<Pair<String, String>>,
         val priority: Boolean = false,  // true = interrupt and jump queue (phone calls)
-        val translated: Boolean = false // true = text was machine-translated, skip text effects
+        val translated: Boolean = false, // true = text was machine-translated, skip text effects
+        val language: String? = null     // detected content language (ISO 639-1), for cloud TTS routing
     )
 
     private val queue = LinkedBlockingQueue<Item>()
@@ -387,7 +388,8 @@ object AudioPipeline {
         val engine = CloudTtsEngine.selectEngine(
             text = text,
             priority = item.priority,
-            voiceInstruction = voiceInstruction
+            voiceInstruction = voiceInstruction,
+            language = item.language
         )
 
         // Enrich text with engine-specific emotion tags based on signal analysis

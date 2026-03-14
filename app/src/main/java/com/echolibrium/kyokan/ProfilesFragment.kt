@@ -702,6 +702,7 @@ class ProfilesFragment : Fragment() {
         }
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
             NotificationReaderService.instance?.stopSpeaking()
+            AudioPipeline.stop()
         }
     }
 

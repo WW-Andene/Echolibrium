@@ -76,8 +76,8 @@ object VoiceDownloadManager {
                     Log.d(TAG, "Model ready at ${getModelDir(ctx)}")
                     updateState(State.READY)
                 } else {
-                    updateState(State.ERROR)
                     errorMessage = "Extraction incomplete — missing required files"
+                    updateState(State.ERROR)
                 }
 
             } catch (e: Exception) {

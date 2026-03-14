@@ -16,9 +16,6 @@ class NotificationReaderService : NotificationListenerService() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
-    private var dailyCount = 0
-    private var lastCountDay = -1
-
     private val readKeys = LinkedHashMap<String, Long>(128, 0.75f, true)
     private val swipedKeys = mutableSetOf<String>()
     private val appLastRead = mutableMapOf<String, Long>()
@@ -77,6 +74,13 @@ class NotificationReaderService : NotificationListenerService() {
         if (rule?.readMode == "skip" || rule?.enabled == false) return
 
         val now = System.currentTimeMillis()
+
+        // Skip notifications that the user already swiped away
+        if (prefs.getBoolean("notif_skip_swiped", true)) {
+            synchronized(swipedKeys) {
+                if (swipedKeys.remove(sbn.key)) return
+            }
+        }
 
         if (prefs.getBoolean("notif_read_once", true)) {
             val key = sbn.key

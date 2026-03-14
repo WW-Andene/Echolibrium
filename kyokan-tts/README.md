@@ -53,18 +53,68 @@ kyokan-tts/
 
 ## Smart Routing Logic
 
-The router picks the engine based on:
+The Kotlin `CloudTtsEngine` (Android side) and Python `TtsRouter` both use this logic:
 
 1. **Voice instruction present?** → Qwen3-TTS (only one that supports it)
 2. **Priority HIGH?** → Orpheus (maximum fidelity)
-3. **Priority LOW?** → Chatterbox (cheapest, fastest)
+3. **Non-English text?** → Qwen3 (10 langs) or Chatterbox (23 langs)
 4. **Orpheus emotion tags in text?** → Orpheus
 5. **Chatterbox tags in text?** → Chatterbox
 6. **Default** → Chatterbox Turbo (best cost/quality for notifications)
 
-## Next Steps
+### Emotion-Aware Enrichment
 
-- [ ] Phase 2: HTTP server wrapper (FastAPI) for Android app to call
-- [ ] Phase 3: Kotlin TtsEngine interface in Kyōkan
-- [ ] Phase 4: Custom Core observation + learning
-- [ ] Phase 5: Fine-tune Orpheus for your preferred voice
+The Android `CloudTtsEngine` maps Kyōkan's `SignalMap` analysis to engine controls:
+
+- **Orpheus**: `EmotionBlend` → `<gasp>`, `<sigh>` tags injected into text
+- **Chatterbox**: `EmotionBlend` → `[laugh]`, `[sniffle]` tags injected
+- **Qwen3-TTS**: `EmotionBlend` + `UrgencyType` + `WarmthLevel` → natural language
+  voice instructions (e.g., "speak warmly and gently, with soft nostalgia")
+
+## Android Integration
+
+The Kotlin `CloudTtsEngine` in `app/src/main/java/.../CloudTtsEngine.kt` is the
+Android-side counterpart of this Python system. It calls DeepInfra directly from
+the app via OkHttp and integrates into `AudioPipeline` as the primary synthesis path:
+
+```
+Cloud TTS (DeepInfra) → primary
+   ↓ (fallback if disabled or fails)
+YatagamiSynthesizer (local ORT) → secondary
+   ↓ (fallback)
+SherpaEngine (Kokoro/Piper) → offline fallback
+```
+
+API key is stored in `EncryptedSharedPreferences` under `deepinfra_api_key`.
+
+## Observation Layer
+
+Every cloud TTS call is logged to `ObservationDb.cloud_tts_observations`:
+- Engine used, text length, latency, success/failure, language
+- `cloudEngineStats()` returns per-engine success rate + avg latency
+- Data feeds Custom Core for learning engine preferences over time
+
+## Fine-Tuning (Phase 6)
+
+To create a custom voice for Orpheus:
+
+1. **Collect samples**: Record or gather 15-30 minutes of target voice audio
+2. **Prepare dataset**: Segment into 5-15 second clips with transcriptions
+3. **LoRA fine-tune**: Use the Orpheus training scripts with QLoRA (4-bit)
+   - Base model: `canopylabs/orpheus-3b-0.1-pretrained`
+   - Training: ~2 hours on a single A100 / ~6 hours on RTX 4090
+4. **Export**: Merge LoRA weights → upload to DeepInfra or self-host
+5. **Swap in**: Change `Engine.ORPHEUS.modelId` to your fine-tuned model ID
+   — zero app changes needed, the pipeline stays the same
+
+For Chatterbox, voice cloning from a 7-20s reference clip is built in —
+no fine-tuning needed. Pass a reference audio URL in the API call.
+
+## Implementation Status
+
+- [x] Phase 1: Python engine backends + test harness
+- [x] Phase 2: Kotlin `CloudTtsEngine` wired into `AudioPipeline`
+- [x] Phase 3: Chatterbox + emotion tag mapping
+- [x] Phase 4: Qwen3-TTS + language routing + voice instructions
+- [x] Phase 5: Observation layer for Custom Core learning
+- [x] Phase 6: Fine-tuning documentation

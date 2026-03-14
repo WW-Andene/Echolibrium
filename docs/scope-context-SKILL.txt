@@ -1,0 +1,981 @@
+# SCOPE_AND_CONTEXT.md
+
+## Purpose
+Solve two critical AI limitations when working with codebases:
+1. **Large-scope blindness** — Missing instances when asked to find/fix "all X"
+2. **Ambiguity resolution failure** — Guessing instead of clarifying vague instructions
+
+This skill teaches Claude to be "conscious" across large scopes AND actively resolve ambiguities before executing.
+
+---
+
+# TABLE OF CONTENTS
+
+| Section | Purpose | When to Use |
+|---------|---------|-------------|
+| **§I — The Two Problems** | Understanding what goes wrong | Read first |
+| **§II — Pre-Flight Protocol** | Mandatory checks before ANY work | Every request |
+| **§III — Large-Scope Work** | Building mental models for "all X" requests | "all boxes", "every button", "standardize cards" |
+| **§IV — Ambiguity Resolution** | Clarifying vague instructions | "the green box", "bottom right", "add padding" |
+| **§V — Combined Workflow** | How §III and §IV work together | Complex requests with both issues |
+| **§VI — Quick Reference** | Checklists and templates | Day-to-day usage |
+
+---
+
+# §I — THE TWO PROBLEMS
+
+## Problem A: Large-Scope Blindness
+
+### What Humans Experience
+You say: *"Make all the boxes consistent"*
+
+You expect: Claude finds all 23 boxes across 12 files and standardizes them
+
+What happens: Claude updates 8 obvious ones, misses 15, declares "done"
+
+### Why This Happens
+**Claude doesn't maintain conceptual awareness across large codebases.**
+
+When processing "all boxes":
+- ✗ Treats `<Card>`, `<Panel>`, `<div className="box">` as separate things
+- ✗ Processes files sequentially, losing context between them
+- ✗ Stops when it runs out of obvious matches
+- ✗ Has no internal "I've checked 8/23 boxes" counter
+
+**Root cause:** No persistent mental model of what "box" means across the entire scope.
+
+---
+
+## Problem B: Ambiguity Resolution Failure
+
+### What Humans Experience
+You say: *"Place the green box at the bottom right corner"*
+
+You expect: Claude asks which of the 4 green elements you mean, confirms viewport context, checks for collisions
+
+What happens: Claude picks the wrong element, places it in the wrong corner, uses random padding
+
+### Why This Happens
+**Claude defaults to "helpful assumptions" instead of clarifying.**
+
+When given ambiguous instructions:
+- ✗ Assumes "the green box" = first green element it finds
+- ✗ Assumes "bottom right" = bottom-right of first container
+- ✗ Ignores existing elements at that location
+- ✗ Makes up arbitrary values (15px padding) instead of inheriting patterns
+
+**Root cause:** No protocol for detecting and resolving ambiguity before execution.
+
+# §II — PRE-FLIGHT PROTOCOL
+
+**MANDATORY:** Run this before starting ANY request.
+
+PRE-FLIGHT CHECKLIST
+
+1. Scope Analysis
+   Is this a large-scope request?
+   ☐ Affects >10 files
+   ☐ Targets "all/every" instances of something
+   ☐ Requires maintaining concept across codebase
+   
+   → If YES: Proceed to §III (Large-Scope Protocol)
+
+2. Ambiguity Detection
+   Does the instruction contain:
+   ☐ Vague references ("the box", "the button")
+   ☐ Spatial terms without anchors ("bottom right", "top corner")
+   ☐ Style directives without values ("add padding", "make it bigger")
+   ☐ Multiple possible interpretations
+   
+   → If YES: Proceed to §IV (Ambiguity Resolution Protocol)
+
+3. Combined Cases
+   ☐ Both large-scope AND ambiguous
+   
+   → If YES: Proceed to §V (Combined Workflow)
+
+4. Simple Cases
+   ☐ Small scope (<3 files) AND unambiguous
+   
+   → If YES: Proceed with normal execution
+
+**STOP HERE and complete the appropriate protocol before executing.**
+
+# §III — LARGE-SCOPE PROTOCOL
+
+**Use when:** Request involves "all X", "every Y", "standardize Z" across multiple files.
+
+## The Core Problem
+
+When you say "all boxes", you have a **unified mental concept**. Claude doesn't.
+
+**Solution:** Force Claude to build an explicit **Concept Scaffold** before scanning.
+
+---
+
+## Step 1: Build the Concept Scaffold
+
+Before touching ANY code, create these 4 artifacts:
+
+### Artifact 1: SEMANTIC DEFINITION
+
+**Template:**
+
+CONCEPT: [Thing being worked on]
+
+SEMANTIC DEFINITION:
+• Core purpose: [what it does in the app]
+• Visual signature: [how users see it]
+• Functional signature: [how it behaves]
+• NOT included: [similar things that don't count]
+
+Example for "Box":
+• Core purpose: Visual container that groups related content
+• Visual signature: Background, border/shadow, padding
+• Functional signature: Wraps children, no interactivity
+• NOT included: Buttons (interactive), Inputs (editable), Modals (overlay)
+
+### Artifact 2: PATTERN INVENTORY
+
+**Template:**
+
+PATTERN INVENTORY: [Thing]
+
+Known implementations in this codebase:
+1. <Box> component — src/components/ui/Box.tsx
+2. <Card> component — src/components/ui/Card.tsx  
+3. <div className="container"> — various files
+4. <section className="panel"> — legacy files
+5. Raw divs: <div className="bg-white rounded-lg shadow p-6">
+
+Recognition rules:
+• Has: background + padding + (border OR shadow)
+• Context: Contains multiple child elements
+• Does NOT have: onClick/onChange/onSubmit (those are interactive elements)
+
+### Artifact 3: SCOPE BOUNDARIES
+
+**Template:**
+
+SCOPE BOUNDARIES: [Thing]
+
+INCLUDE:
+• Folders: src/app/*, src/components/*
+• File types: .tsx, .jsx
+• Contexts: Page layouts, component wrappers
+
+EXCLUDE:
+• Folders: src/lib/*, tests/*, node_modules/*
+• Files: Email templates, markdown files
+• Edge cases: Nested boxes (only count outermost parent)
+
+EXPECTED RANGE: 15-50 instances
+(If you find 5 or 200, double-check your recognition rules)
+
+### Artifact 4: AWARENESS TRACKER
+
+**Template:**
+
+AWARENESS TRACKER: [Thing]
+
+Total files in scope: [X]
+Files scanned: [Y]
+Instances found: [Z]
+
+PROGRESS LOG:
+✓ src/app/page.tsx — 2 instances
+✓ src/app/dashboard/page.tsx — 5 instances  
+⧖ src/app/settings/* — in progress
+⬜ src/components/* — not started
+
+STATUS: 12 of 34 files scanned (35%)
+
+---
+
+## Step 2: Present Scaffold for Approval
+
+**DO NOT PROCEED WITHOUT THIS:**
+
+CONCEPT SCAFFOLD COMPLETE
+
+[Display all 4 artifacts]
+
+VERIFICATION QUESTIONS:
+1. Does this semantic definition match your mental model?
+2. Are there patterns I'm missing?
+3. Should I include/exclude anything else?
+4. Does the expected range seem right?
+
+Reply 'proceed' to start scan, or provide corrections.
+
+**WAIT FOR HUMAN CONFIRMATION**
+
+## Step 3: Exhaustive Scan (Using the Scaffold)
+
+Now scan with the Concept Scaffold as your filter:
+
+SCANNING IN PROGRESS...
+
+Using recognition rules from Pattern Inventory
+Respecting Scope Boundaries
+Updating Awareness Tracker in real-time
+
+[Live updates:]
+✓ src/app/page.tsx — 2 instances found
+  1. Line 23: <div className="bg-white rounded-lg shadow p-6">
+  2. Line 67: <Card>
+
+✓ src/app/dashboard/page.tsx — 5 instances found
+  3. Line 12: <Box>
+  4. Line 34: <Box>
+  ...
+
+[Continue for ALL files]
+
+STATUS: 34/34 files scanned (100%)
+TOTAL FOUND: 37 instances
+
+**Output:** Complete numbered list with file paths and line numbers.
+
+---
+
+## Step 4: Human Verification Gate
+
+SCAN COMPLETE
+
+Found: 37 instances across 12 files
+
+BREAKDOWN BY PATTERN:
+• <Box> component: 15 instances
+• <Card> component: 12 instances
+• Raw divs (legacy): 8 instances
+• <Panel> component: 2 instances
+
+VERIFICATION NEEDED:
+1. Does this match your expectation of "all [thing]"?
+2. Any missing that you know of?
+3. Any false positives that shouldn't be included?
+
+Attach the full numbered list for review.
+
+Reply with:
+• 'confirmed' to proceed
+• Specific corrections: "Add src/app/X.tsx line Y"
+
+**WAIT FOR CONFIRMATION**
+
+## Step 5: Execute with Tracking
+
+Only after confirmation:
+
+APPLYING CHANGES...
+
+Target: Standardize all 37 instances to use <Box> component
+
+Progress:
+✓ 1/37 — src/app/page.tsx:23 — Updated
+✓ 2/37 — src/app/page.tsx:67 — Updated
+✓ 3/37 — src/app/dashboard/page.tsx:12 — Already using <Box>
+⚠ 4/37 — src/app/dashboard/page.tsx:34 — Exception: nested inside form, skipped
+...
+
+FINAL REPORT:
+• Total instances: 37
+• Successfully updated: 33
+• Already correct: 2
+• Exceptions: 2 (with reasons)
+
+All changes complete.
+
+---
+
+## Step 6: Concept Drift Detection (Advanced)
+
+Sometimes "all boxes" SHOULD have variations (e.g., primary vs. secondary cards).
+
+**When building Pattern Inventory, flag this:**
+
+PATTERN DIVERGENCE DETECTED
+
+Found 3 distinct pattern groups:
+1. Primary cards (white bg, shadow, 24px padding) — 15 instances
+2. Secondary cards (gray bg, border, 16px padding) — 12 instances
+3. Legacy panels (inconsistent) — 8 instances
+
+INTERPRETATION OPTIONS:
+(a) These are ONE concept with drift → standardize all to single pattern
+(b) These are THREE intentional variants → standardize within each group
+(c) This is a design system → document current state, don't change
+
+Which interpretation is correct?
+
+This prevents accidentally "flattening" intentional design variations.
+
+# §IV — AMBIGUITY RESOLUTION PROTOCOL
+
+**Use when:** Instruction contains vague references, spatial terms, or missing values.
+
+## The Three Ambiguity Types
+
+### Type A: Referential Ambiguity
+**Problem:** "The X" could mean multiple things
+
+**Examples:**
+- "Move **the button**" ← Which button? (7 on this page)
+- "Fix **the green box**" ← Which green element? (4 exist)
+- "Update **the form**" ← Which form? (Login, signup, settings?)
+
+### Type B: Spatial/Relational Ambiguity
+**Problem:** Position terms lack explicit anchors
+
+**Examples:**
+- "**Bottom right corner**" ← Of viewport? Container? Screen? Modal?
+- "**Below the header**" ← Immediately below? Or just lower on page?
+- "**Next to the button**" ← Left? Right? Above? Below? How much gap?
+
+### Type C: Implicit Pattern Ambiguity  
+**Problem:** Style values not specified, should inherit from existing patterns
+
+**Examples:**
+- "Add **padding**" ← How much? (Should match app's spacing scale)
+- "Make it **rounded**" ← Border radius? (Should match design tokens)
+- "Add **a shadow**" ← Which shadow? (Should match other elevations)
+
+---
+
+## Mandatory Disambiguation Workflow
+
+### Step 1: Detect Ambiguity
+
+Scan instruction for these triggers:
+
+**Type A triggers:**
+- Definite articles: "the [thing]"
+- Possessives: "its position", "their styles"
+- Pronouns: "move it", "update them"
+
+**Type B triggers:**
+- Spatial terms: top, bottom, left, right, corner, center, above, below, beside
+- Without explicit anchors: "viewport", "container", "modal", "screen"
+
+**Type C triggers:**
+- Style directives without values: "bigger", "smaller", "padding", "rounded", "shadow"
+- Comparative terms: "more spacing", "less prominent"
+
+**If ANY trigger detected → Proceed to Step 2**
+
+### Step 2: Build Disambiguation Report
+
+**Template:**
+
+⚠️ AMBIGUITY DETECTED
+
+Original instruction: "[paste exact instruction]"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TYPE A — REFERENTIAL AMBIGUITIES
+
+1. "[ambiguous reference]" — Found [N] candidates:
+
+   | ID | Element | Location | Details |
+   |----|---------|----------|---------|
+   | a  | [element 1] | [file:line] | [current state] |
+   | b  | [element 2] | [file:line] | [current state] |
+   | c  | [element 3] | [file:line] | [current state] |
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TYPE B — SPATIAL AMBIGUITIES
+
+2. "[spatial term]" — Possible contexts:
+
+   | ID | Context | Dimensions | Current Occupants |
+   |----|---------|------------|-------------------|
+   | a  | Desktop viewport | 1920x1080 | [elements at that position] |
+   | b  | Mobile viewport | 375x667 | [elements at that position] |
+   | c  | Content area | Varies | [elements at that position] |
+
+3. COLLISION DETECTED:
+   Existing elements at target position:
+   • [Element name] (fixed, z-index X, dimensions)
+   • [Element name] (absolute, conditionally visible)
+   
+   Conflict resolution options:
+   a. Place above existing element (adjust position)
+   b. Overlay with higher z-index
+   c. Push existing element aside
+   d. Use alternative position
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TYPE C — IMPLICIT PATTERN AMBIGUITIES
+
+4. "[style directive]" — No value specified
+
+   Found these existing patterns in codebase:
+   
+   | ID | Pattern | Usage | Files |
+   |----|---------|-------|-------|
+   | a  | 8px | Small elements (buttons, tags) | 12 files |
+   | b  | 16px | Medium elements (cards, forms) | 23 files |
+   | c  | 24px | Large elements (page containers) | 8 files |
+   | d  | 16px sides, 16px bottom | Mobile bottom-fixed elements | 3 files |
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 CLARIFICATION REQUIRED
+
+Please specify:
+1. Which [thing]? (a/b/c from table above)
+2. Which context? (a/b/c from table above)  
+3. How to handle collision? (a/b/c/d from options above)
+4. Which pattern to use? (a/b/c/d from table above)
+
+Reply with: "1a, 2b, 3a, 4d" or provide detailed answers.
+
+### Step 3: Wait for Clarification
+
+**CRITICAL:** DO NOT PROCEED until human responds.
+
+**Never:**
+- ✗ "I'll assume you meant [X]..."
+- ✗ "Let me know if this isn't right..." (after already doing it)
+- ✗ "I picked the most likely one..."
+
+**Always:**
+- ✓ Wait for explicit clarification
+- ✓ Present options clearly
+- ✓ Make no changes until confirmed
+
+---
+
+### Step 4: Execute with Explicit Assumptions
+
+After receiving clarification:
+
+✓ CLARIFICATION RECEIVED
+
+Proceeding with:
+• Element: [specific element from clarification]
+• Position: [specific context with exact values]
+• Conflict resolution: [chosen strategy]
+• Style values: [specific pattern with justification]
+
+DETAILED PLAN:
+1. Target element: src/components/Snackbar.tsx
+2. Position: Mobile viewport (375px width)
+   - bottom: 72px (clears 56px nav + 16px gap)
+   - right: 16px (edge inset)
+3. Padding: px-4 pb-4 (matches toast pattern from ToastNotification.tsx:23)
+4. Z-index: 50 (below nav at 100, above content at 10)
+
+Applying changes...
+
+[Show actual code changes]
+
+✓ COMPLETE
+
+## Special Rules
+
+### Rule A: "The [Thing]" Detection
+
+AUTOMATIC SEARCH PROTOCOL
+
+When instruction contains "the [thing]":
+
+1. Search codebase for [thing]
+2. Count results:
+   • Found 0 → "I don't see a [thing]. Did you mean [similar thing]?"
+   • Found 1 → Proceed (unique reference ✓)
+   • Found 2+ → Trigger full disambiguation report
+
+NEVER assume which one without clarification.
+
+### Rule B: Spatial Terms Require Anchors
+
+SPATIAL CONTEXT REQUIREMENTS
+
+| ❌ Never Assume | ✅ Always Clarify |
+|-----------------|-------------------|
+| "bottom right" = viewport | "Bottom-right of: (a) viewport (b) container (c) screen?" |
+| "below" = immediately below | "Below [X]: (a) touching (b) with gap (c) just lower on page?" |
+| "center" = page center | "Center of: (a) viewport (b) parent container (c) available space?" |
+
+If instruction lacks anchor → Trigger disambiguation.
+
+### Rule C: Style Inheritance Protocol
+
+STYLE VALUE RESOLUTION
+
+When style value is missing:
+
+STEP 1: Search for existing pattern
+• Same element type (e.g., other bottom-fixed elements)
+• Same component family (e.g., other toasts/notifications)
+• Design system tokens (if design-system.ts exists)
+
+STEP 2: If multiple patterns found
+→ List all options in disambiguation table
+→ Wait for human to choose
+
+STEP 3: If NO pattern found
+→ Suggest value with clear rationale:
+  "No existing pattern found for [thing].
+   Suggestion: 16px (matches Tailwind default spacing-4)
+   Alternatives: 12px (compact) or 20px (spacious)
+   Which do you prefer?"
+
+STEP 4: NEVER use arbitrary values
+❌ Don't use: 15px, 18px, 22px, 14px (breaks spacing scales)
+✅ Use only: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64 (standard scale)
+
+### Rule D: Layout Collision Detection
+
+COLLISION CHECK (Before placing ANY element)
+
+1. Scan target position for existing elements
+2. Check:
+   • Position (fixed, absolute, sticky)
+   • Z-index layers
+   • Dimensions (will they overlap?)
+   • Visibility conditions (always visible or conditional?)
+
+3. If collision found:
+   → Build conflict resolution options table
+   → Present to human
+   → Wait for decision
+
+Example output:
+"⚠️ COLLISION: Target position occupied by:
+ • Bottom nav (fixed, z-100, 56px height, always visible)
+ • Cookie banner (fixed, z-50, conditional)
+ 
+ Options:
+ a. Place above nav (bottom: 72px)
+ b. Overlay nav (z-index: 101+)
+ c. Alternative position (bottom-left instead)
+ 
+ Which option?"
+ 
+ # §V — COMBINED WORKFLOW
+
+**Use when:** Request has BOTH large scope AND ambiguities.
+
+**Example:**  
+"Make all the green boxes use consistent padding and put them in the bottom right"
+
+This has:
+- Large scope: "all the green boxes" (could be 10+ instances)
+- Ambiguity: "the green boxes" (which elements?), "padding" (what value?), "bottom right" (of what?)
+
+---
+
+## Combined Protocol
+
+### Phase 1: Resolve Ambiguities FIRST
+
+⚠️ COMBINED REQUEST DETECTED
+
+This instruction contains:
+☑ Large-scope work ("all the green boxes")
+☑ Ambiguities (referential, spatial, implicit patterns)
+
+PROTOCOL: Resolve ambiguities BEFORE building Concept Scaffold
+
+Running §IV Ambiguity Resolution...
+
+[Full disambiguation report for "the green boxes", "padding", "bottom right"]
+
+Waiting for clarification before proceeding to large-scope work...
+
+**Why this order?**  
+You can't build a Concept Scaffold for "all X" if you don't know what "X" is yet.
+
+### Phase 2: Build Concept Scaffold (After Clarification)
+
+✓ AMBIGUITIES RESOLVED
+
+Confirmed scope:
+• "Green boxes" = Success notification toasts (bg-green-500)
+• "Padding" = 16px (mobile toast pattern)
+• "Bottom right" = Mobile viewport, above nav
+
+Now proceeding to §III Large-Scope Protocol...
+
+CONCEPT SCAFFOLD — Success Toast Positioning
+
+[Build all 4 artifacts: Semantic Definition, Pattern Inventory, etc.]
+
+Ready to scan for all instances?
+
+### Phase 3: Execute Combined Changes
+
+SCANNING for all success toast instances...
+
+[Awareness Tracker updates]
+
+Found 8 instances across 5 files
+
+APPLYING STANDARDIZED CHANGES:
+• Position: bottom: 72px, right: 16px (mobile viewport, above nav)
+• Padding: px-4 pb-4 (16px sides/bottom, toast pattern)
+
+Progress:
+✓ 1/8 — src/components/SuccessToast.tsx — Updated
+✓ 2/8 — src/app/checkout/success.tsx — Updated
+...
+
+Complete.
+
+---
+
+## Quick Decision Tree
+
+                    START
+                      │
+                      ▼
+            ┌─────────────────┐
+            │ Pre-Flight Check│
+            └─────────────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+        ▼             ▼             ▼
+   Large-scope?  Ambiguous?    Both?
+        │             │             │
+        │             │             └─→ Resolve ambiguity FIRST
+        │             │                 Then build scaffold
+        │             │                      │
+        ▼             ▼                      ▼
+    Build         Build Dis-            Combined
+    Concept       ambiguation           Workflow
+    Scaffold      Report                (§V)
+        │             │
+        │             │
+        ▼             ▼
+    Exhaustive    Wait for
+    Scan          Clarification
+        │             │
+        └──────┬──────┘
+               ▼
+          Execute with
+          Verification
+          
+# §VI — QUICK REFERENCE
+
+## Checklists
+
+### Pre-Flight Checklist (Every Request)
+
+☐ Large-scope? (>10 files or "all/every" language)
+   → If yes: Use §III
+
+☐ Ambiguous references? ("the X" with multiple X)
+   → If yes: Use §IV-A
+
+☐ Spatial terms without anchors? ("bottom right", "center")
+   → If yes: Use §IV-B
+
+☐ Style directives without values? ("add padding", "make bigger")
+   → If yes: Use §IV-C
+
+☐ Both large-scope AND ambiguous?
+   → If yes: Use §V (resolve ambiguity FIRST)
+
+### Large-Scope Checklist (§III)
+
+☐ Built Semantic Definition
+☐ Built Pattern Inventory
+☐ Built Scope Boundaries
+☐ Built Awareness Tracker
+☐ Got human approval of scaffold
+☐ Completed exhaustive scan
+☐ Got human verification of findings
+☐ Executed with progress tracking
+☐ Reported final results with exceptions
+
+### Ambiguity Resolution Checklist (§IV)
+
+☐ Detected ambiguity type (A/B/C)
+☐ Built disambiguation report with tables
+☐ Listed ALL options (not just 2-3)
+☐ Checked for collisions (if spatial)
+☐ Searched for existing patterns (if style values)
+☐ Waited for clarification (did NOT assume)
+☐ Executed with explicit assumptions stated
+
+## Templates
+
+### Concept Scaffold Template
+
+CONCEPT SCAFFOLD — [Thing]
+
+1. SEMANTIC DEFINITION
+   • Core purpose: [...]
+   • Visual signature: [...]
+   • Functional signature: [...]
+   • NOT included: [...]
+
+2. PATTERN INVENTORY
+   Known implementations:
+   - [Pattern 1] — [location/usage]
+   - [Pattern 2] — [location/usage]
+   
+   Recognition rules:
+   • Has: [required properties]
+   • Does NOT have: [excluded properties]
+
+3. SCOPE BOUNDARIES
+   INCLUDE: [folders/files/contexts]
+   EXCLUDE: [folders/files/contexts]
+   EXPECTED RANGE: [N-M instances]
+
+4. AWARENESS TRACKER
+   Total files: [X]
+   Files scanned: [Y]
+   Instances found: [Z]
+   STATUS: [progress %]
+
+### Disambiguation Report Template
+
+⚠️ AMBIGUITY DETECTED
+
+Original: "[instruction]"
+
+TYPE A — Referential: "[term]"
+| ID | Element | Location | Details |
+|----|---------|----------|---------|
+| a  | [...] | [...] | [...] |
+
+TYPE B — Spatial: "[term]"
+| ID | Context | Dimensions | Occupants |
+|----|---------|------------|-----------|
+| a  | [...] | [...] | [...] |
+
+TYPE C — Implicit: "[term]"  
+| ID | Pattern | Usage | Files |
+|----|---------|-------|-------|
+| a  | [...] | [...] | [...] |
+
+CLARIFICATION REQUIRED:
+1. [Question 1]
+2. [Question 2]
+
+## Anti-Patterns (NEVER Do These)
+
+### ❌ Large-Scope Anti-Patterns
+- "I've updated the main instances..."
+- "Fixed several boxes across the app..."
+- "Updated most of the buttons..."
+- Starting changes without building scaffold
+- Declaring "done" without verification checklist
+
+### ❌ Ambiguity Anti-Patterns
+- "I'll assume you meant [X]..."
+- "Let me know if this is wrong..." (after already doing it)
+- "I picked the most common one..."
+- Using arbitrary values (15px, 18px, 22px)
+- Ignoring collisions at target position
+
+### ✅ Correct Patterns
+- "Found 23 instances. List attached. Confirm before proceeding."
+- "Ambiguity detected. Which of these 4 options? [table]"
+- "Using 16px (matches existing pattern in File.tsx:45)"
+- "Collision detected at bottom-right. Resolution options: [list]"
+
+## Trigger Phrases
+
+| You Say | Claude Should Do |
+|---------|------------------|
+| "all boxes", "every button" | §III — Build Concept Scaffold |
+| "the green box" (when multiple exist) | §IV-A — Referential disambiguation |
+| "bottom right", "center" | §IV-B — Spatial disambiguation |
+| "add padding", "make bigger" | §IV-C — Pattern inheritance |
+| "make all boxes use consistent padding" | §V — Combined (ambiguity THEN scaffold) |
+
+## Integration with Existing Skills
+
+Add to your main **skills.md** or **Pre-Flight Checklist (§III)**:
+
+### 6. ✓ Scope & Context Check
+   Before any work, check:
+   - Large-scope request? → SCOPE_AND_CONTEXT.md §III
+   - Ambiguous instruction? → SCOPE_AND_CONTEXT.md §IV
+   - Both? → SCOPE_AND_CONTEXT.md §V
+   
+   NEVER skip disambiguation or concept scaffolding.
+
+## Examples in Action
+
+### Example 1: Large-Scope Only
+**You:** "Standardize all button styles"
+
+**Claude:**
+
+Large-scope detected → Using §III
+
+CONCEPT SCAFFOLD — Buttons
+
+1. SEMANTIC DEFINITION
+   • Core purpose: Interactive elements that trigger actions
+   • Visual signature: Clickable surface with label/icon
+   • Functional signature: onClick handler, possibly disabled/loading
+   • NOT included: Links styled as buttons (navigation, different semantic)
+
+2. PATTERN INVENTORY
+   Found 5 implementations:
+   a. <Button> component (src/components/ui/Button.tsx)
+   b. <button className="btn-primary"> (legacy)
+   c. <button className="btn-secondary"> (legacy)
+   d. Raw <button> with inline styles (very old files)
+   e. <a className="btn-*"> (probably wrong, need review)
+
+3. SCOPE BOUNDARIES
+   INCLUDE: src/app/*, src/components/*
+   EXCLUDE: src/emails/* (different context)
+   EXPECTED: 40-80 instances
+
+4. AWARENESS TRACKER
+   Total files: 45
+   
+Ready to scan?
+
+### Example 2: Ambiguity Only
+**You:** "Move the modal to the center"
+
+**Claude:**
+
+Ambiguity detected → Using §IV
+
+⚠️ DISAMBIGUATION REQUIRED
+
+TYPE A — "the modal"
+Found 3 modals:
+| ID | Modal | State | Location |
+|----|-------|-------|----------|
+| a  | LoginModal | Hidden by default | src/components/LoginModal.tsx |
+| b  | ConfirmDialog | Conditionally shown | src/components/ConfirmDialog.tsx |
+| c  | ImageLightbox | Photo viewer | src/components/ImageLightbox.tsx |
+
+TYPE B — "center"
+| ID | Context | Current State |
+|----|---------|---------------|
+| a  | Viewport center | Responsive to window size |
+| b  | Content area center | Excludes sidebar |
+| c  | Vertical + horizontal | True center |
+| d  | Horizontal only | Top-aligned |
+
+Which modal (a/b/c) and which centering (a/b/c/d)?
+
+### Example 3: Combined
+**You:** "Make all the green boxes use consistent padding and place them at the bottom right"
+
+**Claude:**
+
+Combined request detected → Using §V
+
+Phase 1: Resolving ambiguities FIRST...
+
+⚠️ AMBIGUITY REPORT
+
+TYPE A — "green boxes"
+| ID | Element | Type | Location |
+|----|---------|------|----------|
+| a  | Success toast | Notification | Bottom-left currently |
+| b  | Help tooltip | Floating | Context-dependent |
+| c  | Debug panel | Dev tool | Bottom-right currently |
+
+TYPE B — "bottom right"
+| ID | Context | Occupants |
+|----|---------|-----------|
+| a  | Desktop viewport (1920px) | None |
+| b  | Mobile viewport (375px) | Bottom nav (56px) |
+
+TYPE C — "padding"
+| ID | Pattern | Usage |
+|----|---------|-------|
+| a  | 8px | Small UI elements |
+| b  | 16px | Mobile toasts |
+| c  | 24px | Desktop cards |
+
+Clarify: Which element (a/b/c), which viewport (a/b), which padding (a/b/c)?
+
+**You:** "a, b, b"
+
+**Claude:**
+
+✓ Resolved:
+• Element: Success toast
+• Context: Mobile viewport (above nav)
+• Padding: 16px (mobile toast pattern)
+
+Phase 2: Building Concept Scaffold for all success toasts...
+
+CONCEPT SCAFFOLD — Success Toast Components
+
+[Full scaffold with 4 artifacts]
+
+Found 8 instances across 5 files. Proceed?
+
+## Maintenance & Evolution
+
+### When to Update This Skill
+
+**Add new ambiguity types when you encounter:**
+- Repeated misunderstandings in a new category
+- Project-specific jargon that needs definition
+- New layout paradigms (e.g., grid systems, flex patterns)
+
+**Add new pattern examples when:**
+- Your codebase introduces new component types
+- You adopt new frameworks or libraries
+- You establish new design system tokens
+
+### Version History Template
+
+## Changelog
+
+### v1.0 (YYYY-MM-DD)
+- Initial combined skill (merged CONCEPTUAL_SCOPE + CONTEXT_RESOLUTION)
+- Covers large-scope and ambiguity resolution
+
+### v1.1 (YYYY-MM-DD)  
+- Added: [New ambiguity type]
+- Updated: [Pattern inventory for new framework]
+
+---
+
+# END OF SCOPE_AND_CONTEXT.md
+
+## Summary
+
+This skill solves two core problems:
+
+**§III (Large-Scope)** → "Make all boxes the same"
+- Forces explicit Concept Scaffold before scanning
+- Maintains awareness across entire codebase
+- Verifies completeness before execution
+
+**§IV (Ambiguity Resolution)** → "Place the green box at bottom right with padding"
+- Detects 3 types of ambiguity (referential, spatial, implicit)
+- Builds disambiguation reports with options
+- Waits for clarification before executing
+
+**§V (Combined)** → Handles requests with both issues
+- Resolves ambiguities FIRST
+- Then builds scaffold for large-scope work
+
+**Use this file** whenever Claude:
+- Misses instances of "all X"
+- Picks the wrong element from vague reference
+- Uses random values instead of inheriting patterns
+- Places things in wrong locations
+- Declares "done" prematurely
+
+Save this as `SCOPE_AND_CONTEXT.md` in your project root.
+
+Reference it in requests:  
+"Use SCOPE_AND_CONTEXT.md protocol for this"
+
+Or add it to your Pre-Flight checklist so it's automatic.

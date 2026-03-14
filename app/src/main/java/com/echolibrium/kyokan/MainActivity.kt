@@ -16,6 +16,9 @@ class MainActivity : AppCompatActivity() {
     private val tabIds = intArrayOf(R.id.nav_home, R.id.nav_profiles, R.id.nav_apps, R.id.nav_rules, R.id.nav_logcat)
     private var selectedTabId = R.id.nav_home
 
+    // Cache fragment instances to avoid recreation on every tab click (A3)
+    private val fragmentCache = mutableMapOf<Int, Fragment>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLogger.install(this)
@@ -40,14 +43,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        loadFragment(when (id) {
-            R.id.nav_home     -> HomeFragment()
-            R.id.nav_profiles -> ProfilesFragment()
-            R.id.nav_apps     -> AppsFragment()
-            R.id.nav_rules    -> RulesFragment()
-            R.id.nav_logcat   -> LogcatFragment()
-            else -> HomeFragment()
-        })
+        val fragment = fragmentCache.getOrPut(id) {
+            when (id) {
+                R.id.nav_home     -> HomeFragment()
+                R.id.nav_profiles -> ProfilesFragment()
+                R.id.nav_apps     -> AppsFragment()
+                R.id.nav_rules    -> RulesFragment()
+                R.id.nav_logcat   -> LogcatFragment()
+                else -> HomeFragment()
+            }
+        }
+        loadFragment(fragment)
     }
 
     private fun loadFragment(f: Fragment) =

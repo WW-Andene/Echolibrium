@@ -5,8 +5,16 @@ import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.*
-import android.widget.*
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
@@ -18,6 +26,8 @@ class AppsFragment : Fragment() {
     private var profiles = listOf<VoiceProfile>()
     private lateinit var container: LinearLayout
     private var searchFilter = ""
+    private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var searchRunnable: Runnable? = null
 
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_apps, c, false)
@@ -28,11 +38,13 @@ class AppsFragment : Fragment() {
         profiles = VoiceProfile.loadAll(prefs)
         v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
 
-        // Search bar
+        // Search bar with debounce (E3: avoid rebuilding all rows on every keystroke)
         v.findViewById<EditText>(R.id.et_search).addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 searchFilter = s?.toString()?.trim() ?: ""
-                renderRules()
+                searchRunnable?.let { searchHandler.removeCallbacks(it) }
+                searchRunnable = Runnable { renderRules() }
+                searchHandler.postDelayed(searchRunnable!!, 250)
             }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}

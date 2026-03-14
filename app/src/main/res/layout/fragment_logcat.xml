@@ -10,7 +10,7 @@
         android:padding="12dp">
         <TextView
             android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-            android:text="LOGCAT" android:textColor="#00ff88" android:textSize="18sp"
+            android:text="@string/logcat_title" android:textColor="@color/green" android:textSize="18sp"
             android:fontFamily="monospace" android:letterSpacing="0.15"
             android:textStyle="bold"/>
         <TextView android:id="@+id/tv_line_count"
@@ -19,7 +19,7 @@
             android:layout_marginEnd="12dp"/>
         <Button android:id="@+id/btn_clear"
             android:layout_width="wrap_content" android:layout_height="36dp"
-            android:text="CLEAR" android:textColor="#aaaaaa" android:textSize="11sp"
+            android:text="@string/btn_clear" android:textColor="@color/text_secondary" android:textSize="11sp"
             android:fontFamily="monospace" android:background="#1a1a1a"
             android:paddingStart="12dp" android:paddingEnd="12dp"
             android:minWidth="0dp" android:minHeight="0dp"/>
@@ -33,7 +33,7 @@
 
         <EditText android:id="@+id/et_filter"
             android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1"
-            android:hint="Filter…" android:textColorHint="#444444"
+            android:hint="@string/filter_hint" android:textColorHint="@color/text_hint"
             android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"
             android:background="#111111" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:singleLine="true" android:imeOptions="actionDone"
@@ -52,13 +52,13 @@
         android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingBottom="8dp">
         <TextView android:id="@+id/chip_app_only"
             android:layout_width="wrap_content" android:layout_height="28dp"
-            android:text=" APP ONLY " android:textColor="#555555" android:textSize="11sp"
+            android:text="@string/chip_app_only" android:textColor="@color/text_dimmed" android:textSize="11sp"
             android:fontFamily="monospace" android:background="#1a1a1a"
             android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:layout_marginEnd="8dp"/>
         <TextView android:id="@+id/chip_pipeline"
             android:layout_width="wrap_content" android:layout_height="28dp"
-            android:text=" PIPELINE " android:textColor="#555555" android:textSize="11sp"
+            android:text="@string/chip_pipeline" android:textColor="@color/text_dimmed" android:textSize="11sp"
             android:fontFamily="monospace" android:background="#1a1a1a"
             android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:layout_marginEnd="8dp"/>
@@ -67,7 +67,7 @@
             android:layout_marginStart="8dp"/>
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Auto-scroll" android:textColor="#888888" android:textSize="11sp"
+            android:text="@string/auto_scroll" android:textColor="@color/text_muted" android:textSize="11sp"
             android:fontFamily="monospace" android:layout_marginStart="4dp"/>
     </LinearLayout>
 

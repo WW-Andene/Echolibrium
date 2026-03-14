@@ -50,6 +50,8 @@ data class PiperVoice(
 object PiperVoices {
 
     private const val RELEASE_BASE = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
+    // Centralized HuggingFace URL (C3: avoid duplication across methods)
+    private const val HUGGINGFACE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 
     private fun piper(
         name: String, gender: String, language: String, nationality: String,
@@ -143,18 +145,14 @@ object PiperVoices {
      * Download URL for a raw .onnx model from rhasspy/piper on HuggingFace.
      * Pattern: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{locale}/{locale}-{name}-{quality}.onnx
      */
-    fun onnxUrl(voice: PiperVoice): String {
-        val base = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
-        return "$base/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx"
-    }
+    fun onnxUrl(voice: PiperVoice): String =
+        "$HUGGINGFACE_BASE/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx"
 
     /**
      * Download URL for the voice's own .onnx.json config (contains tokens, phoneme map, etc.)
      */
-    fun onnxJsonUrl(voice: PiperVoice): String {
-        val base = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
-        return "$base/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx.json"
-    }
+    fun onnxJsonUrl(voice: PiperVoice): String =
+        "$HUGGINGFACE_BASE/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx.json"
 
     /** Download URL for shared espeak-ng-data archive from our release */
     fun espeakDataUrl(): String = "$RELEASE_BASE/espeak-ng-data.tar.bz2"

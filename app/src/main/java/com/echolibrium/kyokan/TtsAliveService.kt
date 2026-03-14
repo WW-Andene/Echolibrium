@@ -71,10 +71,10 @@ class TtsAliveService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Notification Reader Active",
+                getString(R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps notification reading active in the background"
+                description = getString(R.string.notif_channel_description)
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -90,18 +90,18 @@ class TtsAliveService : Service() {
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Kyōkan")
-                .setContentText("Reading notifications")
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle(getString(R.string.notif_title))
+                .setContentText(getString(R.string.notif_text))
+                .setSmallIcon(R.drawable.ic_voice)
                 .setContentIntent(openIntent)
                 .setOngoing(true)
                 .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("Kyōkan")
-                .setContentText("Reading notifications")
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle(getString(R.string.notif_title))
+                .setContentText(getString(R.string.notif_text))
+                .setSmallIcon(R.drawable.ic_voice)
                 .setContentIntent(openIntent)
                 .setOngoing(true)
                 .build()

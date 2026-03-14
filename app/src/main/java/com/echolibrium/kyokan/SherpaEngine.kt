@@ -26,6 +26,10 @@ object SherpaEngine {
     private const val TAG = "SherpaEngine"
     private const val MAX_PIPER_CACHE = 2 // keep at most 2 Piper models in memory
 
+    // Separate locks for Kokoro and Piper to avoid cross-engine blocking (E2)
+    private val kokoroLock = Object()
+    private val piperLock = Object()
+
     // ── Kokoro engine ───────────────────────────────────────────────────────
 
     private var kokoroTts: OfflineTts? = null
@@ -43,13 +47,11 @@ object SherpaEngine {
         private set
 
     /** True if Kokoro is initialized (for backward compat with AudioPipeline) */
-    @Synchronized
-    fun isReady(): Boolean = isKokoroReady && kokoroTts != null
+    fun isReady(): Boolean = synchronized(kokoroLock) { isKokoroReady && kokoroTts != null }
 
     // ── Kokoro: Initialize ──────────────────────────────────────────────────
 
-    @Synchronized
-    fun initialize(ctx: Context): Boolean {
+    fun initialize(ctx: Context): Boolean = synchronized(kokoroLock) {
         if (isKokoroReady && kokoroTts != null) return true
         if (!VoiceDownloadManager.isModelReady(ctx)) {
             Log.w(TAG, "Kokoro model not downloaded yet")
@@ -88,8 +90,7 @@ object SherpaEngine {
 
     // ── Kokoro: Synthesize ──────────────────────────────────────────────────
 
-    @Synchronized
-    fun synthesize(text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? {
+    fun synthesize(text: String, sid: Int = 0, speed: Float = 1.0f): Pair<FloatArray, Int>? = synchronized(kokoroLock) {
         val engine = kokoroTts ?: return null
         return try {
             val audio = engine.generate(text = text, sid = sid, speed = speed)
@@ -103,8 +104,7 @@ object SherpaEngine {
 
     // ── Piper: Initialize ───────────────────────────────────────────────────
 
-    @Synchronized
-    fun initPiper(ctx: Context, voiceId: String): Boolean {
+    fun initPiper(ctx: Context, voiceId: String): Boolean = synchronized(piperLock) {
         if (piperCache.containsKey(voiceId)) return true
         if (!PiperDownloadManager.isVoiceReady(ctx, voiceId)) {
             Log.w(TAG, "Piper voice $voiceId not downloaded yet")
@@ -162,10 +162,9 @@ object SherpaEngine {
 
     // ── Piper: Synthesize ───────────────────────────────────────────────────
 
-    @Synchronized
     fun synthesizePiper(
         voiceId: String, text: String, speed: Float = 1.0f
-    ): Pair<FloatArray, Int>? {
+    ): Pair<FloatArray, Int>? = synchronized(piperLock) {
         val engine = piperCache[voiceId] ?: return null
         return try {
             val audio = engine.generate(text = text, sid = 0, speed = speed)
@@ -179,17 +178,18 @@ object SherpaEngine {
 
     // ── Release ─────────────────────────────────────────────────────────────
 
-    @Synchronized
     fun release() {
-        try { kokoroTts?.release() } catch (_: Exception) {}
-        kokoroTts = null
-        isKokoroReady = false
-
-        piperCache.values.forEach { tts ->
-            try { tts.release() } catch (_: Exception) {}
+        synchronized(kokoroLock) {
+            try { kokoroTts?.release() } catch (_: Exception) {}
+            kokoroTts = null
+            isKokoroReady = false
         }
-        piperCache.clear()
-
+        synchronized(piperLock) {
+            piperCache.values.forEach { tts ->
+                try { tts.release() } catch (_: Exception) {}
+            }
+            piperCache.clear()
+        }
         Log.d(TAG, "SherpaEngine released (Kokoro + Piper)")
     }
 

@@ -1,5 +1,6 @@
 package com.echolibrium.kyokan
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -41,7 +42,10 @@ data class VoiceProfile(
             return try {
                 val arr = JSONArray(json)
                 (0 until arr.length()).map { fromJson(arr.getJSONObject(it)) }.toMutableList()
-            } catch (e: Exception) { mutableListOf() }
+            } catch (e: Exception) {
+                Log.e("VoiceProfile", "Failed to parse voice_profiles JSON, returning empty list. Data may be corrupted.", e)
+                mutableListOf()
+            }
         }
     }
 }

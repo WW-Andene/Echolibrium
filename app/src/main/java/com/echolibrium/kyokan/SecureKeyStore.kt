@@ -3,11 +3,13 @@ package com.echolibrium.kyokan
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 
 /**
  * Encrypted storage for API keys (DeepInfra, etc.).
  * Uses "kyokan_secure_prefs" with AES256-GCM encryption.
+ *
+ * Uses stable security-crypto:1.0.0 API (D5).
  */
 object SecureKeyStore {
 
@@ -15,13 +17,11 @@ object SecureKeyStore {
     private const val KEY_DEEPINFRA = "deepinfra_api_key"
 
     private fun getSecurePrefs(ctx: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(ctx)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
         return EncryptedSharedPreferences.create(
-            ctx,
             PREFS_FILE,
-            masterKey,
+            masterKeyAlias,
+            ctx,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )

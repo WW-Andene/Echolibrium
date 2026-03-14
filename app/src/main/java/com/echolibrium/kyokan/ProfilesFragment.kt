@@ -2,8 +2,18 @@ package com.echolibrium.kyokan
 
 import android.os.Bundle
 import android.text.InputType
-import android.view.*
-import android.widget.*
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
@@ -25,8 +35,10 @@ class ProfilesFragment : Fragment() {
     private lateinit var btnSave: Button
     private lateinit var btnDelete: Button
     private lateinit var btnNew: Button
-    private lateinit var seekPitch: SeekBar;  private lateinit var tvPitch: TextView
-    private lateinit var seekSpeed: SeekBar;  private lateinit var tvSpeed: TextView
+    private lateinit var seekPitch: SeekBar
+    private lateinit var tvPitch: TextView
+    private lateinit var seekSpeed: SeekBar
+    private lateinit var tvSpeed: TextView
     private lateinit var profileGrid: LinearLayout
     private lateinit var voiceGrid: LinearLayout
     private lateinit var genderRow: LinearLayout
@@ -78,8 +90,10 @@ class ProfilesFragment : Fragment() {
         voiceGrid       = v.findViewById(R.id.voice_grid)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
-        seekPitch       = v.findViewById(R.id.seek_pitch);  tvPitch = v.findViewById(R.id.tv_pitch)
-        seekSpeed       = v.findViewById(R.id.seek_speed);  tvSpeed = v.findViewById(R.id.tv_speed)
+        seekPitch       = v.findViewById(R.id.seek_pitch)
+        tvPitch         = v.findViewById(R.id.tv_pitch)
+        seekSpeed       = v.findViewById(R.id.seek_speed)
+        tvSpeed         = v.findViewById(R.id.tv_speed)
     }
 
     private fun buildFilterButtons() {
@@ -158,7 +172,7 @@ class ProfilesFragment : Fragment() {
 
         // ── Kokoro ───────────────────────────────────────────────────────
         val kokoroReady = VoiceDownloadManager.isModelReady(ctx)
-        val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
+        val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
         val kokoroCount = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).size
         val kokoroSubtitle = when {
             kokoroReady -> "Offline  ·  $kokoroCount voices  ·  Ready"
@@ -444,14 +458,19 @@ class ProfilesFragment : Fragment() {
 
     private fun startKokoroDownload() {
         val ctx = requireContext()
-        VoiceDownloadManager.onProgress { pct ->
+        VoiceDownloadManager.onProgress = { _ ->
             activity?.runOnUiThread {
                 if (isAdded) renderVoiceGrid()
             }
         }
-        VoiceDownloadManager.onStateChange { _ ->
+        VoiceDownloadManager.onStateChange = { state ->
             activity?.runOnUiThread {
-                if (isAdded) renderVoiceGrid()
+                if (isAdded) {
+                    renderVoiceGrid()
+                    if (state == DownloadState.ERROR) {
+                        Toast.makeText(context, "Kokoro download failed: ${VoiceDownloadManager.errorMessage}", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
         VoiceDownloadManager.downloadModel(ctx)
@@ -461,9 +480,14 @@ class ProfilesFragment : Fragment() {
 
     private fun startPiperDownload(voiceId: String) {
         val ctx = requireContext()
-        PiperDownloadManager.onStateChange = { _, _ ->
+        PiperDownloadManager.onStateChange = { vid, state ->
             activity?.runOnUiThread {
-                if (isAdded) renderVoiceGrid()
+                if (isAdded) {
+                    renderVoiceGrid()
+                    if (state == DownloadState.ERROR) {
+                        Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
         PiperDownloadManager.onProgress = { _, _ ->
@@ -478,9 +502,14 @@ class ProfilesFragment : Fragment() {
 
     private fun downloadAllPiper() {
         val ctx = requireContext()
-        PiperDownloadManager.onStateChange = { _, _ ->
+        PiperDownloadManager.onStateChange = { vid, state ->
             activity?.runOnUiThread {
-                if (isAdded) renderVoiceGrid()
+                if (isAdded) {
+                    renderVoiceGrid()
+                    if (state == DownloadState.ERROR) {
+                        Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
         PiperDownloadManager.onProgress = { _, _ ->
@@ -638,13 +667,15 @@ class ProfilesFragment : Fragment() {
         }
     }
 
-    private fun setupButtons() {
-        // Show toast when TTS synthesis fails silently
-        AudioPipeline.onSynthesisError = { _, reason ->
-            activity?.runOnUiThread {
-                if (isAdded) Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
-            }
+    private val synthesisErrorListener: (String, String) -> Unit = { _, reason ->
+        activity?.runOnUiThread {
+            if (isAdded) Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun setupButtons() {
+        // Show toast when TTS synthesis fails silently (B3: use listener list, not single slot)
+        AudioPipeline.addSynthesisErrorListener(synthesisErrorListener)
 
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
@@ -744,6 +775,7 @@ class ProfilesFragment : Fragment() {
 
     override fun onDestroyView() {
         stopDownloadRefresh()
+        AudioPipeline.removeSynthesisErrorListener(synthesisErrorListener)
         super.onDestroyView()
     }
 
@@ -752,7 +784,7 @@ class ProfilesFragment : Fragment() {
         refreshRunnable = object : Runnable {
             override fun run() {
                 if (!isAdded) return
-                val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
+                val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
                 val piperDownloading = PiperDownloadManager.isAnyDownloading()
                 if (kokoroDownloading || piperDownloading) {
                     renderVoiceGrid()
@@ -762,7 +794,7 @@ class ProfilesFragment : Fragment() {
                 }
             }
         }
-        val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
+        val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
         val piperDownloading = PiperDownloadManager.isAnyDownloading()
         if (kokoroDownloading || piperDownloading) {
             refreshHandler.postDelayed(refreshRunnable!!, 1000)

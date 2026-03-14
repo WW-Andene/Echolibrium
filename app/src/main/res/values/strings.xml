@@ -2,6 +2,106 @@
 <resources>
     <string name="app_name">Kyōkan</string>
 
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_voices">Voices</string>
+    <string name="nav_apps">Apps</string>
+    <string name="nav_rules">Rules</string>
+    <string name="nav_log">Log</string>
+
+    <!-- Home fragment -->
+    <string name="section_master_switch">// MASTER SWITCH</string>
+    <string name="enable_notification_reading">Enable notification reading</string>
+    <string name="section_read_mode">// DEFAULT READ MODE</string>
+    <string name="always_read_app_name">Always read app name</string>
+    <string name="section_dnd">// DO NOT DISTURB</string>
+    <string name="enable_quiet_hours">Enable quiet hours</string>
+    <string name="silence_from">Silence from: %02d:00</string>
+    <string name="until_time">Until: %02d:00</string>
+    <string name="section_listening">// LISTENING</string>
+    <string name="activate_listening">Activate listening</string>
+    <string name="listening_description">Process and read incoming notifications</string>
+    <string name="listening_off">Listening: off</string>
+    <string name="listening_mic_needed">Listening: microphone permission needed</string>
+    <string name="listening_starting">Listening: starting…</string>
+    <string name="all_permissions_granted">All permissions granted</string>
+    <string name="mic_permission_required">Microphone permission required for listening</string>
+    <string name="allow_restricted_settings">Tap \"Allow restricted settings\" at the top</string>
+    <string name="enable_kyokan">Enable Kyōkan</string>
+    <string name="all_set">All set!</string>
+
+    <!-- Profiles fragment -->
+    <string name="voice_profiles">VOICE PROFILES</string>
+    <string name="section_profiles">// PROFILES</string>
+    <string name="btn_new">+ NEW</string>
+    <string name="btn_delete">DELETE</string>
+    <string name="section_base_voice">// BASE VOICE</string>
+    <string name="section_pitch_speed">// PITCH &amp; SPEED</string>
+    <string name="pitch_label">Pitch: %.2f</string>
+    <string name="speed_label">Speed: %.2f</string>
+    <string name="section_preview">// PREVIEW</string>
+    <string name="preview_text">Hello! This is how I sound with these settings.</string>
+    <string name="btn_test">▶ TEST</string>
+    <string name="btn_save">💾 SAVE</string>
+    <string name="btn_stop_speaking">⏹  STOP SPEAKING</string>
+    <string name="saved_profile">Saved: %s</string>
+    <string name="cant_delete_last">Can\'t delete last profile</string>
+    <string name="rename_profile">Rename Profile</string>
+    <string name="new_profile">New Profile</string>
+    <string name="deepinfra_key_title">DeepInfra API Key</string>
+    <string name="deepinfra_key_message">Enter your DeepInfra API key to enable cloud voices (Orpheus).</string>
+    <string name="deepinfra_key_hint">DeepInfra API key</string>
+    <string name="no_voices_match">No voices match filter.</string>
+    <string name="cloud_status">cloud</string>
+    <string name="no_api_key">no API key</string>
+    <string name="ready_status">ready</string>
+    <string name="extracting_status">extracting…</string>
+    <string name="tap_to_download">tap to download</string>
+
+    <!-- Apps fragment -->
+    <string name="app_rules_title">APP RULES</string>
+    <string name="app_rules_description">Per-app read mode and voice profile override.</string>
+    <string name="load_installed_apps">LOAD INSTALLED APPS</string>
+    <string name="loading">LOADING…</string>
+    <string name="reload_apps">RELOAD APPS</string>
+    <string name="search_apps">Search apps…</string>
+    <string name="select_all">SELECT ALL</string>
+    <string name="deselect_all">DESELECT ALL</string>
+    <string name="no_user_apps">No user apps found.</string>
+
+    <!-- Rules fragment -->
+    <string name="rules_title">RULES</string>
+    <string name="section_word_rules">// WORD RULES</string>
+    <string name="word_rules_description">Replace words/phrases before they are spoken.</string>
+    <string name="btn_add_rule">+ ADD RULE</string>
+    <string name="section_notif_rules">// NOTIFICATION RULES</string>
+    <string name="notif_rules_description">Control how notifications are read.</string>
+    <string name="read_once">Read only once per notification</string>
+    <string name="skip_swiped">Skip swiped notifications</string>
+    <string name="stop_on_swipe">Stop reading when swiped/cleared</string>
+    <string name="read_ongoing">Read ongoing notifications</string>
+    <string name="cooldown_label">Cooldown per app: %ds</string>
+    <string name="max_queue_label">Max queue size: %d</string>
+    <string name="section_lang_profiles">// LANGUAGE PROFILES</string>
+    <string name="enable_lang_routing">Enable language routing</string>
+
+    <!-- Logcat fragment -->
+    <string name="logcat_title">LOGCAT</string>
+    <string name="btn_clear">CLEAR</string>
+    <string name="filter_hint">Filter…</string>
+    <string name="chip_app_only"> APP ONLY </string>
+    <string name="chip_pipeline"> PIPELINE </string>
+    <string name="auto_scroll">Auto-scroll</string>
+
+    <!-- Common -->
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="create">Create</string>
+    <string name="delete">Delete</string>
+    <string name="global">Global</string>
+    <string name="find_hint">Find…</string>
+    <string name="replace_hint">Replace…</string>
+
     <!-- Voice command responses -->
     <string name="cmd_no_notification_yet">No notification has been read yet.</string>
     <string name="cmd_repeating">Repeating: %1$s</string>
@@ -25,4 +125,10 @@
     <string name="elapsed_seconds">%1$d seconds</string>
     <string name="elapsed_second">%1$d second</string>
     <string name="elapsed_less_than_second">less than a second</string>
+
+    <!-- TTS alive notification -->
+    <string name="notif_channel_name">Notification Reader Active</string>
+    <string name="notif_channel_description">Keeps notification reading active in the background</string>
+    <string name="notif_title">Kyōkan</string>
+    <string name="notif_text">Reading notifications</string>
 </resources>

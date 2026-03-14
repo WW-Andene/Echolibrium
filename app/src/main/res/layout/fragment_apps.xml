@@ -3,20 +3,20 @@
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="#0d0d0d" android:padding="20dp">
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="APP RULES" android:textSize="20sp" android:textStyle="bold"
+        android:text="@string/app_rules_title" android:textSize="20sp" android:textStyle="bold"
         android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="6dp"/>
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Per-app read mode and voice profile override."
+        android:text="@string/app_rules_description"
         android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
         android:layout_marginBottom="12dp"/>
     <Button android:id="@+id/btn_load_apps" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="LOAD INSTALLED APPS"
+        android:layout_height="wrap_content" android:text="@string/load_installed_apps"
         android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
         android:fontFamily="monospace" android:layout_marginBottom="10dp"/>
 
     <!-- Search bar -->
     <EditText android:id="@+id/et_search" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:hint="Search apps..."
+        android:layout_height="wrap_content" android:hint="@string/search_apps"
         android:textSize="14sp" android:textColor="#cccccc" android:textColorHint="#444444"
         android:background="#111111" android:padding="12dp" android:fontFamily="monospace"
         android:inputType="text" android:layout_marginBottom="8dp"/>
@@ -25,11 +25,11 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:layout_marginBottom="10dp">
         <Button android:id="@+id/btn_select_all" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="SELECT ALL"
+            android:layout_height="wrap_content" android:text="@string/select_all"
             android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
             android:fontFamily="monospace" android:textSize="12sp" android:layout_marginEnd="4dp"/>
         <Button android:id="@+id/btn_deselect_all" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="DESELECT ALL"
+            android:layout_height="wrap_content" android:text="@string/deselect_all"
             android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
             android:fontFamily="monospace" android:textSize="12sp" android:layout_marginStart="4dp"/>
     </LinearLayout>

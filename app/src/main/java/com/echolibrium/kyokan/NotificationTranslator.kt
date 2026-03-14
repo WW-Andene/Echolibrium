@@ -21,8 +21,8 @@ object NotificationTranslator {
     // Cache translators by "source→target" key to avoid recreating
     private val translators = mutableMapOf<String, com.google.mlkit.nl.translate.Translator>()
 
-    // Track which models are ready (downloaded)
-    private val readyModels = mutableSetOf<String>()
+    // Track which models are ready (downloaded) — thread-safe (H6)
+    private val readyModels = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     // Background executor for ML Kit callbacks — avoids deadlock when called from main thread
     private val callbackExecutor = Executors.newSingleThreadExecutor()

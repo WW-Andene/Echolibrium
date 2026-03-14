@@ -43,7 +43,20 @@ object AudioPipeline {
     private val trackLock = Object()
 
     /** Called on the pipeline thread when synthesis fails — use Handler to post to UI. */
-    @Volatile var onSynthesisError: ((voiceId: String, reason: String) -> Unit)? = null
+    private val synthesisErrorListeners = mutableListOf<(voiceId: String, reason: String) -> Unit>()
+    private val listenersLock = Object()
+
+    fun addSynthesisErrorListener(listener: (voiceId: String, reason: String) -> Unit) {
+        synchronized(listenersLock) { synthesisErrorListeners.add(listener) }
+    }
+
+    fun removeSynthesisErrorListener(listener: (voiceId: String, reason: String) -> Unit) {
+        synchronized(listenersLock) { synthesisErrorListeners.remove(listener) }
+    }
+
+    private fun notifySynthesisError(voiceId: String, reason: String) {
+        synchronized(listenersLock) { synthesisErrorListeners.toList() }.forEach { it(voiceId, reason) }
+    }
 
     // Crossfade state
     private const val CROSSFADE_MS = 40
@@ -136,19 +149,19 @@ object AudioPipeline {
             synthesizeWithCloud(item.text, item)
                 ?: run {
                     Log.w(TAG, "Cloud voice $voiceId unavailable, no fallback for cloud voices")
-                    onSynthesisError?.invoke(voiceId, "Cloud voice failed — check internet or proxy setup")
+                    notifySynthesisError(voiceId, "Cloud voice failed — check internet or proxy setup")
                     return
                 }
         } else if (PiperVoices.isPiperVoice(voiceId)) {
             synthesizeWithPiper(ctx, voiceId, item.text, item.speed)
                 ?: run {
-                    onSynthesisError?.invoke(voiceId, "Piper voice not downloaded yet")
+                    notifySynthesisError(voiceId, "Piper voice not downloaded yet")
                     return
                 }
         } else {
             synthesizeWithKokoro(ctx, voiceId, item.text, item.speed)
                 ?: run {
-                    onSynthesisError?.invoke(voiceId, "Kokoro model not ready")
+                    notifySynthesisError(voiceId, "Kokoro model not ready")
                     return
                 }
         }

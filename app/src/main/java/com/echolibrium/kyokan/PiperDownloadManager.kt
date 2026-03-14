@@ -23,15 +23,13 @@ object PiperDownloadManager {
 
     private const val TAG = "PiperDownload"
 
-    enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }
-
     // Per-voice state tracking (ConcurrentHashMap for thread safety across UI + download threads)
-    private val voiceStates = ConcurrentHashMap<String, State>()
+    private val voiceStates = ConcurrentHashMap<String, DownloadState>()
     private val voiceProgress = ConcurrentHashMap<String, Int>()
     private val voiceErrors = ConcurrentHashMap<String, String>()
     private val downloading = mutableSetOf<String>()
 
-    @Volatile var onStateChange: ((voiceId: String, State) -> Unit)? = null
+    @Volatile var onStateChange: ((voiceId: String, DownloadState) -> Unit)? = null
     @Volatile var onProgress: ((voiceId: String, Int) -> Unit)? = null
 
     // ── Paths ───────────────────────────────────────────────────────────────
@@ -74,10 +72,10 @@ object PiperDownloadManager {
     fun isAnyDownloading(): Boolean =
         synchronized(downloading) { downloading.isNotEmpty() }
 
-    fun getState(ctx: Context, voiceId: String): State {
-        if (isVoiceReady(ctx, voiceId)) return State.READY
-        if (isDownloading(voiceId)) return State.DOWNLOADING
-        return voiceStates[voiceId] ?: State.NOT_DOWNLOADED
+    fun getState(ctx: Context, voiceId: String): DownloadState {
+        if (isVoiceReady(ctx, voiceId)) return DownloadDownloadState.READY
+        if (isDownloading(voiceId)) return DownloadDownloadState.DOWNLOADING
+        return voiceStates[voiceId] ?: DownloadDownloadState.NOT_DOWNLOADED
     }
 
     fun getProgress(voiceId: String): Int =
@@ -95,12 +93,12 @@ object PiperDownloadManager {
         }
 
         if (isVoiceReady(ctx, voiceId)) {
-            updateState(voiceId, State.READY)
+            updateState(voiceId, DownloadState.READY)
             synchronized(downloading) { downloading.remove(voiceId) }
             return
         }
 
-        updateState(voiceId, State.DOWNLOADING)
+        updateState(voiceId, DownloadState.DOWNLOADING)
         voiceProgress[voiceId] = 0
 
         Thread {
@@ -113,15 +111,15 @@ object PiperDownloadManager {
 
                 if (isVoiceReady(ctx, voiceId)) {
                     Log.d(TAG, "Voice $voiceId ready")
-                    updateState(voiceId, State.READY)
+                    updateState(voiceId, DownloadState.READY)
                 } else {
                     voiceErrors[voiceId] = "Download incomplete — missing required files"
-                    updateState(voiceId, State.ERROR)
+                    updateState(voiceId, DownloadState.ERROR)
                 }
             } catch (e: Exception) {
                 voiceErrors[voiceId] = e.message ?: "Unknown error"
                 Log.e(TAG, "Download failed for $voiceId", e)
-                updateState(voiceId, State.ERROR)
+                updateState(voiceId, DownloadState.ERROR)
             } finally {
                 synchronized(downloading) { downloading.remove(voiceId) }
             }
@@ -270,12 +268,12 @@ object PiperDownloadManager {
         voiceStates.remove(voiceId)
         voiceProgress.remove(voiceId)
         voiceErrors.remove(voiceId)
-        updateState(voiceId, State.NOT_DOWNLOADED)
+        updateState(voiceId, DownloadState.NOT_DOWNLOADED)
     }
 
     // ── Internal ────────────────────────────────────────────────────────────
 
-    private fun updateState(voiceId: String, state: State) {
+    private fun updateState(voiceId: String, state: DownloadState) {
         voiceStates[voiceId] = state
         onStateChange?.invoke(voiceId, state)
     }

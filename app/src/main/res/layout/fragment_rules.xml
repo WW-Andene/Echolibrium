@@ -6,7 +6,7 @@
         android:orientation="vertical" android:padding="20dp">
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="RULES" android:textSize="20sp" android:textStyle="bold"
+            android:text="@string/rules_title" android:textSize="20sp" android:textStyle="bold"
             android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
 
         <!-- Collapsible: Word Rules -->
@@ -18,11 +18,11 @@
             android:background="#111111" android:padding="16dp"
             android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Replace words/phrases before they are spoken."
+                android:text="@string/word_rules_description"
                 android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
                 android:layout_marginBottom="10dp"/>
             <Button android:id="@+id/btn_add_rule" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:text="+ ADD RULE"
+                android:layout_height="wrap_content" android:text="@string/btn_add_rule"
                 android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
                 android:fontFamily="monospace" android:layout_marginBottom="10dp"/>
             <LinearLayout android:id="@+id/rules_container" android:layout_width="match_parent"
@@ -38,7 +38,7 @@
             android:background="#111111" android:padding="16dp"
             android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Control how notifications are read."
+                android:text="@string/notif_rules_description"
                 android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
                 android:layout_marginBottom="12dp"/>
 
@@ -46,7 +46,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="Read only once per notification"
+                    android:layout_weight="1" android:text="@string/read_once"
                     android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_once"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
@@ -56,7 +56,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="Skip swiped notifications"
+                    android:layout_weight="1" android:text="@string/skip_swiped"
                     android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_skip_swiped"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
@@ -66,7 +66,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="Stop reading when swiped/cleared"
+                    android:layout_weight="1" android:text="@string/stop_on_swipe"
                     android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_stop_on_swipe"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
@@ -76,7 +76,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="Read ongoing notifications"
+                    android:layout_weight="1" android:text="@string/read_ongoing"
                     android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_ongoing"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
@@ -91,7 +91,8 @@
                     android:layout_marginBottom="6dp"/>
                 <SeekBar android:id="@+id/seek_cooldown" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:max="30"
-                    android:progressTint="#00ff88" android:thumbTint="#00ff88"/>
+                    android:progressTint="#00ff88" android:thumbTint="#00ff88"
+                    android:contentDescription="Notification cooldown per app"/>
             </LinearLayout>
 
             <!-- Max queue size -->
@@ -103,7 +104,8 @@
                     android:layout_marginBottom="6dp"/>
                 <SeekBar android:id="@+id/seek_max_queue" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:max="50"
-                    android:progressTint="#00ff88" android:thumbTint="#00ff88"/>
+                    android:progressTint="#00ff88" android:thumbTint="#00ff88"
+                    android:contentDescription="Maximum notification queue size"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -124,7 +126,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="10dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="Enable language routing"
+                    android:layout_weight="1" android:text="@string/enable_lang_routing"
                     android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_lang_routing"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>

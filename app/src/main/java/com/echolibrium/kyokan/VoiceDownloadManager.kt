@@ -22,17 +22,13 @@ object VoiceDownloadManager {
     const val DOWNLOAD_URL = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/kokoro-en-v0_19.tar.bz2"
     const val MODEL_SIZE_MB = 120  // approximate, for display
 
-    enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }
-
-    @Volatile var state: State = State.NOT_DOWNLOADED
+    @Volatile var state: DownloadState = DownloadDownloadState.NOT_DOWNLOADED
     @Volatile var progressPercent: Int = 0
     @Volatile var errorMessage: String = ""
 
-    @Volatile private var progressCallback: ((Int) -> Unit)? = null
-    @Volatile private var stateCallback: ((State) -> Unit)? = null
-
-    fun onProgress(cb: (Int) -> Unit) { progressCallback = cb }
-    fun onStateChange(cb: (State) -> Unit) { stateCallback = cb }
+    // Standardized callback properties matching PiperDownloadManager (H3)
+    @Volatile var onProgress: ((Int) -> Unit)? = null
+    @Volatile var onStateChange: ((DownloadState) -> Unit)? = null
 
     // ── Paths ─────────────────────────────────────────────────────────────────
 
@@ -51,10 +47,10 @@ object VoiceDownloadManager {
     // ── Download ──────────────────────────────────────────────────────────────
 
     fun downloadModel(ctx: Context) {
-        if (state == State.DOWNLOADING) return
-        if (isModelReady(ctx)) { updateState(State.READY); return }
+        if (state == DownloadState.DOWNLOADING) return
+        if (isModelReady(ctx)) { updateState(DownloadState.READY); return }
 
-        updateState(State.DOWNLOADING)
+        updateState(DownloadState.DOWNLOADING)
         progressPercent = 0
 
         Thread {
@@ -63,42 +59,42 @@ object VoiceDownloadManager {
                 Log.d(TAG, "Downloading from $DOWNLOAD_URL")
                 DownloadUtil.download(DOWNLOAD_URL, tmpFile) { pct ->
                     progressPercent = pct
-                    progressCallback?.invoke(pct)
+                    onProgress?.invoke(pct)
                 }
 
                 Log.d(TAG, "Extracting to ${getSherpaDir(ctx)}")
-                progressCallback?.invoke(-1)  // signal "extracting"
+                onProgress?.invoke(-1)  // signal "extracting"
                 DownloadUtil.extractTarBz2(tmpFile, getSherpaDir(ctx))
 
                 tmpFile.delete()
 
                 if (isModelReady(ctx)) {
                     Log.d(TAG, "Model ready at ${getModelDir(ctx)}")
-                    updateState(State.READY)
+                    updateState(DownloadState.READY)
                 } else {
                     errorMessage = "Extraction incomplete — missing required files"
-                    updateState(State.ERROR)
+                    updateState(DownloadState.ERROR)
                 }
 
             } catch (e: Exception) {
                 tmpFile.delete()
                 errorMessage = e.message ?: "Unknown error"
                 Log.e(TAG, "Download failed", e)
-                updateState(State.ERROR)
+                updateState(DownloadState.ERROR)
             }
         }.start()
     }
 
     fun deleteModel(ctx: Context) {
         getModelDir(ctx).deleteRecursively()
-        updateState(State.NOT_DOWNLOADED)
+        updateState(DownloadState.NOT_DOWNLOADED)
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────
 
-    private fun updateState(s: State) {
+    private fun updateState(s: DownloadState) {
         state = s
-        stateCallback?.invoke(s)
+        onStateChange?.invoke(s)
     }
 
 }

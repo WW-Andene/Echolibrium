@@ -1,8 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Core app colors -->
     <color name="green">#00ff88</color>
+    <color name="green_dark">#00cc66</color>
     <color name="bg">#0d0d0d</color>
     <color name="surface">#111111</color>
+    <color name="surface_elevated">#1a1a1a</color>
     <color name="nav_inactive">#555555</color>
     <color name="ic_launcher_background">#f5f0eb</color>
+
+    <!-- Text colors -->
+    <color name="text_primary">#cccccc</color>
+    <color name="text_secondary">#aaaaaa</color>
+    <color name="text_hint">#444444</color>
+    <color name="text_muted">#888888</color>
+    <color name="text_dimmed">#555555</color>
+    <color name="text_section">#446644</color>
+    <color name="text_section_label">#336633</color>
+    <color name="text_disabled">#666666</color>
+
+    <!-- Accent colors -->
+    <color name="accent_orange">#ffaa44</color>
+    <color name="accent_cyan">#00ccff</color>
+    <color name="accent_blue">#88ccff</color>
+    <color name="accent_red">#ff4444</color>
+    <color name="accent_dnd">#ffaa00</color>
+    <color name="accent_save">#8888ff</color>
+
+    <!-- Gender colors -->
+    <color name="gender_female">#ff88cc</color>
+    <color name="gender_male">#88ccff</color>
+    <color name="gender_neutral">#aaaaaa</color>
+
+    <!-- Status colors -->
+    <color name="status_ready">#00cc66</color>
+    <color name="status_error">#ff4444</color>
+
+    <!-- Background variants -->
+    <color name="btn_green_bg">#1a2a1a</color>
+    <color name="btn_red_bg">#2a1a1a</color>
+    <color name="btn_blue_bg">#1a1a2a</color>
+    <color name="card_active_bg">#0d1a1a</color>
+    <color name="card_enabled_bg">#151515</color>
+    <color name="card_disabled_bg">#0e0e0e</color>
+    <color name="card_border">#222222</color>
+    <color name="filter_active_bg">#1a3a1a</color>
+
+    <!-- Divider -->
+    <color name="divider">#222222</color>
+    <color name="row_bg">#1a1a1a</color>
+    <color name="input_bg">#222222</color>
 </resources>

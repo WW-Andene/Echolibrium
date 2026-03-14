@@ -62,8 +62,12 @@ object CloudTtsEngine {
     @Volatile
     private var enabled = false
 
-    fun configure(key: String) {
+    @Volatile
+    private var observationDb: ObservationDb? = null
+
+    fun configure(key: String, db: ObservationDb? = null) {
         apiKey = key
+        observationDb = db
         enabled = key.isNotBlank()
         Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}")
     }
@@ -186,7 +190,8 @@ object CloudTtsEngine {
         text: String,
         engine: Engine = Engine.CHATTERBOX,
         voice: String? = null,
-        voiceInstruction: String? = null
+        voiceInstruction: String? = null,
+        language: String? = null
     ): Pair<FloatArray, Int>? {
         val key = apiKey
         if (key.isNullOrBlank()) {
@@ -232,20 +237,37 @@ object CloudTtsEngine {
                 if (!response.isSuccessful) {
                     val body = response.body?.string()?.take(200) ?: "no body"
                     Log.e(TAG, "[${engine.name}] HTTP ${response.code}: $body")
+                    logObservation(engine.name, text.length, elapsedMs, false, "HTTP ${response.code}", language)
                     return null
                 }
 
                 val audioBytes = response.body?.bytes() ?: return null
                 val pcm = pcmBytesToFloat(audioBytes)
                 Log.d(TAG, "[${engine.name}] ${text.length} chars → ${pcm.size} samples, ${elapsedMs}ms")
+                logObservation(engine.name, text.length, elapsedMs, true, null, language)
                 Pair(pcm, SAMPLE_RATE)
             }
         } catch (e: IOException) {
+            val elapsedMs = (System.nanoTime() - start) / 1_000_000
             Log.e(TAG, "[${engine.name}] Network error: ${e.message}")
+            logObservation(engine.name, text.length, elapsedMs, false, e.message, language)
             null
         } catch (e: Exception) {
+            val elapsedMs = (System.nanoTime() - start) / 1_000_000
             Log.e(TAG, "[${engine.name}] Synthesis failed", e)
+            logObservation(engine.name, text.length, elapsedMs, false, e.message, language)
             null
+        }
+    }
+
+    private fun logObservation(
+        engine: String, textLength: Int, latencyMs: Long,
+        success: Boolean, error: String?, language: String?
+    ) {
+        try {
+            observationDb?.logCloudTts(engine, textLength, latencyMs, success, error, language)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to log cloud TTS observation", e)
         }
     }
 

@@ -61,12 +61,27 @@ class ObservationDb private constructor(context: Context) :
             )
         """)
 
+        db.execSQL("""
+            CREATE TABLE cloud_tts_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp_ms INTEGER NOT NULL,
+                engine TEXT NOT NULL,
+                text_length INTEGER NOT NULL,
+                latency_ms INTEGER NOT NULL,
+                success INTEGER NOT NULL DEFAULT 1,
+                error TEXT,
+                language TEXT
+            )
+        """)
+
         // Indexes for time-range queries and aggregation
         db.execSQL("CREATE INDEX idx_dsp_timing_ts ON dsp_timing(timestamp_ms)")
         db.execSQL("CREATE INDEX idx_dsp_timing_utterance ON dsp_timing(utterance_id)")
         db.execSQL("CREATE INDEX idx_events_ts ON personality_events(timestamp_ms)")
         db.execSQL("CREATE INDEX idx_events_type ON personality_events(event_type)")
         db.execSQL("CREATE INDEX idx_utterances_ts ON utterances(timestamp_ms)")
+        db.execSQL("CREATE INDEX idx_cloud_tts_ts ON cloud_tts_observations(timestamp_ms)")
+        db.execSQL("CREATE INDEX idx_cloud_tts_engine ON cloud_tts_observations(engine)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -76,7 +91,7 @@ class ObservationDb private constructor(context: Context) :
         while (version < newV) {
             when (version) {
                 1 -> migrateV1toV2(db)
-                // Future: 2 -> migrateV2toV3(db)
+                2 -> migrateV2toV3(db)
                 else -> {
                     // Unknown version gap — drop and recreate as fallback
                     db.execSQL("DROP TABLE IF EXISTS dsp_timing")
@@ -97,6 +112,26 @@ class ObservationDb private constructor(context: Context) :
     private fun migrateV1toV2(db: SQLiteDatabase) {
         db.execSQL("ALTER TABLE utterances ADD COLUMN engine_type TEXT DEFAULT 'SHERPA_KOKORO'")
         db.execSQL("ALTER TABLE utterances ADD COLUMN sculpted INTEGER DEFAULT 0")
+    }
+
+    /**
+     * v2 → v3: Add cloud_tts_observations table for per-engine latency/success tracking.
+     */
+    private fun migrateV2toV3(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS cloud_tts_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp_ms INTEGER NOT NULL,
+                engine TEXT NOT NULL,
+                text_length INTEGER NOT NULL,
+                latency_ms INTEGER NOT NULL,
+                success INTEGER NOT NULL DEFAULT 1,
+                error TEXT,
+                language TEXT
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cloud_tts_ts ON cloud_tts_observations(timestamp_ms)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cloud_tts_engine ON cloud_tts_observations(engine)")
     }
 
     // ── DSP Timing ─────────────────────────────────────────────────────────
@@ -257,6 +292,59 @@ class ObservationDb private constructor(context: Context) :
         }
     }
 
+    // ── Cloud TTS Observations ────────────────────────────────────────────
+
+    /**
+     * Log a cloud TTS synthesis attempt (success or failure).
+     */
+    fun logCloudTts(
+        engine: String,
+        textLength: Int,
+        latencyMs: Long,
+        success: Boolean,
+        error: String? = null,
+        language: String? = null
+    ) {
+        writableDatabase.insert("cloud_tts_observations", null, ContentValues().apply {
+            put("timestamp_ms", System.currentTimeMillis())
+            put("engine", engine)
+            put("text_length", textLength)
+            put("latency_ms", latencyMs)
+            put("success", if (success) 1 else 0)
+            put("error", error)
+            put("language", language)
+        })
+    }
+
+    /**
+     * Per-engine stats over the last N hours — success rate, avg latency, request count.
+     * Used by CloudTtsEngine to learn which engines perform best.
+     */
+    fun cloudEngineStats(lastHours: Int = 24): Map<String, CloudEngineStats> {
+        val cutoff = System.currentTimeMillis() - lastHours * 3600_000L
+        val result = mutableMapOf<String, CloudEngineStats>()
+        val cursor = readableDatabase.rawQuery("""
+            SELECT engine,
+                   COUNT(*) as total,
+                   SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successes,
+                   AVG(CASE WHEN success = 1 THEN latency_ms ELSE NULL END) as avg_latency
+            FROM cloud_tts_observations
+            WHERE timestamp_ms > ?
+            GROUP BY engine
+        """, arrayOf(cutoff.toString()))
+        cursor.use {
+            while (it.moveToNext()) {
+                val name = it.getString(0)
+                result[name] = CloudEngineStats(
+                    total = it.getInt(1),
+                    successes = it.getInt(2),
+                    avgLatencyMs = it.getLong(3)
+                )
+            }
+        }
+        return result
+    }
+
     // ── Maintenance ────────────────────────────────────────────────────────
 
     /**
@@ -268,6 +356,7 @@ class ObservationDb private constructor(context: Context) :
         db.delete("dsp_timing", "timestamp_ms < ?", arrayOf(cutoff.toString()))
         db.delete("personality_events", "timestamp_ms < ?", arrayOf(cutoff.toString()))
         db.delete("utterances", "timestamp_ms < ?", arrayOf(cutoff.toString()))
+        db.delete("cloud_tts_observations", "timestamp_ms < ?", arrayOf(cutoff.toString()))
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
@@ -291,7 +380,7 @@ class ObservationDb private constructor(context: Context) :
 
     companion object {
         private const val DB_NAME = "observation.db"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
 
         @Volatile private var instance: ObservationDb? = null
 
@@ -317,3 +406,12 @@ data class UtteranceStats(
     val avgTextLength: Int = 0,
     val avgPcmSamples: Int = 0
 )
+
+/** Per-engine cloud TTS statistics */
+data class CloudEngineStats(
+    val total: Int = 0,
+    val successes: Int = 0,
+    val avgLatencyMs: Long = 0
+) {
+    val successRate: Float get() = if (total > 0) successes.toFloat() / total else 0f
+}

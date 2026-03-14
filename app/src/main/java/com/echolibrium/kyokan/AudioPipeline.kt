@@ -148,7 +148,7 @@ object AudioPipeline {
                 androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
             val key = prefs.getString("deepinfra_api_key", "") ?: ""
-            CloudTtsEngine.configure(key)
+            CloudTtsEngine.configure(key, observationDb)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load DeepInfra API key", e)
         }
@@ -402,7 +402,8 @@ object AudioPipeline {
         return CloudTtsEngine.synthesize(
             text = enrichedText,
             engine = engine,
-            voiceInstruction = voiceInstruction
+            voiceInstruction = voiceInstruction,
+            language = item.language
         )
     }
 

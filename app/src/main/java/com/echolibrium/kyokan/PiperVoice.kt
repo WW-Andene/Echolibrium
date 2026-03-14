@@ -19,7 +19,8 @@ data class PiperVoice(
     val language: String,     // e.g. "English (US)"
     val nationality: String,  // e.g. "American"
     val locale: String,       // e.g. "en_US"
-    val quality: String       // low | medium | high
+    val quality: String,      // low | medium | high
+    val langCode: String      // e.g. "en" — ISO 639-1 for HuggingFace path
 ) {
     val genderIcon get() = when (gender) {
         "Female" -> "♀"
@@ -58,6 +59,7 @@ object PiperVoices {
         locale: String, quality: String
     ): PiperVoice {
         val id = "${locale}-${name}-${quality}"
+        val langCode = locale.substringBefore("_").lowercase()
         return PiperVoice(
             id = id,
             name = name,
@@ -65,7 +67,7 @@ object PiperVoices {
                 it.replaceFirstChar { c -> c.uppercase() }
             },
             gender = gender, language = language, nationality = nationality,
-            locale = locale, quality = quality
+            locale = locale, quality = quality, langCode = langCode
         )
     }
 
@@ -143,16 +145,16 @@ object PiperVoices {
 
     /**
      * Download URL for a raw .onnx model from rhasspy/piper on HuggingFace.
-     * Pattern: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{locale}/{locale}-{name}-{quality}.onnx
+     * Path: {langCode}/{locale}/{name}/{quality}/{id}.onnx
      */
     fun onnxUrl(voice: PiperVoice): String =
-        "$HUGGINGFACE_BASE/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx"
+        "$HUGGINGFACE_BASE/${voice.langCode}/${voice.locale}/${voice.name}/${voice.quality}/${voice.id}.onnx"
 
     /**
      * Download URL for the voice's own .onnx.json config (contains tokens, phoneme map, etc.)
      */
     fun onnxJsonUrl(voice: PiperVoice): String =
-        "$HUGGINGFACE_BASE/${voice.locale}/${voice.locale}-${voice.name}-${voice.quality}.onnx.json"
+        "$HUGGINGFACE_BASE/${voice.langCode}/${voice.locale}/${voice.name}/${voice.quality}/${voice.id}.onnx.json"
 
     /** Download URL for shared espeak-ng-data archive from our release */
     fun espeakDataUrl(): String = "$RELEASE_BASE/espeak-ng-data.tar.bz2"

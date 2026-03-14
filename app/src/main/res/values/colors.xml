@@ -12,11 +12,11 @@
     <!-- Text colors -->
     <color name="text_primary">#cccccc</color>
     <color name="text_secondary">#aaaaaa</color>
-    <color name="text_hint">#444444</color>
+    <color name="text_hint">#666666</color>
     <color name="text_muted">#888888</color>
     <color name="text_dimmed">#555555</color>
-    <color name="text_section">#446644</color>
-    <color name="text_section_label">#336633</color>
+    <color name="text_section">#66aa66</color>
+    <color name="text_section_label">#55aa55</color>
     <color name="text_disabled">#666666</color>
 
     <!-- Accent colors -->

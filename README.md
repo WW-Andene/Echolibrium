@@ -1,33 +1,48 @@
-# Kyōkan v3
+# Kyōkan v4
 
-Notification reader for Android with full voice personality system.
+Notification reader for Android with multi-engine TTS and adaptive voice profiles.
 
 ## Features
-- Reads full notification text (app + title + body)
-- Voice profiles: pitch, speed, breathiness curve, stuttering, intonation
-- 15 personality presets: Excited, Bored, Depressed, Flirty, Gentle, Happy, Hangry, Nervous, Whispery, Robot, Drunk, Elder, Child, Dramatic, Sarcastic
-- Gimmicks: giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk — each with frequency + position (start/mid/end/random)
-- Voice picker filtered by gender (♀ Female / ♂ Male) and nationality (American / British)
-- Button to open SherpaTTS directly for downloading new voices
-- Per-app rules: mode + profile override per app
-- Word replacement rules
+- Reads notification text aloud (app name + title + body, configurable per app)
+- **Three TTS engines:**
+  - **Kokoro** — offline, 11 voices (American/British, Male/Female), ~120MB shared model
+  - **Piper** — offline, 33 voices (English US/UK, French), per-voice download
+  - **Orpheus** — cloud via DeepInfra API, 8 voices, lowest latency
+- Voice profiles with pitch and speed controls
+- Per-app rules: read mode + voice profile override per app
+- Word replacement rules (find → replace before speaking)
 - Do Not Disturb quiet hours
+- On-device language detection (ML Kit)
+- On-device translation (ML Kit, 13 languages)
+- Language-based voice routing (route by detected language)
+- Voice commands via wake word (repeat, stop, time, how long ago)
+- Live logcat viewer with level/tag filtering
+- Foreground service for background reliability
+- Auto-start on boot
+- Local crash logging
+- Cloudflare Worker proxy for API key protection
 
 ## Build via GitHub Actions
 1. Push this repo to GitHub
 2. Actions → Build APK → Run workflow
-3. Download **both** APKs from Artifacts:
-   - `Kyokan-v3` — the main app
-   - `SherpaTTS-arm64-v8a` — the TTS engine (required)
-4. Install SherpaTTS first, then Kyōkan
-5. Grant notification permission when prompted
+3. Download the APK from Artifacts (`Kyokan-v3` artifact name)
+4. Install on device and grant permissions
 
 ## Install
-1. Install **SherpaTTS** (`SherpaTTS-arm64-v8a.apk`) — this is the TTS engine that Kyōkan uses to speak
-2. Install **Kyōkan** (`Kyokan-v3.apk`)
-3. Open Kyōkan → Grant notification listener permission
-4. Go to **Profiles** tab → Download the Kokoro voice model (~120 MB, one-time)
+1. Install the APK (sideload — no Play Store yet)
+2. Open Kyōkan → Follow the 3-step setup (restricted settings → battery → notification access)
+3. Go to **Voices** tab → Download the Kokoro voice model (~120MB, one-time)
+4. Optionally download Piper voices or enter a DeepInfra API key for Orpheus cloud voices
 
 ## Requirements
-- Android 8.0+ (arm64 device)
-- SherpaTTS installed (bundled in build artifacts — see above)
+- Android 8.0+ (API 26+)
+- arm64 device (arm64-v8a)
+- Internet for initial model downloads and cloud TTS (Orpheus)
+
+## Architecture
+- Single-Activity + 5 Fragments (Home, Profiles, Apps, Rules, Logcat)
+- sherpa-onnx for local TTS (Kokoro + Piper via ONNX Runtime)
+- OkHttp for cloud TTS (DeepInfra Orpheus API)
+- ML Kit for on-device language detection and translation
+- EncryptedSharedPreferences for API key storage
+- SharedPreferences (JSON) for profiles, rules, and settings

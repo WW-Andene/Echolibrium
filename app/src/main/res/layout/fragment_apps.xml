@@ -7,7 +7,7 @@
         android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="6dp"/>
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/app_rules_description"
-        android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+        android:textSize="12sp" android:textColor="#66aa66" android:fontFamily="monospace"
         android:layout_marginBottom="12dp"/>
     <Button android:id="@+id/btn_load_apps" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:text="@string/load_installed_apps"
@@ -17,7 +17,7 @@
     <!-- Search bar -->
     <EditText android:id="@+id/et_search" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:hint="@string/search_apps"
-        android:textSize="14sp" android:textColor="#cccccc" android:textColorHint="#444444"
+        android:textSize="14sp" android:textColor="#cccccc" android:textColorHint="#666666"
         android:background="#111111" android:padding="12dp" android:fontFamily="monospace"
         android:inputType="text" android:layout_marginBottom="8dp"/>
 

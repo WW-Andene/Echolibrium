@@ -14,7 +14,7 @@
 #   - The APK itself (uninstall separately if needed)
 # ─────────────────────────────────────────────────────────────────
 
-PKG="com.kokoro.reader"
+PKG="com.echolibrium.kyokan"
 
 echo "═══ Kyōkan Data Cleaner ═══"
 echo ""

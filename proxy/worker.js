@@ -1,6 +1,41 @@
 // Deploy this at workers.cloudflare.com
 // Add your DeepInfra key as an environment variable called DEEPINFRA_KEY
 // (Settings → Variables → Add, so it's never in the code)
+//
+// Optional: set ALLOWED_ORIGIN env var to restrict to your app's package
+// (e.g. "com.echolibrium.kyokan")
+
+// Simple in-memory rate limiter (per-worker-instance)
+// Cloudflare Workers restart frequently, so this resets naturally.
+// For stricter limits, use Cloudflare Workers KV or Rate Limiting rules.
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 30; // max requests per IP per window
+const MAX_INPUT_LENGTH = 2000; // max characters per request
+const rateLimitMap = new Map();
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { windowStart: now, count: 1 });
+    return false;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return true;
+  }
+  return false;
+}
+
+// Periodically clean stale entries (keep map from growing unbounded)
+function cleanRateLimitMap() {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitMap.delete(ip);
+    }
+  }
+}
 
 export default {
   async fetch(request, env) {
@@ -9,8 +44,32 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
 
+    // Rate limiting by client IP
+    const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
+    if (isRateLimited(clientIp)) {
+      return new Response("Rate limit exceeded", { status: 429 });
+    }
+
+    // Clean stale rate limit entries periodically
+    if (rateLimitMap.size > 1000) {
+      cleanRateLimitMap();
+    }
+
     // Read the app's request (same shape as DeepInfra's API)
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response("Invalid JSON", { status: 400 });
+    }
+
+    // Validate input
+    if (!body.input || typeof body.input !== "string" || body.input.trim().length === 0) {
+      return new Response("Missing or empty input", { status: 400 });
+    }
+    if (body.input.length > MAX_INPUT_LENGTH) {
+      return new Response(`Input too long (max ${MAX_INPUT_LENGTH} chars)`, { status: 400 });
+    }
 
     // Forward to DeepInfra with YOUR key (app never sees it)
     const response = await fetch("https://api.deepinfra.com/v1/openai/audio/speech", {

@@ -1,5 +1,6 @@
 package com.echolibrium.kyokan
 
+import android.content.SharedPreferences
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -19,6 +20,17 @@ class NotificationReaderService : NotificationListenerService() {
     private val readKeys = LinkedHashMap<String, Long>(128, 0.75f, true)
     private val swipedKeys = mutableSetOf<String>()
     private val appLastRead = mutableMapOf<String, Long>()
+
+    // Cached data — invalidated via SharedPreferences listener (QW6)
+    @Volatile private var cachedRules: List<AppRule>? = null
+    @Volatile private var cachedProfiles: List<VoiceProfile>? = null
+
+    private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "app_rules" -> cachedRules = null
+            "voice_profiles", "active_profile_id" -> cachedProfiles = null
+        }
+    }
     private val processingExecutor: ExecutorService = ThreadPoolExecutor(
         1, 1, 0L, TimeUnit.MILLISECONDS,
         LinkedBlockingQueue<Runnable>(20),
@@ -39,6 +51,7 @@ class NotificationReaderService : NotificationListenerService() {
         super.onCreate()
         CrashLogger.install(this)
         instance = this
+        prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
         AudioPipeline.start(this)
         TtsAliveService.start(this)
         if (prefs.getBoolean("listening_enabled", false)) {
@@ -54,9 +67,12 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
         instance = null
         lastSpokenText = ""
         lastNotificationTime = 0L
+        cachedRules = null
+        cachedProfiles = null
         VoiceCommandListener.stop()
         AudioPipeline.shutdown()
         TtsAliveService.stop(this)
@@ -69,7 +85,7 @@ class NotificationReaderService : NotificationListenerService() {
         if (isDndActive()) return
         if (sbn.isOngoing && !prefs.getBoolean("notif_read_ongoing", false)) return
 
-        val rules = AppRule.loadAll(prefs)
+        val rules = cachedRules ?: AppRule.loadAll(prefs).also { cachedRules = it }
         val rule  = rules.find { it.packageName == sbn.packageName }
         if (rule?.readMode == "skip" || rule?.enabled == false) return
 
@@ -109,7 +125,7 @@ class NotificationReaderService : NotificationListenerService() {
         val pkgName = sbn.packageName
 
         processingExecutor.execute {
-            val profiles  = VoiceProfile.loadAll(prefs)
+            val profiles  = cachedProfiles ?: VoiceProfile.loadAll(prefs).also { cachedProfiles = it }
             val activeId = prefs.getString("active_profile_id", "") ?: ""
 
             val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"

@@ -19,7 +19,7 @@
             android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/word_rules_description"
-                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:textSize="12sp" android:textColor="#66aa66" android:fontFamily="monospace"
                 android:layout_marginBottom="10dp"/>
             <Button android:id="@+id/btn_add_rule" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="@string/btn_add_rule"
@@ -39,7 +39,7 @@
             android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/notif_rules_description"
-                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:textSize="12sp" android:textColor="#66aa66" android:fontFamily="monospace"
                 android:layout_marginBottom="12dp"/>
 
             <!-- Read only once -->
@@ -119,7 +119,7 @@
             android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Route notifications to different voice profiles by detected language. When enabled, the app auto-detects language and uses the mapped profile."
-                android:textSize="12sp" android:textColor="#446644" android:fontFamily="monospace"
+                android:textSize="12sp" android:textColor="#66aa66" android:fontFamily="monospace"
                 android:layout_marginBottom="12dp"/>
 
             <!-- Enable toggle -->
@@ -135,7 +135,7 @@
             <!-- Voice routing per language -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="// VOICE ROUTING"
-                android:textColor="#446644" android:textSize="11sp" android:fontFamily="monospace"
+                android:textColor="#66aa66" android:textSize="11sp" android:fontFamily="monospace"
                 android:layout_marginBottom="8dp"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -160,7 +160,7 @@
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="// TRANSLATION"
-                android:textColor="#446644" android:textSize="11sp" android:fontFamily="monospace"
+                android:textColor="#66aa66" android:textSize="11sp" android:fontFamily="monospace"
                 android:layout_marginBottom="4dp"/>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Translate notifications before speaking. Works with or without voice routing above."

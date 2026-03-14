@@ -128,6 +128,7 @@ class ProfilesFragment : Fragment() {
             setPadding(20, 8, 20, 8)
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 8, 0); layoutParams = lp
+            contentDescription = "Filter: $label${if (active) ", selected" else ""}"
             setOnClickListener { onClick() }
         }
     }
@@ -246,7 +247,7 @@ class ProfilesFragment : Fragment() {
         val piperSubtitle = "Offline  ·  $piperReadyCount/${piperEntries.size} voices downloaded  ·  Per-voice download"
         val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !PiperDownloadManager.isDownloading(it.id) }
         val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
-            { downloadAllPiper() }
+            { confirmDownloadAllPiper() }
         } else null
         voiceGrid.addView(buildSectionHeader("PIPER", piperSubtitle, 0xFF88ccff.toInt(), piperDownloadAll))
 
@@ -383,12 +384,14 @@ class ProfilesFragment : Fragment() {
                 }
             }
 
+            contentDescription = "$name voice, ${if (icon == "♀") "female" else if (icon == "♂") "male" else "unknown gender"}, $status${if (active) ", selected" else ""}"
             if (onClick != null) setOnClickListener { onClick() }
 
             // Gender icon
             addView(TextView(ctx).apply {
                 text = icon; textSize = 22f; gravity = android.view.Gravity.CENTER
                 setTextColor(iconColor)
+                importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
             })
 
             // Voice name
@@ -420,6 +423,7 @@ class ProfilesFragment : Fragment() {
                     setPadding(0, (4 * dp).toInt(), 0, 0)
                     isClickable = true
                     isFocusable = true
+                    contentDescription = "Preview $name voice"
                     setOnClickListener {
                         val previewText = txtPreview.text.toString().ifBlank { "Hello! This is $name." }
                         val tempProfile = currentProfile.copy(voiceName = voiceId)
@@ -464,7 +468,7 @@ class ProfilesFragment : Fragment() {
 
     private fun emptyLabel(msg: String): android.view.View {
         return TextView(requireContext()).apply {
-            text = msg; setTextColor(0xFF446644.toInt()); textSize = 12f
+            text = msg; setTextColor(0xFF66aa66.toInt()); textSize = 12f
             setPadding(6, 8, 0, 8)
         }
     }
@@ -511,6 +515,20 @@ class ProfilesFragment : Fragment() {
         PiperDownloadManager.downloadVoice(requireContext(), voiceId)
         renderVoiceGrid()
         startDownloadRefresh()
+    }
+
+    private fun confirmDownloadAllPiper() {
+        val ctx = requireContext()
+        val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
+        val remaining = piperEntries.count { !VoiceRegistry.isReady(ctx, it.id) && !PiperDownloadManager.isDownloading(it.id) }
+        val estimatedMb = piperEntries.filter { !VoiceRegistry.isReady(ctx, it.id) }
+            .sumOf { PiperVoices.byId(it.id)?.sizeMb ?: 40 }
+        AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
+            .setTitle("Download all Piper voices?")
+            .setMessage("This will download $remaining voices (~${estimatedMb}MB total). A Wi-Fi connection is recommended.")
+            .setPositiveButton("Download") { _, _ -> downloadAllPiper() }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun downloadAllPiper() {
@@ -580,6 +598,8 @@ class ProfilesFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
                 it.setMargins((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
             }
+            val voiceEntry = VoiceRegistry.byId(p.voiceName)
+            contentDescription = "Profile ${p.name}${if (voiceEntry != null) ", voice ${voiceEntry.displayName}" else ""}${if (isActive) ", active" else ""}. Long press to rename."
 
             setOnClickListener {
                 activeProfileId = p.id
@@ -792,11 +812,7 @@ class ProfilesFragment : Fragment() {
     )
 
     private fun attachSeek(s: SeekBar, onChange: (Int) -> Unit) {
-        s.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, v: Int, fromUser: Boolean) { if (fromUser) onChange(v) }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
+        s.setOnSeekBarChangeListener(onSeekBarChange(onChange))
     }
 
     override fun onResume() {

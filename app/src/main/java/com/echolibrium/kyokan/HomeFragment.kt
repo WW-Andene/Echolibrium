@@ -76,7 +76,7 @@ class HomeFragment : Fragment() {
         val dndStart = prefs.getInt("dnd_start", 22)
         seekDndStart.max = 23; seekDndStart.progress = dndStart
         txtDndStart.text = "Silence from: %02d:00".format(dndStart)
-        seekDndStart.setOnSeekBarChangeListener(seek { h ->
+        seekDndStart.setOnSeekBarChangeListener(onSeekBarChange { h ->
             prefs.edit().putInt("dnd_start", h).apply()
             txtDndStart.text = "Silence from: %02d:00".format(h)
         })
@@ -84,7 +84,7 @@ class HomeFragment : Fragment() {
         val dndEnd = prefs.getInt("dnd_end", 8)
         seekDndEnd.max = 23; seekDndEnd.progress = dndEnd
         txtDndEnd.text = "Until: %02d:00".format(dndEnd)
-        seekDndEnd.setOnSeekBarChangeListener(seek { h ->
+        seekDndEnd.setOnSeekBarChangeListener(onSeekBarChange { h ->
             prefs.edit().putInt("dnd_end", h).apply()
             txtDndEnd.text = "Until: %02d:00".format(h)
         })
@@ -239,9 +239,4 @@ class HomeFragment : Fragment() {
         }))
     }
 
-    private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
-        override fun onProgressChanged(s: SeekBar?, v: Int, fromUser: Boolean) { if (fromUser) onChange(v) }
-        override fun onStartTrackingTouch(s: SeekBar?) {}
-        override fun onStopTrackingTouch(s: SeekBar?) {}
-    }
 }

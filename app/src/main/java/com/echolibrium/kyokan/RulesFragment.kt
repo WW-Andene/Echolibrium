@@ -88,7 +88,7 @@ class RulesFragment : Fragment() {
         val cooldown = prefs.getInt("notif_cooldown", 3)
         seekCooldown.progress = cooldown
         txtCooldown.text = "Cooldown per app: ${cooldown}s"
-        seekCooldown.setOnSeekBarChangeListener(seek { value ->
+        seekCooldown.setOnSeekBarChangeListener(onSeekBarChange { value ->
             prefs.edit().putInt("notif_cooldown", value).apply()
             txtCooldown.text = "Cooldown per app: ${value}s"
         })
@@ -98,7 +98,7 @@ class RulesFragment : Fragment() {
         val maxQueue = prefs.getInt("notif_max_queue", 10)
         seekMaxQueue.progress = maxQueue
         txtMaxQueue.text = "Max queue size: $maxQueue"
-        seekMaxQueue.setOnSeekBarChangeListener(seek { value ->
+        seekMaxQueue.setOnSeekBarChangeListener(onSeekBarChange { value ->
             prefs.edit().putInt("notif_max_queue", value.coerceAtLeast(1)).apply()
             txtMaxQueue.text = "Max queue size: ${value.coerceAtLeast(1)}"
         })
@@ -161,7 +161,7 @@ class RulesFragment : Fragment() {
             fun editText(hint: String, value: String, onChanged: (String) -> Unit) =
                 EditText(requireContext()).apply {
                     setText(value); this.hint = hint; textSize = 13f
-                    setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
+                    setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF666666.toInt())
                     setBackgroundColor(0xFF222222.toInt()); setPadding(12, 8, 12, 8)
                     addTextChangedListener(object : TextWatcher {
                         override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
@@ -289,9 +289,4 @@ class RulesFragment : Fragment() {
         }
     }
 
-    private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
-        override fun onProgressChanged(s: SeekBar?, v: Int, fromUser: Boolean) { if (fromUser) onChange(v) }
-        override fun onStartTrackingTouch(s: SeekBar?) {}
-        override fun onStopTrackingTouch(s: SeekBar?) {}
-    }
 }

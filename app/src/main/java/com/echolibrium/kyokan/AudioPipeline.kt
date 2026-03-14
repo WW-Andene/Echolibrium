@@ -42,6 +42,9 @@ object AudioPipeline {
     @Volatile private var currentTrack: AudioTrack? = null
     private val trackLock = Object()
 
+    /** Called on the pipeline thread when synthesis fails — use Handler to post to UI. */
+    @Volatile var onSynthesisError: ((voiceId: String, reason: String) -> Unit)? = null
+
     // Crossfade state
     private const val CROSSFADE_MS = 40
     private var prevTail: FloatArray? = null
@@ -141,12 +144,21 @@ object AudioPipeline {
             synthesizeWithCloud(item.text, item)
                 ?: run {
                     Log.w(TAG, "Cloud voice $voiceId unavailable, no fallback for cloud voices")
+                    onSynthesisError?.invoke(voiceId, "Cloud voice failed — check internet or proxy setup")
                     return
                 }
         } else if (PiperVoices.isPiperVoice(voiceId)) {
-            synthesizeWithPiper(ctx, voiceId, item.text, item.speed) ?: return
+            synthesizeWithPiper(ctx, voiceId, item.text, item.speed)
+                ?: run {
+                    onSynthesisError?.invoke(voiceId, "Piper voice not downloaded yet")
+                    return
+                }
         } else {
-            synthesizeWithKokoro(ctx, voiceId, item.text, item.speed) ?: return
+            synthesizeWithKokoro(ctx, voiceId, item.text, item.speed)
+                ?: run {
+                    onSynthesisError?.invoke(voiceId, "Kokoro model not ready")
+                    return
+                }
         }
 
         val (pcm, sampleRate) = result

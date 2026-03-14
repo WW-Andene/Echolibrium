@@ -605,6 +605,13 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun setupButtons() {
+        // Show toast when TTS synthesis fails silently
+        AudioPipeline.onSynthesisError = { _, reason ->
+            activity?.runOnUiThread {
+                if (isAdded) Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
+            }
+        }
+
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
             val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }

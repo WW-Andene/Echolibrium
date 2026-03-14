@@ -92,6 +92,78 @@ object CloudTtsEngine {
         return Engine.CHATTERBOX
     }
 
+    // ── Emotion → Engine tag mapping ───────────────────────────────────────
+
+    /**
+     * Map Kyōkan's signal analysis to a Qwen3-TTS voice instruction.
+     * Returns a natural language direction like "speak warmly and gently".
+     */
+    fun voiceInstructionFromSignal(signal: SignalMap): String? {
+        val parts = mutableListOf<String>()
+
+        // Emotion blend → voice quality
+        when (signal.emotionBlend) {
+            EmotionBlend.NERVOUS_EXCITEMENT -> parts += "speak with excited, slightly breathless energy"
+            EmotionBlend.SUPPRESSED_TENSION -> parts += "speak with restrained tension, controlled and tight"
+            EmotionBlend.NOSTALGIC_WARMTH   -> parts += "speak warmly and gently, with soft nostalgia"
+            EmotionBlend.RESIGNED_ACCEPTANCE -> parts += "speak with calm resignation, subdued and accepting"
+            EmotionBlend.WORRIED_AFFECTION  -> parts += "speak with caring concern, gentle but worried"
+            EmotionBlend.NONE -> {}
+        }
+
+        // Urgency → pacing
+        when (signal.urgencyType) {
+            UrgencyType.EXPIRING, UrgencyType.BLOCKING -> parts += "speak urgently and quickly"
+            UrgencyType.REAL -> parts += "speak with clear importance"
+            else -> {}
+        }
+
+        // Warmth → tone
+        when (signal.warmthLevel) {
+            WarmthLevel.HIGH -> parts += "use a warm, friendly tone"
+            WarmthLevel.DISTRESSED -> parts += "use a concerned, empathetic tone"
+            else -> {}
+        }
+
+        return parts.joinToString(", ").ifBlank { null }
+    }
+
+    /**
+     * Inject Orpheus emotion tags into text based on signal analysis.
+     * Tags are prepended/appended to the text for Orpheus to interpret.
+     */
+    fun enrichTextForOrpheus(text: String, signal: SignalMap): String {
+        // Don't double-tag if text already has emotion tags
+        if (ORPHEUS_TAGS.any { it in text }) return text
+
+        val tag = when (signal.emotionBlend) {
+            EmotionBlend.NERVOUS_EXCITEMENT -> "<gasp> "
+            EmotionBlend.SUPPRESSED_TENSION -> "<sigh> "
+            EmotionBlend.NOSTALGIC_WARMTH   -> null // no matching tag — let the model handle it naturally
+            EmotionBlend.RESIGNED_ACCEPTANCE -> "<sigh> "
+            EmotionBlend.WORRIED_AFFECTION  -> null
+            EmotionBlend.NONE -> null
+        }
+        return if (tag != null) "$tag$text" else text
+    }
+
+    /**
+     * Inject Chatterbox paralinguistic tags into text based on signal analysis.
+     */
+    fun enrichTextForChatterbox(text: String, signal: SignalMap): String {
+        if (CHATTERBOX_TAGS.any { it in text }) return text
+
+        val tag = when (signal.emotionBlend) {
+            EmotionBlend.NERVOUS_EXCITEMENT -> "[laugh] "
+            EmotionBlend.SUPPRESSED_TENSION -> null
+            EmotionBlend.NOSTALGIC_WARMTH   -> null
+            EmotionBlend.RESIGNED_ACCEPTANCE -> "[sniffle] "
+            EmotionBlend.WORRIED_AFFECTION  -> null
+            EmotionBlend.NONE -> null
+        }
+        return if (tag != null) "$tag$text" else text
+    }
+
     /**
      * Synthesize text to PCM audio via DeepInfra.
      *

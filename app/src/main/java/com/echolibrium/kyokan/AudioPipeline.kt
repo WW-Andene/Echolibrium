@@ -374,16 +374,34 @@ object AudioPipeline {
 
     /**
      * Attempt synthesis via DeepInfra cloud TTS.
-     * The router selects Orpheus/Chatterbox/Qwen3 based on priority and content tags.
+     * The router selects Orpheus/Chatterbox/Qwen3 based on priority, content tags,
+     * and emotion signals. Enriches text with engine-specific emotion tags.
      * Returns null if cloud TTS is disabled or the request fails — falls through to local.
      */
     private fun synthesizeWithCloud(text: String, item: Item): Pair<FloatArray, Int>? {
         if (!CloudTtsEngine.isEnabled()) return null
+
+        // Generate Qwen3 voice instruction from mood/signal analysis
+        val voiceInstruction = CloudTtsEngine.voiceInstructionFromSignal(item.signal)
+
         val engine = CloudTtsEngine.selectEngine(
             text = text,
-            priority = item.priority
+            priority = item.priority,
+            voiceInstruction = voiceInstruction
         )
-        return CloudTtsEngine.synthesize(text = text, engine = engine)
+
+        // Enrich text with engine-specific emotion tags based on signal analysis
+        val enrichedText = when (engine) {
+            CloudTtsEngine.Engine.ORPHEUS -> CloudTtsEngine.enrichTextForOrpheus(text, item.signal)
+            CloudTtsEngine.Engine.CHATTERBOX -> CloudTtsEngine.enrichTextForChatterbox(text, item.signal)
+            CloudTtsEngine.Engine.QWEN3_TTS -> text // Qwen3 uses voiceInstruction instead
+        }
+
+        return CloudTtsEngine.synthesize(
+            text = enrichedText,
+            engine = engine,
+            voiceInstruction = voiceInstruction
+        )
     }
 
     private fun synthesizeWithKokoro(

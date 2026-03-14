@@ -115,16 +115,18 @@ class ProfilesFragment : Fragment() {
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
-        // Merge genders from both engines
-        val genders = (KokoroVoices.genders() + PiperVoices.genders()).distinct()
+        // Merge genders from all engines (including cloud)
+        val cloudGenders = VoiceRegistry.CLOUD_VOICES.map { it.gender }.distinct()
+        val genders = (KokoroVoices.genders() + PiperVoices.genders() + cloudGenders).distinct()
         genders.forEach { g ->
             genderRow.addView(filterBtn(g, genderFilter == g) {
                 genderFilter = g; buildFilterButtons(); renderVoiceGrid()
             })
         }
 
-        // Merge languages from both engines
-        val languages = (KokoroVoices.languages() + PiperVoices.languages()).distinct()
+        // Merge languages from all engines (including cloud)
+        val cloudLanguages = VoiceRegistry.CLOUD_VOICES.map { it.language }.distinct()
+        val languages = (KokoroVoices.languages() + PiperVoices.languages() + listOf("All") + cloudLanguages).distinct()
         languages.forEach { l ->
             nationRow.addView(filterBtn(l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
@@ -178,6 +180,22 @@ class ProfilesFragment : Fragment() {
         } else null
         voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt(), piperDownloadIcon))
         renderPiperVoices()
+
+        // ── Spacing ─────────────────────────────────────────────────────────
+        voiceGrid.addView(android.view.View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0
+            ).also { it.setMargins(0, 20, 0, 0) }
+        })
+
+        // ── CLOUD section (DeepInfra: Orpheus, Chatterbox, Qwen3-TTS) ────
+        val cloudEnabled = CloudTtsEngine.isEnabled()
+        val cloudSubtitle = if (cloudEnabled)
+            "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices  ·  streaming"
+        else
+            "DeepInfra API  ·  requires API key in local.properties"
+        voiceGrid.addView(buildSectionHeader("CLOUD", cloudSubtitle, 0xFFffaa44.toInt()))
+        renderCloudVoices()
     }
 
     private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
@@ -375,6 +393,63 @@ class ProfilesFragment : Fragment() {
             if (statusClickable) {
                 setOnClickListener { startPiperDownload(v.id) }
             }
+        }
+        (card as LinearLayout).addView(statusView)
+        return card
+    }
+
+    private fun renderCloudVoices() {
+        val cloudEnabled = CloudTtsEngine.isEnabled()
+
+        val filtered = VoiceRegistry.CLOUD_VOICES.filter { v ->
+            val gOk = genderFilter == "All" || v.gender == genderFilter
+            val lOk = languageFilter == "All" || v.language == languageFilter
+            gOk && lOk
+        }
+
+        if (filtered.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No Cloud voices match filter."))
+            return
+        }
+
+        // Group by cloud engine
+        val engineOrder = listOf(
+            VoiceRegistry.CloudEngine.ORPHEUS to "Orpheus 3B",
+            VoiceRegistry.CloudEngine.CHATTERBOX to "Chatterbox Turbo",
+            VoiceRegistry.CloudEngine.QWEN3_TTS to "Qwen3-TTS"
+        )
+        for ((engineType, engineLabel) in engineOrder) {
+            val voices = filtered.filter { it.cloudEngine == engineType }
+            if (voices.isEmpty()) continue
+            voiceGrid.addView(langHeader(engineLabel, voices.size, 0xFF886633.toInt()))
+            addVoiceRows(voices.map { v -> buildCloudCard(v, cloudEnabled) })
+        }
+    }
+
+    private fun buildCloudCard(v: VoiceRegistry.CloudVoice, cloudEnabled: Boolean): android.view.View {
+        val active = currentProfile.voiceName == v.id
+
+        val card = buildVoiceCard(
+            name = v.displayName, icon = v.genderIcon,
+            iconColor = if (cloudEnabled) v.genderColor else 0xFF444444.toInt(),
+            badge = when (v.cloudEngine) {
+                VoiceRegistry.CloudEngine.ORPHEUS -> "☁ Orpheus"
+                VoiceRegistry.CloudEngine.CHATTERBOX -> "☁ Chatterbox"
+                VoiceRegistry.CloudEngine.QWEN3_TTS -> "☁ Qwen3"
+            },
+            voiceId = v.id,
+            active = active, accent = 0xFFffaa44.toInt(), enabled = cloudEnabled,
+            onClick = if (cloudEnabled) {
+                { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+            } else null
+        )
+
+        // Status indicator
+        val statusView = TextView(requireContext()).apply {
+            text = if (cloudEnabled) "cloud" else "no API key"
+            textSize = 10f; gravity = android.view.Gravity.CENTER
+            setTextColor(if (cloudEnabled) 0xFF886633.toInt() else 0xFFff4444.toInt())
+            setPadding(0, 4, 0, 0)
         }
         (card as LinearLayout).addView(statusView)
         return card

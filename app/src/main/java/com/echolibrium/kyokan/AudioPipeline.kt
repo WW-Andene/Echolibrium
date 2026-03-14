@@ -238,6 +238,11 @@ object AudioPipeline {
         val result = if (cloudResult != null) {
             yatagamiResult = null
             cloudResult
+        } else if (VoiceRegistry.isCloud(voiceId)) {
+            // Cloud voice selected but cloud TTS failed — no local fallback possible
+            Log.w(TAG, "Cloud voice $voiceId selected but cloud TTS unavailable")
+            yatagamiResult = null
+            null
         } else {
             // Fall back to local engines
             yatagamiResult = synthesizeWithYatagami(ctx, item, processed)
@@ -364,22 +369,39 @@ object AudioPipeline {
 
     /**
      * Attempt synthesis via DeepInfra cloud TTS.
-     * The router selects Orpheus/Chatterbox/Qwen3 based on priority, content tags,
-     * and emotion signals. Enriches text with engine-specific emotion tags.
+     * If the user selected a cloud voice, routes to the matching engine with that voice.
+     * Otherwise, auto-selects engine based on priority, content tags, and emotion signals.
      * Returns null if cloud TTS is disabled or the request fails — falls through to local.
      */
     private fun synthesizeWithCloud(text: String, item: Item): Pair<FloatArray, Int>? {
         if (!CloudTtsEngine.isEnabled()) return null
 
+        val cloudVoice = VoiceRegistry.cloudVoiceById(item.profile.voiceName)
+
         // Generate Qwen3 voice instruction from mood/signal analysis
         val voiceInstruction = CloudTtsEngine.voiceInstructionFromSignal(item.signal)
 
-        val engine = CloudTtsEngine.selectEngine(
-            text = text,
-            priority = item.priority,
-            voiceInstruction = voiceInstruction,
-            language = item.language
-        )
+        val engine: CloudTtsEngine.Engine
+        val voice: String?
+
+        if (cloudVoice != null) {
+            // User explicitly selected a cloud voice — route to its engine
+            engine = when (cloudVoice.cloudEngine) {
+                VoiceRegistry.CloudEngine.ORPHEUS -> CloudTtsEngine.Engine.ORPHEUS
+                VoiceRegistry.CloudEngine.CHATTERBOX -> CloudTtsEngine.Engine.CHATTERBOX
+                VoiceRegistry.CloudEngine.QWEN3_TTS -> CloudTtsEngine.Engine.QWEN3_TTS
+            }
+            voice = cloudVoice.apiVoiceName
+        } else {
+            // No cloud voice selected — auto-route based on content
+            engine = CloudTtsEngine.selectEngine(
+                text = text,
+                priority = item.priority,
+                voiceInstruction = voiceInstruction,
+                language = item.language
+            )
+            voice = null
+        }
 
         // Enrich text with engine-specific emotion tags based on signal analysis
         val enrichedText = when (engine) {
@@ -391,7 +413,8 @@ object AudioPipeline {
         return CloudTtsEngine.synthesize(
             text = enrichedText,
             engine = engine,
-            voiceInstruction = voiceInstruction,
+            voice = voice,
+            voiceInstruction = if (engine == CloudTtsEngine.Engine.QWEN3_TTS) voiceInstruction else null,
             language = item.language
         )
     }

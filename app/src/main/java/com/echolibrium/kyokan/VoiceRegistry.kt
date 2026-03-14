@@ -17,7 +17,7 @@ import android.content.Context
 object VoiceRegistry {
 
     /** Engine type for routing */
-    enum class Engine { KOKORO, PIPER }
+    enum class Engine { KOKORO, PIPER, CLOUD }
 
     /** Unified voice entry with engine-agnostic metadata */
     data class VoiceEntry(
@@ -59,8 +59,62 @@ object VoiceRegistry {
         )
     }
 
+    // ── Cloud TTS voices (DeepInfra: Orpheus, Chatterbox, Qwen3-TTS) ────────
+
+    /** Cloud engine sub-type stored in the voice ID prefix */
+    enum class CloudEngine { ORPHEUS, CHATTERBOX, QWEN3_TTS }
+
+    data class CloudVoice(
+        val id: String,
+        val displayName: String,
+        val cloudEngine: CloudEngine,
+        val gender: String,
+        val language: String,
+        val nationality: String,
+        val apiVoiceName: String   // name sent to DeepInfra API
+    ) {
+        val genderIcon get() = if (gender == "Female") "♀" else "♂"
+        val genderColor get() = if (gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
+    }
+
+    val CLOUD_VOICES = listOf(
+        // Orpheus voices (English only, high fidelity + emotion tags)
+        CloudVoice("cloud_orpheus_tara",  "Tara",  CloudEngine.ORPHEUS, "Female", "English", "American", "tara"),
+        CloudVoice("cloud_orpheus_leah",  "Leah",  CloudEngine.ORPHEUS, "Female", "English", "American", "leah"),
+        CloudVoice("cloud_orpheus_jess",  "Jess",  CloudEngine.ORPHEUS, "Female", "English", "American", "jess"),
+        CloudVoice("cloud_orpheus_mia",   "Mia",   CloudEngine.ORPHEUS, "Female", "English", "American", "mia"),
+        CloudVoice("cloud_orpheus_zoe",   "Zoe",   CloudEngine.ORPHEUS, "Female", "English", "American", "zoe"),
+        CloudVoice("cloud_orpheus_leo",   "Leo",   CloudEngine.ORPHEUS, "Male",   "English", "American", "leo"),
+        CloudVoice("cloud_orpheus_dan",   "Dan",   CloudEngine.ORPHEUS, "Male",   "English", "American", "dan"),
+        CloudVoice("cloud_orpheus_zac",   "Zac",   CloudEngine.ORPHEUS, "Male",   "English", "American", "zac"),
+        // Chatterbox (multilingual, default voice)
+        CloudVoice("cloud_chatterbox_default", "Chatterbox", CloudEngine.CHATTERBOX, "Female", "Multilingual", "Cloud", "default"),
+        // Qwen3-TTS voices (multilingual, voice instructions)
+        CloudVoice("cloud_qwen3_vivian",  "Vivian",  CloudEngine.QWEN3_TTS, "Female", "Multilingual", "Cloud", "Vivian"),
+        CloudVoice("cloud_qwen3_serena",  "Serena",  CloudEngine.QWEN3_TTS, "Female", "Multilingual", "Cloud", "Serena"),
+        CloudVoice("cloud_qwen3_dylan",   "Dylan",   CloudEngine.QWEN3_TTS, "Male",   "Multilingual", "Cloud", "Dylan"),
+        CloudVoice("cloud_qwen3_eric",    "Eric",    CloudEngine.QWEN3_TTS, "Male",   "Multilingual", "Cloud", "Eric"),
+        CloudVoice("cloud_qwen3_ryan",    "Ryan",    CloudEngine.QWEN3_TTS, "Male",   "Multilingual", "Cloud", "Ryan"),
+        CloudVoice("cloud_qwen3_aiden",   "Aiden",   CloudEngine.QWEN3_TTS, "Male",   "Multilingual", "Cloud", "Aiden"),
+    )
+
+    private val cloudEntries: List<VoiceEntry> = CLOUD_VOICES.map { v ->
+        VoiceEntry(
+            id = v.id,
+            displayName = v.displayName,
+            engine = Engine.CLOUD,
+            gender = v.gender,
+            language = v.language,
+            nationality = v.nationality,
+            sampleRate = 24000
+        )
+    }
+
+    fun cloudVoiceById(id: String): CloudVoice? = CLOUD_VOICES.find { it.id == id }
+    fun isCloud(voiceId: String): Boolean = engineFor(voiceId) == Engine.CLOUD
+
     /** All registered voices across all engines */
-    val ALL: List<VoiceEntry> = kokoroEntries + piperEntries
+    val ALL: List<VoiceEntry> = kokoroEntries + piperEntries + cloudEntries
 
     fun byId(id: String): VoiceEntry? = ALL.find { it.id == id }
 
@@ -79,6 +133,7 @@ object VoiceRegistry {
                 val voiceDir = java.io.File(ctx.filesDir, "sherpa/piper/$voiceId")
                 voiceDir.exists() && java.io.File(voiceDir, "model.onnx").exists()
             }
+            Engine.CLOUD -> CloudTtsEngine.isEnabled()
         }
     }
 
@@ -95,7 +150,7 @@ object VoiceRegistry {
 
     fun languages(): List<String> = listOf("All") + ALL.map { it.language }.distinct().sorted()
     fun genders(): List<String> = listOf("All", "Female", "Male")
-    fun engines(): List<String> = listOf("All", "Kokoro", "Piper")
+    fun engines(): List<String> = listOf("All", "Kokoro", "Piper", "Cloud")
 }
 
 /**
@@ -132,6 +187,7 @@ object VoiceSynthesizer {
         return when (engine) {
             VoiceRegistry.Engine.KOKORO -> synthesizeKokoro(ctx, identity, text, modulated)
             VoiceRegistry.Engine.PIPER -> synthesizePiper(ctx, identity, text, modulated)
+            VoiceRegistry.Engine.CLOUD -> null // Cloud voices are handled by AudioPipeline via CloudTtsEngine
         }
     }
 

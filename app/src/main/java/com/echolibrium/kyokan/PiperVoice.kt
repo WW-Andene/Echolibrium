@@ -6,10 +6,10 @@ package com.echolibrium.kyokan
  * Each Piper voice is a single VITS model (.onnx) that also requires
  * shared assets: tokens.txt + espeak-ng-data/ for phonemization.
  *
- * Voice packages are downloaded from k2-fsa/sherpa-onnx GitHub releases
- * as tar.bz2 archives, each self-contained with model + shared assets.
+ * Voices with bundles (vits-piper-*.tar.bz2) are downloaded as a single archive.
+ * Voices without bundles are assembled from individual .onnx + shared assets.
  *
- * Storage: filesDir/sherpa/piper/{voiceId}/model.onnx, tokens.txt, espeak-ng-data/
+ * Storage: filesDir/sherpa/piper/{voiceId}/{voiceId}.onnx, tokens.txt, espeak-ng-data/
  */
 data class PiperVoice(
     val id: String,           // e.g. "en_US-lessac-medium"
@@ -49,6 +49,8 @@ data class PiperVoice(
 
 object PiperVoices {
 
+    private const val RELEASE_BASE = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
+
     private fun piper(
         name: String, gender: String, language: String, nationality: String,
         locale: String, quality: String
@@ -65,8 +67,29 @@ object PiperVoices {
         )
     }
 
+    // ── English (US) ─────────────────────────────────────────────────────────
+    private val EN_US = listOf(
+        piper("lessac",     "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("ljspeech",   "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("kristin",    "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("amy",        "Female",  "English (US)", "American", "en_US", "low"),
+        piper("kathleen",   "Female",  "English (US)", "American", "en_US", "low"),
+        piper("hfc_female", "Female",  "English (US)", "American", "en_US", "medium"),
+        piper("ryan",       "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("joe",        "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("bryce",      "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("danny",      "Male",    "English (US)", "American", "en_US", "low"),
+        piper("john",       "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("norman",     "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("hfc_male",   "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("kusal",      "Male",    "English (US)", "American", "en_US", "medium"),
+        piper("arctic",     "Unknown", "English (US)", "American", "en_US", "medium"),
+        piper("l2arctic",   "Unknown", "English (US)", "American", "en_US", "medium"),
+        piper("libritts",   "Unknown", "English (US)", "American", "en_US", "high"),
+        piper("libritts_r", "Unknown", "English (US)", "American", "en_US", "medium"),
+    )
+
     // ── English (UK) ─────────────────────────────────────────────────────────
-    // Only voices with vits-piper-*.tar.bz2 bundles in the tts-assets-v1 release
     private val EN_GB = listOf(
         piper("alba",                    "Female", "English (UK)", "British", "en_GB", "medium"),
         piper("cori",                    "Female", "English (UK)", "British", "en_GB", "medium"),
@@ -77,9 +100,19 @@ object PiperVoices {
         piper("northern_english_male",   "Male",   "English (UK)", "British", "en_GB", "medium"),
         piper("aru",                     "Male",   "English (UK)", "British", "en_GB", "medium"),
         piper("semaine",                 "Male",   "English (UK)", "British", "en_GB", "medium"),
+        piper("vctk",                    "Unknown","English (UK)", "British", "en_GB", "medium"),
     )
 
-    val ALL: List<PiperVoice> = EN_GB
+    // ── French (FR) ──────────────────────────────────────────────────────────
+    private val FR_FR = listOf(
+        piper("siwis",  "Female", "French", "French", "fr_FR", "medium"),
+        piper("siwis",  "Female", "French", "French", "fr_FR", "low"),
+        piper("tom",    "Male",   "French", "French", "fr_FR", "medium"),
+        piper("gilles", "Male",   "French", "French", "fr_FR", "low"),
+        piper("upmc",   "Male",   "French", "French", "fr_FR", "medium"),
+    )
+
+    val ALL: List<PiperVoice> = EN_US + EN_GB + FR_FR
 
     fun byId(id: String): PiperVoice? = ALL.find { it.id == id }
     fun default(): PiperVoice = ALL.first()
@@ -92,14 +125,29 @@ object PiperVoices {
     /** True if this voice ID belongs to a Piper voice (not Kokoro) */
     fun isPiperVoice(voiceId: String): Boolean = byId(voiceId) != null
 
-    /**
-     * Download URL for a Piper voice tar.bz2 from our tts-assets-v1 release.
-     * These are k2-fsa-compatible packages (NOT raw HuggingFace .onnx).
-     * Pattern: vits-piper-{locale}-{name}-{quality}.tar.bz2
-     */
-    fun downloadUrl(voiceId: String): String {
-        return "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/vits-piper-$voiceId.tar.bz2"
-    }
+    // ── Voices that have pre-built vits-piper bundles ────────────────────────
+    private val BUNDLED_VOICES = setOf(
+        "en_GB-alan-medium", "en_GB-alba-medium", "en_GB-aru-medium",
+        "en_GB-cori-medium", "en_GB-jenny_dioco-medium",
+        "en_GB-northern_english_male-medium", "en_GB-semaine-medium",
+        "en_GB-southern_english_female-low", "en_GB-southern_english_female-medium",
+    )
+
+    fun hasBundledArchive(voiceId: String): Boolean = voiceId in BUNDLED_VOICES
+
+    /** Download URL for a bundled vits-piper tar.bz2 archive */
+    fun bundleUrl(voiceId: String): String =
+        "$RELEASE_BASE/vits-piper-$voiceId.tar.bz2"
+
+    /** Download URL for a raw .onnx model file */
+    fun onnxUrl(voiceId: String): String =
+        "$RELEASE_BASE/$voiceId.onnx"
+
+    /** Download URL for shared tokens file */
+    fun tokensUrl(): String = "$RELEASE_BASE/piper-tokens.txt"
+
+    /** Download URL for shared espeak-ng-data archive */
+    fun espeakDataUrl(): String = "$RELEASE_BASE/espeak-ng-data.tar.bz2"
 
     /** The directory name inside the tar.bz2 archive */
     fun archiveDirName(voiceId: String): String = "vits-piper-$voiceId"

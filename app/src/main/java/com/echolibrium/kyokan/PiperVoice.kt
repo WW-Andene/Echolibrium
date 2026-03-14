@@ -19,8 +19,7 @@ data class PiperVoice(
     val language: String,     // e.g. "English (US)"
     val nationality: String,  // e.g. "American"
     val locale: String,       // e.g. "en_US"
-    val quality: String,      // low | medium | high
-    val langCode: String      // e.g. "en" — ISO 639-1 for HuggingFace path
+    val quality: String       // low | medium | high
 ) {
     val genderIcon get() = when (gender) {
         "Female" -> "♀"
@@ -51,15 +50,12 @@ data class PiperVoice(
 object PiperVoices {
 
     private const val RELEASE_BASE = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1"
-    // Centralized HuggingFace URL (C3: avoid duplication across methods)
-    private const val HUGGINGFACE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 
     private fun piper(
         name: String, gender: String, language: String, nationality: String,
         locale: String, quality: String
     ): PiperVoice {
         val id = "${locale}-${name}-${quality}"
-        val langCode = locale.substringBefore("_").lowercase()
         return PiperVoice(
             id = id,
             name = name,
@@ -67,7 +63,7 @@ object PiperVoices {
                 it.replaceFirstChar { c -> c.uppercase() }
             },
             gender = gender, language = language, nationality = nationality,
-            locale = locale, quality = quality, langCode = langCode
+            locale = locale, quality = quality
         )
     }
 
@@ -129,35 +125,12 @@ object PiperVoices {
     /** True if this voice ID belongs to a Piper voice (not Kokoro) */
     fun isPiperVoice(voiceId: String): Boolean = byId(voiceId) != null
 
-    // ── Voices that have pre-built vits-piper bundles ────────────────────────
-    private val BUNDLED_VOICES = setOf(
-        "en_GB-alan-medium", "en_GB-alba-medium", "en_GB-aru-medium",
-        "en_GB-cori-medium", "en_GB-jenny_dioco-medium",
-        "en_GB-northern_english_male-medium", "en_GB-semaine-medium",
-        "en_GB-southern_english_female-low", "en_GB-southern_english_female-medium",
-    )
+    // All catalog voices have bundles on our GitHub release — always use bundled download
+    fun hasBundledArchive(voiceId: String): Boolean = byId(voiceId) != null
 
-    fun hasBundledArchive(voiceId: String): Boolean = voiceId in BUNDLED_VOICES
-
-    /** Download URL for a bundled vits-piper tar.bz2 archive */
+    /** Download URL for a bundled vits-piper tar.bz2 archive from our release */
     fun bundleUrl(voiceId: String): String =
         "$RELEASE_BASE/vits-piper-$voiceId.tar.bz2"
-
-    /**
-     * Download URL for a raw .onnx model from rhasspy/piper on HuggingFace.
-     * Path: {langCode}/{locale}/{name}/{quality}/{id}.onnx
-     */
-    fun onnxUrl(voice: PiperVoice): String =
-        "$HUGGINGFACE_BASE/${voice.langCode}/${voice.locale}/${voice.name}/${voice.quality}/${voice.id}.onnx"
-
-    /**
-     * Download URL for the voice's own .onnx.json config (contains tokens, phoneme map, etc.)
-     */
-    fun onnxJsonUrl(voice: PiperVoice): String =
-        "$HUGGINGFACE_BASE/${voice.langCode}/${voice.locale}/${voice.name}/${voice.quality}/${voice.id}.onnx.json"
-
-    /** Download URL for shared espeak-ng-data archive from our release */
-    fun espeakDataUrl(): String = "$RELEASE_BASE/espeak-ng-data.tar.bz2"
 
     /** The directory name inside the tar.bz2 archive */
     fun archiveDirName(voiceId: String): String = "vits-piper-$voiceId"

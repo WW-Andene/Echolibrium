@@ -2,18 +2,14 @@ package com.echolibrium.kyokan
 
 import android.content.Context
 import android.util.Log
-import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Downloads and manages individual Piper TTS voice packages.
  *
- * Two download modes:
- *   • Bundled: voices with vits-piper-*.tar.bz2 archives (model + tokens + espeak-ng-data)
- *   • Individual: downloads raw .onnx + shared assets (tokens.txt, espeak-ng-data/)
- *
- * Shared assets are downloaded once and copied into each voice directory.
+ * All voices are downloaded as bundled vits-piper-*.tar.bz2 archives from our
+ * GitHub release (model + tokens + espeak-ng-data included in each archive).
  *
  * Storage: filesDir/sherpa/piper/{voiceId}/
  *
@@ -61,9 +57,6 @@ object PiperDownloadManager {
 
     fun getVoiceDir(ctx: Context, voiceId: String): File =
         File(getPiperDir(ctx), voiceId)
-
-    private fun getSharedDir(ctx: Context): File =
-        File(getPiperDir(ctx), "_shared").also { it.mkdirs() }
 
     // ── State queries ───────────────────────────────────────────────────────
 
@@ -125,11 +118,7 @@ object PiperDownloadManager {
 
         Thread {
             try {
-                if (PiperVoices.hasBundledArchive(voiceId)) {
-                    downloadBundled(ctx, voiceId)
-                } else {
-                    downloadIndividual(ctx, voiceId)
-                }
+                downloadBundled(ctx, voiceId)
 
                 if (isVoiceReady(ctx, voiceId)) {
                     Log.d(TAG, "Voice $voiceId ready")
@@ -171,119 +160,6 @@ object PiperDownloadManager {
         }
     }
 
-    /**
-     * Download raw .onnx + per-voice tokens.txt (from .onnx.json) + shared espeak-ng-data.
-     *
-     * Each Piper model has its own tokens.txt extracted from its .onnx.json config.
-     * The espeak-ng-data/ directory is shared across all voices.
-     */
-    private fun downloadIndividual(ctx: Context, voiceId: String) {
-        val voice = PiperVoices.byId(voiceId)
-            ?: throw IllegalArgumentException("Unknown Piper voice: $voiceId")
-        val targetDir = getVoiceDir(ctx, voiceId)
-        targetDir.mkdirs()
-
-        // Step 1: Download the .onnx model (0-75% of progress)
-        val onnxFile = File(targetDir, "$voiceId.onnx")
-        if (!onnxFile.exists()) {
-            val tmpFile = File(targetDir, "$voiceId.onnx.tmp")
-            try {
-                val url = PiperVoices.onnxUrl(voice)
-                Log.d(TAG, "Downloading model $voiceId from $url")
-
-                DownloadUtil.download(url, tmpFile) { pct ->
-                    val scaled = (pct * 75) / 100
-                    voiceProgress[voiceId] = scaled
-                    notifyProgress(voiceId, scaled)
-                }
-                tmpFile.renameTo(onnxFile)
-            } catch (e: Exception) {
-                tmpFile.delete()
-                throw e
-            }
-        }
-
-        // Step 2: Download .onnx.json and extract tokens.txt from it (75-80%)
-        val tokensFile = File(targetDir, "tokens.txt")
-        if (!tokensFile.exists()) {
-            voiceProgress[voiceId] = 76
-            notifyProgress(voiceId, 76)
-            downloadTokensFromOnnxJson(ctx, voice, tokensFile)
-        }
-
-        // Step 3: Ensure shared espeak-ng-data exists, then copy into voice dir (80-95%)
-        ensureSharedEspeakData(ctx, voiceId)
-
-        val espeakDir = File(targetDir, "espeak-ng-data")
-        if (!espeakDir.exists()) {
-            voiceProgress[voiceId] = 96
-            notifyProgress(voiceId, 96)
-            val sharedEspeak = File(getSharedDir(ctx), "espeak-ng-data")
-            sharedEspeak.copyRecursively(espeakDir)
-        }
-
-        voiceProgress[voiceId] = 100
-        notifyProgress(voiceId, 100)
-    }
-
-    /**
-     * Download the voice's .onnx.json config and extract phoneme_id_map as tokens.txt.
-     * Piper's tokens.txt format: one token per line, "token idx".
-     */
-    private fun downloadTokensFromOnnxJson(ctx: Context, voice: PiperVoice, tokensFile: File) {
-        val tmpFile = File(tokensFile.parentFile, "config.json.tmp")
-        try {
-            val url = PiperVoices.onnxJsonUrl(voice)
-            Log.d(TAG, "Downloading config for ${voice.id} from $url")
-            DownloadUtil.download(url, tmpFile) { _ -> }
-
-            val json = JSONObject(tmpFile.readText())
-            val phonemeMap = json.getJSONObject("phoneme_id_map")
-
-            // Build tokens.txt: each line is "token idx"
-            val entries = mutableListOf<Pair<String, Int>>()
-            val keys = phonemeMap.keys()
-            while (keys.hasNext()) {
-                val token = keys.next()
-                val arr = phonemeMap.getJSONArray(token)
-                entries.add(Pair(token, arr.getInt(0)))
-            }
-            entries.sortBy { it.second }
-
-            tokensFile.writeText(entries.joinToString("\n") { "${it.first} ${it.second}" } + "\n")
-            Log.d(TAG, "Extracted ${entries.size} tokens for ${voice.id}")
-        } finally {
-            tmpFile.delete()
-        }
-    }
-
-    /**
-     * Download shared espeak-ng-data once to _shared/.
-     * Thread-safe: synchronized so multiple concurrent downloads don't duplicate work.
-     */
-    @Synchronized
-    private fun ensureSharedEspeakData(ctx: Context, voiceId: String) {
-        val sharedDir = getSharedDir(ctx)
-        val sharedEspeak = File(sharedDir, "espeak-ng-data")
-        if (sharedEspeak.exists()) return
-
-        val tmpFile = File(sharedDir, "espeak-ng-data.tar.bz2.tmp")
-        try {
-            Log.d(TAG, "Downloading shared espeak-ng-data")
-            voiceProgress[voiceId] = 82
-            notifyProgress(voiceId, 82)
-            DownloadUtil.download(PiperVoices.espeakDataUrl(), tmpFile) { pct ->
-                val scaled = 82 + (pct * 12) / 100
-                voiceProgress[voiceId] = scaled
-                notifyProgress(voiceId, scaled)
-            }
-            Log.d(TAG, "Extracting espeak-ng-data")
-            notifyProgress(voiceId, -1)
-            DownloadUtil.extractTarBz2(tmpFile, sharedDir)
-        } finally {
-            tmpFile.delete()
-        }
-    }
 
     fun deleteVoice(ctx: Context, voiceId: String) {
         getVoiceDir(ctx, voiceId).deleteRecursively()

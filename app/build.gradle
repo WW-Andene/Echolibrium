@@ -128,4 +128,7 @@ dependencies {
 
     // Encrypted SharedPreferences for API key storage
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+
+    // HTTP client for DeepInfra cloud TTS API
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }

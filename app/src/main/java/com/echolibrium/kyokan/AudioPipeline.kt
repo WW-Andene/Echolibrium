@@ -70,6 +70,7 @@ object AudioPipeline {
         running = true
         observationDb = ObservationDb.getInstance(ctx)
         ParameterTrajectory.loadConfig(ctx)
+        initCloudTts(ctx)
 
         // Move model loading to background — avoids ANR in NotificationReaderService.onCreate()
         // Pipeline loop starts immediately using SherpaEngine fallback until DirectOrt is ready
@@ -128,6 +129,27 @@ object AudioPipeline {
             }
         } catch (e: Exception) {
             Log.e(TAG, "DirectOrt init failed, using SherpaEngine only", e)
+        }
+    }
+
+    /**
+     * Load the DeepInfra API key from encrypted prefs and configure CloudTtsEngine.
+     * If no key is stored, cloud TTS stays disabled and local engines are used.
+     */
+    private fun initCloudTts(ctx: Context) {
+        try {
+            val masterKey = androidx.security.crypto.MasterKey.Builder(ctx)
+                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            val prefs = androidx.security.crypto.EncryptedSharedPreferences.create(
+                ctx, "kyokan_secure_prefs", masterKey,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            val key = prefs.getString("deepinfra_api_key", "") ?: ""
+            CloudTtsEngine.configure(key)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load DeepInfra API key", e)
         }
     }
 
@@ -213,17 +235,29 @@ object AudioPipeline {
         if (processed.isBlank()) return
 
         // ── Step 2+3: Route to correct engine and synthesize ────────────
-        // Try YatagamiSynthesizer (direct ORT + style sculpting) first.
-        // Falls back to SherpaEngine if tokenizer can't handle the text,
-        // DirectOrtEngine isn't initialized, or synthesis fails.
+        // Priority order:
+        //   1. Cloud TTS (DeepInfra) — highest quality, auto-routes to best engine
+        //   2. YatagamiSynthesizer  — local ORT + style sculpting
+        //   3. SherpaEngine         — local Kokoro/Piper fallback
         val voiceId = item.profile.voiceName
-        val yatagamiResult = synthesizeWithYatagami(ctx, item, processed)
-        val result = if (yatagamiResult != null) {
-            Pair(yatagamiResult.pcm, yatagamiResult.sampleRate)
-        } else if (PiperVoices.isPiperVoice(voiceId)) {
-            synthesizeWithPiper(ctx, voiceId, processed, item.modulated.speed)
+
+        // Try cloud TTS first — routes to Orpheus/Chatterbox/Qwen3 based on content
+        val cloudResult = synthesizeWithCloud(processed, item)
+        val yatagamiResult: YatagamiSynthesizer.SynthResult?
+
+        val result = if (cloudResult != null) {
+            yatagamiResult = null
+            cloudResult
         } else {
-            synthesizeWithKokoro(ctx, voiceId, processed, item.modulated.speed)
+            // Fall back to local engines
+            yatagamiResult = synthesizeWithYatagami(ctx, item, processed)
+            if (yatagamiResult != null) {
+                Pair(yatagamiResult.pcm, yatagamiResult.sampleRate)
+            } else if (PiperVoices.isPiperVoice(voiceId)) {
+                synthesizeWithPiper(ctx, voiceId, processed, item.modulated.speed)
+            } else {
+                synthesizeWithKokoro(ctx, voiceId, processed, item.modulated.speed)
+            }
         } ?: return
 
         val (rawPcm, sampleRate) = result
@@ -336,6 +370,20 @@ object AudioPipeline {
             Log.e(TAG, "Yatagami synthesis error, falling back to SherpaEngine", e)
             null
         }
+    }
+
+    /**
+     * Attempt synthesis via DeepInfra cloud TTS.
+     * The router selects Orpheus/Chatterbox/Qwen3 based on priority and content tags.
+     * Returns null if cloud TTS is disabled or the request fails — falls through to local.
+     */
+    private fun synthesizeWithCloud(text: String, item: Item): Pair<FloatArray, Int>? {
+        if (!CloudTtsEngine.isEnabled()) return null
+        val engine = CloudTtsEngine.selectEngine(
+            text = text,
+            priority = item.priority
+        )
+        return CloudTtsEngine.synthesize(text = text, engine = engine)
     }
 
     private fun synthesizeWithKokoro(

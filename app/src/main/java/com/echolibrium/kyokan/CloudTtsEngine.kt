@@ -136,7 +136,7 @@ object CloudTtsEngine {
         }
 
         // Warmth → tone
-        when (signal.warmthLevel) {
+        when (signal.warmth) {
             WarmthLevel.HIGH -> parts += "use a warm, friendly tone"
             WarmthLevel.DISTRESSED -> parts += "use a concerned, empathetic tone"
             else -> {}

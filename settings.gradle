@@ -10,5 +10,5 @@ dependencyResolutionManagement {
         maven { url 'https://jitpack.io' }
     }
 }
-rootProject.name = "KokoroReader"
+rootProject.name = "Echolibrium"
 include ':app'

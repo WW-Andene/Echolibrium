@@ -1,129 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg">
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="#0d0d0d">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:padding="20dp">
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="KYŌKAN" android:textSize="22sp" android:textStyle="bold"
-            android:textColor="@color/green" android:fontFamily="monospace" android:letterSpacing="0.12"
-            android:layout_marginBottom="14dp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:layout_marginBottom="14dp">
+            <ImageView android:layout_width="48dp" android:layout_height="48dp"
+                android:src="@drawable/logo_foreground" android:scaleType="centerCrop"
+                android:layout_marginEnd="12dp" android:contentDescription="Logo"/>
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="KYŌKAN" android:textSize="22sp" android:textStyle="bold"
+                    android:textColor="#00ff88" android:fontFamily="monospace" android:letterSpacing="0.12"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="v3.0  ·  Kokoro + Piper" android:textSize="10sp"
+                    android:textColor="#555555" android:fontFamily="monospace"/>
+            </LinearLayout>
+        </LinearLayout>
 
-        <TextView android:id="@+id/status_text" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
-            android:fontFamily="monospace" android:textSize="13sp" android:layout_marginBottom="4dp"/>
-
-        <TextView android:id="@+id/service_status_text" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
-            android:fontFamily="monospace" android:textSize="12sp" android:textColor="@color/text_dim"
-            android:layout_marginBottom="2dp"/>
-
-        <TextView android:id="@+id/engine_status_text" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
-            android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/text_dim"
-            android:layout_marginBottom="0dp"/>
-
-        <Button android:id="@+id/btn_retry_engine" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="Retry engine init"
-            android:backgroundTint="@color/status_warning" android:textColor="#000000"
-            android:fontFamily="monospace" android:textSize="12sp"
-            android:layout_marginTop="4dp" android:layout_marginBottom="0dp"
-            android:visibility="gone"/>
-
-        <TextView android:id="@+id/log_path_text" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
-            android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/text_hint"
-            android:layout_marginBottom="4dp"/>
-
-        <Button android:id="@+id/btn_dump_debug" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="Dump debug log"
-            android:backgroundTint="@color/surface" android:textColor="@color/text_dim"
-            android:fontFamily="monospace" android:textSize="11sp"
-            android:layout_marginBottom="2dp"/>
-
-        <Button android:id="@+id/btn_show_init_logs" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="▶ Show init logs"
-            android:backgroundTint="@color/surface" android:textColor="@color/status_info"
-            android:fontFamily="monospace" android:textSize="11sp"
-            android:layout_marginBottom="0dp"/>
-
-        <ScrollView android:id="@+id/init_log_panel" android:layout_width="match_parent"
-            android:layout_height="300dp" android:background="#0a0a0a"
-            android:padding="8dp" android:layout_marginBottom="0dp"
-            android:visibility="gone" android:fillViewport="false">
-            <TextView android:id="@+id/init_log_content" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:fontFamily="monospace"
-                android:textSize="9sp" android:textColor="@color/text_dim"
-                android:text="(loading…)" android:textIsSelectable="true"/>
-        </ScrollView>
-
-        <Button android:id="@+id/btn_copy_init_logs" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="Copy full logs to clipboard"
-            android:backgroundTint="#1a1a1a" android:textColor="@color/status_info"
-            android:fontFamily="monospace" android:textSize="11sp"
-            android:layout_marginBottom="2dp" android:visibility="gone"/>
-
-        <Button android:id="@+id/btn_force_report" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="Report to GitHub"
-            android:backgroundTint="@color/surface" android:textColor="@color/status_warning"
-            android:fontFamily="monospace" android:textSize="11sp"
-            android:layout_marginBottom="8dp"/>
-
-        <!-- Permission instructions — updates based on current permission state -->
-        <TextView android:id="@+id/permission_instructions" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
-            android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/text_dim"
-            android:layout_marginBottom="4dp" android:visibility="gone"/>
-
-        <Button android:id="@+id/btn_permission" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:backgroundTint="@color/green"
-            android:textColor="#000000" android:fontFamily="monospace" android:layout_marginBottom="8dp"/>
+        <Button android:id="@+id/btn_setup" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:backgroundTint="#00ff88"
+            android:textColor="#000000" android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
+        <TextView android:id="@+id/txt_setup_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="#111111"
+            android:fontFamily="monospace" android:textSize="11sp" android:textColor="#888888"
+            android:layout_marginBottom="20dp"/>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// MASTER SWITCH" style="@style/SectionLabel"/>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:background="@color/surface" android:padding="16dp"
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp"
             android:layout_marginBottom="16dp">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="Enable notification reading"
-                android:textColor="@color/text_primary" android:textSize="14sp" android:fontFamily="monospace"/>
+                android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_enabled"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// VOICE COMMANDS" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:background="@color/surface" android:padding="16dp">
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:orientation="vertical">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="Enable voice commands"
-                    android:textColor="@color/text_primary" android:textSize="14sp" android:fontFamily="monospace"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="&quot;Can you repeat?&quot;  &quot;How long ago?&quot;"
-                    android:textColor="@color/text_muted" android:textSize="12sp" android:fontFamily="monospace"/>
-            </LinearLayout>
-            <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_voice_commands"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        </LinearLayout>
-        <TextView android:id="@+id/voice_command_status" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:padding="12dp" android:background="@color/surface"
-            android:fontFamily="monospace" android:textSize="11sp" android:textColor="@color/status_inactive"
-            android:layout_marginTop="3dp" android:layout_marginBottom="16dp"
-            android:text="Voice commands: off"/>
-
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// DEFAULT READ MODE" style="@style/SectionLabel"/>
         <Spinner android:id="@+id/spinner_read_mode" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:background="@color/surface"
+            android:layout_height="wrap_content" android:background="#111111"
             android:padding="12dp" android:layout_marginBottom="8dp"/>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:background="@color/surface" android:padding="16dp"
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp"
             android:layout_marginBottom="20dp">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="Always read app name"
-                android:textColor="@color/text_primary" android:textSize="14sp" android:fontFamily="monospace"/>
+                android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_app_name"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
@@ -131,36 +59,56 @@
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="// DO NOT DISTURB" style="@style/SectionLabel"/>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:background="@color/surface" android:padding="16dp">
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="Enable quiet hours"
-                android:textColor="@color/text_primary" android:textSize="14sp" android:fontFamily="monospace"/>
+                android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_dnd"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
         <LinearLayout android:id="@+id/layout_dnd" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="16dp"
+            android:background="#111111" android:padding="16dp"
             android:layout_marginTop="3dp" android:visibility="gone">
             <TextView android:id="@+id/txt_dnd_start" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Silence from: 22:00"
-                android:textColor="@color/text_dim" android:fontFamily="monospace" android:textSize="13sp"
+                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="13sp"
                 android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_dnd_start" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="@color/status_warning"
-                android:thumbTint="@color/status_warning" android:layout_marginBottom="14dp"/>
+                android:layout_height="wrap_content" android:progressTint="#ffaa00"
+                android:thumbTint="#ffaa00" android:layout_marginBottom="14dp"/>
             <TextView android:id="@+id/txt_dnd_end" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Until: 08:00"
-                android:textColor="@color/text_dim" android:fontFamily="monospace" android:textSize="13sp"
+                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="13sp"
                 android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_dnd_end" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="@color/status_warning"
-                android:thumbTint="@color/status_warning"/>
+                android:layout_height="wrap_content" android:progressTint="#ffaa00"
+                android:thumbTint="#ffaa00"/>
         </LinearLayout>
 
-        <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="⏹  STOP SPEAKING"
-            android:backgroundTint="@color/btn_danger_bg" android:textColor="@color/status_error"
-            android:fontFamily="monospace" android:layout_marginTop="20dp"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="// LISTENING" style="@style/SectionLabel" android:layout_marginTop="20dp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="#111111" android:padding="16dp"
+            android:layout_marginBottom="8dp">
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Activate listening"
+                    android:textColor="#cccccc" android:textSize="14sp" android:fontFamily="monospace"/>
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Process and read incoming notifications"
+                    android:textColor="#777777" android:textSize="12sp" android:fontFamily="monospace"/>
+            </LinearLayout>
+            <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_listening"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+        <TextView android:id="@+id/listening_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="12dp" android:background="#111111"
+            android:fontFamily="monospace" android:textSize="11sp" android:textColor="#888888"
+            android:layout_marginBottom="20dp"
+            android:text="Listening: off"/>
+
+
     </LinearLayout>
 </ScrollView>

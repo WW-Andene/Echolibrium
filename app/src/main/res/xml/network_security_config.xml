@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Enforce HTTPS for all connections (model downloads, ML Kit) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+        Certificate pinning REMOVED for both GitHub and Google domains.
+
+        GitHub: CDN redirects through release-assets.githubusercontent.com
+        (and potentially other rotating domains) break the redirect chain.
+
+        Google: dl.google.com and translate.googleapis.com pins break when
+        Google rotates certificates. redirector.gvt1.com (used for ML Kit
+        model downloads) is not covered by the pin-set at all.
+
+        HTTPS + system CA trust is sufficient for all download traffic.
+        Pinning adds fragility without meaningful security benefit here —
+        these are public model downloads, not credential exchanges.
+    -->
+</network-security-config>

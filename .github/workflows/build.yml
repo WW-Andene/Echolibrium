@@ -24,6 +24,10 @@ jobs:
           curl -fL --retry 3 --retry-delay 5 "$URL" -o app/libs/sherpa_onnx.aar
           echo "AAR placed at app/libs/sherpa_onnx.aar ($(du -h app/libs/sherpa_onnx.aar | cut -f1))"
 
+      # Inject API keys into local.properties for BuildConfig
+      - name: Write local.properties
+        run: echo "DEEPINFRA_API_KEY=${{ secrets.DEEPINFRA_API_KEY }}" > local.properties
+
       - run: chmod +x gradlew
       - run: ./gradlew assembleRelease
 

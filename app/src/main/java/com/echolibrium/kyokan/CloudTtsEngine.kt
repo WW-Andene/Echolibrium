@@ -67,7 +67,7 @@ object CloudTtsEngine {
 
     fun configure(key: String, db: ObservationDb? = null) {
         apiKey = key
-        if (db != null) observationDb = db
+        observationDb = db
         enabled = key.isNotBlank()
         Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}")
     }

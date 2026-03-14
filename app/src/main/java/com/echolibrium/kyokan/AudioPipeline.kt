@@ -134,24 +134,13 @@ object AudioPipeline {
     }
 
     /**
-     * Load the DeepInfra API key from encrypted prefs and configure CloudTtsEngine.
-     * If no key is stored, cloud TTS stays disabled and local engines are used.
+     * Configure CloudTtsEngine with the DeepInfra API key from BuildConfig.
+     * Key is injected at compile time from local.properties (gitignored).
+     * If no key is set, cloud TTS stays disabled and local engines are used.
      */
     private fun initCloudTts(ctx: Context) {
-        try {
-            val masterKey = androidx.security.crypto.MasterKey.Builder(ctx)
-                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val prefs = androidx.security.crypto.EncryptedSharedPreferences.create(
-                ctx, "kyokan_secure_prefs", masterKey,
-                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-            val key = prefs.getString("deepinfra_api_key", "") ?: ""
-            CloudTtsEngine.configure(key, observationDb)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load DeepInfra API key", e)
-        }
+        val key = BuildConfig.DEEPINFRA_API_KEY
+        CloudTtsEngine.configure(key, observationDb)
     }
 
     fun stop() {

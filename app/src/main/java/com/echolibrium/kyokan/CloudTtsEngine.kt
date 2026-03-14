@@ -52,8 +52,12 @@ object CloudTtsEngine {
 
     fun isEnabled(): Boolean = enabled && apiKey != null
 
+    private const val MAX_RETRIES = 1
+    private const val RETRY_DELAY_MS = 1500L
+
     /**
      * Synthesize text to PCM audio via DeepInfra Orpheus.
+     * Retries once on transient failures (5xx, network errors).
      *
      * @return Pair(pcm, sampleRate) or null on failure
      */
@@ -77,36 +81,50 @@ object CloudTtsEngine {
             put("voice", v)
         }
 
-        val request = Request.Builder()
-            .url(BASE_URL)
-            .addHeader("Authorization", "Bearer $key")
-            .addHeader("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        for (attempt in 0..MAX_RETRIES) {
+            val request = Request.Builder()
+                .url(BASE_URL)
+                .addHeader("Authorization", "Bearer $key")
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
 
-        val start = System.nanoTime()
+            val start = System.nanoTime()
 
-        return try {
-            client.newCall(request).execute().use { response ->
-                val elapsedMs = (System.nanoTime() - start) / 1_000_000
-                if (!response.isSuccessful) {
-                    val body = response.body?.string()?.take(200) ?: "no body"
-                    Log.e(TAG, "HTTP ${response.code}: $body (${elapsedMs}ms)")
-                    return null
+            try {
+                client.newCall(request).execute().use { response ->
+                    val elapsedMs = (System.nanoTime() - start) / 1_000_000
+                    if (!response.isSuccessful) {
+                        val body = response.body?.string()?.take(200) ?: "no body"
+                        Log.e(TAG, "HTTP ${response.code}: $body (${elapsedMs}ms)")
+                        // Retry on 5xx server errors
+                        if (response.code in 500..599 && attempt < MAX_RETRIES) {
+                            Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
+                            Thread.sleep(RETRY_DELAY_MS)
+                            return@use
+                        }
+                        return null
+                    }
+
+                    val audioBytes = response.body?.bytes() ?: return null
+                    val pcm = pcmBytesToFloat(audioBytes)
+                    Log.d(TAG, "${text.length} chars → ${pcm.size} samples, ${elapsedMs}ms")
+                    return Pair(pcm, SAMPLE_RATE)
                 }
-
-                val audioBytes = response.body?.bytes() ?: return null
-                val pcm = pcmBytesToFloat(audioBytes)
-                Log.d(TAG, "${text.length} chars → ${pcm.size} samples, ${elapsedMs}ms")
-                Pair(pcm, SAMPLE_RATE)
+            } catch (e: IOException) {
+                Log.e(TAG, "Network error: ${e.message}")
+                if (attempt < MAX_RETRIES) {
+                    Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
+                    try { Thread.sleep(RETRY_DELAY_MS) } catch (_: InterruptedException) { return null }
+                    continue
+                }
+                return null
+            } catch (e: Exception) {
+                Log.e(TAG, "Synthesis failed", e)
+                return null
             }
-        } catch (e: IOException) {
-            Log.e(TAG, "Network error: ${e.message}")
-            null
-        } catch (e: Exception) {
-            Log.e(TAG, "Synthesis failed", e)
-            null
         }
+        return null
     }
 
     /**

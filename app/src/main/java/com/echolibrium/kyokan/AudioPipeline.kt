@@ -257,6 +257,7 @@ object AudioPipeline {
 
     private fun applyCrossfade(samples: FloatArray, sampleRate: Int): FloatArray {
         val tail = prevTail
+        val tailRate = prevSampleRate
         val result = samples.copyOf()
 
         val fadeSamples = (sampleRate * CROSSFADE_MS / 1000).coerceAtMost(samples.size / 4)
@@ -266,7 +267,7 @@ object AudioPipeline {
             prevSampleRate = sampleRate
         }
 
-        if (tail != null && prevSampleRate == sampleRate && tail.isNotEmpty()) {
+        if (tail != null && tailRate == sampleRate && tail.isNotEmpty()) {
             val crossLen = minOf(tail.size, fadeSamples, result.size)
             for (i in 0 until crossLen) {
                 val t = i.toFloat() / crossLen

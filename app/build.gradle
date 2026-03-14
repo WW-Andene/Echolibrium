@@ -31,9 +31,9 @@ android {
             def ksFile = file("${rootProject.projectDir}/keystore.jks")
             if (ksFile.exists()) {
                 storeFile ksFile
-                storePassword "echolibrium123"
-                keyAlias "echolibrium"
-                keyPassword "echolibrium123"
+                storePassword localProps.getProperty('KEYSTORE_PASSWORD', System.getenv('KEYSTORE_PASSWORD') ?: '')
+                keyAlias localProps.getProperty('KEY_ALIAS', System.getenv('KEY_ALIAS') ?: 'echolibrium')
+                keyPassword localProps.getProperty('KEY_PASSWORD', System.getenv('KEY_PASSWORD') ?: '')
             }
             // Enable v1 (JAR) + v2 (APK Signature Scheme v2)
             // v3 (APK Signature Scheme v3) is applied automatically by build-tools ≥ 28.0.3
@@ -127,9 +127,7 @@ dependencies {
     // Sherpa-onnx Android library (pre-built AAR downloaded by CI — see build.yml)
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
 
-    // Direct ORT access for Yatagami/Lego pipeline (style sculpting, scale mapping)
-    // sherpa_onnx.aar already bundles libonnxruntime.so — pickFirst in packagingOptions
-    // resolves the duplicate .so; we only need ORT's Java API classes (ai.onnxruntime.*)
+    // ORT Java API — sherpa_onnx.aar bundles libonnxruntime.so, pickFirst resolves duplicate
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.0'
 
     // Tar.bz2 extraction for Kokoro model download

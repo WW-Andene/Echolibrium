@@ -3,6 +3,7 @@ package com.echolibrium.kyokan
 import android.content.Context
 import android.util.Log
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Downloads and manages individual Piper TTS voice packages.
@@ -20,10 +21,10 @@ object PiperDownloadManager {
 
     enum class State { NOT_DOWNLOADED, DOWNLOADING, READY, ERROR }
 
-    // Per-voice state tracking
-    private val voiceStates = mutableMapOf<String, State>()
-    private val voiceProgress = mutableMapOf<String, Int>()
-    private val voiceErrors = mutableMapOf<String, String>()
+    // Per-voice state tracking (ConcurrentHashMap for thread safety across UI + download threads)
+    private val voiceStates = ConcurrentHashMap<String, State>()
+    private val voiceProgress = ConcurrentHashMap<String, Int>()
+    private val voiceErrors = ConcurrentHashMap<String, String>()
     private val downloading = mutableSetOf<String>()
 
     @Volatile var onStateChange: ((voiceId: String, State) -> Unit)? = null

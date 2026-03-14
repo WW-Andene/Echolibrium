@@ -19,11 +19,6 @@
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="16dp">
-            <Button android:id="@+id/btn_rename_voice" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:text="✏️"
-                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
-                android:minWidth="48dp" android:minHeight="36dp"
-                android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btn_new_profile" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="+ NEW"
                 android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
@@ -36,15 +31,6 @@
         <!-- Hidden spinner kept for compatibility -->
         <Spinner android:id="@+id/spinner_profile" android:layout_width="match_parent"
             android:layout_height="0dp" android:visibility="gone"/>
-
-        <!-- Personality presets -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// PERSONALITY PRESETS" style="@style/SectionLabel"/>
-        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp">
-            <LinearLayout android:id="@+id/layout_presets" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:orientation="horizontal"/>
-        </HorizontalScrollView>
 
         <!-- Voice picker with filters -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -79,123 +65,6 @@
             <SeekBar android:id="@+id/seek_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="#00ff88" android:thumbTint="#00ff88"/>
         </LinearLayout>
-
-        <!-- Breathiness -->
-        <TextView android:id="@+id/label_breathiness" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // BREATHINESS" style="@style/SectionLabel"
-            android:clickable="true" android:focusable="true"/>
-        <LinearLayout android:id="@+id/section_breathiness" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp"
-            android:visibility="gone">
-            <TextView android:id="@+id/tv_breath_int" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Intensity: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_breath_int" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#00ccff" android:thumbTint="#00ccff" android:layout_marginBottom="14dp"/>
-            <TextView android:id="@+id/tv_breath_curve" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Curve: 0%" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_breath_curve" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#00ccff" android:thumbTint="#00ccff" android:layout_marginBottom="14dp"/>
-            <TextView android:id="@+id/tv_breath_pause" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Pause: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_breath_pause" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#00ccff" android:thumbTint="#00ccff"/>
-        </LinearLayout>
-
-        <!-- Stuttering -->
-        <TextView android:id="@+id/label_stuttering" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // STUTTERING" style="@style/SectionLabel"
-            android:clickable="true" android:focusable="true"/>
-        <LinearLayout android:id="@+id/section_stuttering" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp"
-            android:visibility="gone">
-            <TextView android:id="@+id/tv_stutter_int" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Intensity: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_stutter_int" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#ff88aa" android:thumbTint="#ff88aa" android:layout_marginBottom="14dp"/>
-            <TextView android:id="@+id/tv_stutter_pos" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Position: 0%" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_stutter_pos" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#ff88aa" android:thumbTint="#ff88aa" android:layout_marginBottom="14dp"/>
-            <TextView android:id="@+id/tv_stutter_freq" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Frequency: 0%" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_stutter_freq" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#ff88aa" android:thumbTint="#ff88aa" android:layout_marginBottom="14dp"/>
-            <TextView android:id="@+id/tv_stutter_pause" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Pause: 30" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_stutter_pause" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#ff88aa" android:thumbTint="#ff88aa"/>
-        </LinearLayout>
-
-        <!-- Intonation -->
-        <TextView android:id="@+id/label_intonation" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // INTONATION" style="@style/SectionLabel"
-            android:clickable="true" android:focusable="true"/>
-        <LinearLayout android:id="@+id/section_intonation" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp" android:layout_marginBottom="14dp"
-            android:visibility="gone">
-            <TextView android:id="@+id/tv_intonation_int" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Intensity: 0" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_intonation_int" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#ffcc00" android:thumbTint="#ffcc00" android:layout_marginBottom="14dp"/>
-            <TextView android:id="@+id/tv_intonation_var" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Variation: 50%" android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
-            <SeekBar android:id="@+id/seek_intonation_var" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:progressTint="#ffcc00" android:thumbTint="#ffcc00"/>
-        </LinearLayout>
-
-        <!-- Commentary pools -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// CONTEXTUAL COMMENTARY" style="@style/SectionLabel"/>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Lines said before/after the notification. Each pool fires only when its condition matches."
-            android:textSize="11sp" android:textColor="#446644" android:fontFamily="monospace"
-            android:layout_marginBottom="8dp"/>
-
-        <LinearLayout android:id="@+id/commentary_pools_container" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="6dp"/>
-
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="16dp">
-            <Button android:id="@+id/btn_add_pre_comment" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="+ BEFORE pool"
-                android:backgroundTint="#1a3a2a" android:textColor="#00ff88"
-                android:fontFamily="monospace" android:textSize="11sp" android:layout_marginEnd="6dp"/>
-            <Button android:id="@+id/btn_add_post_comment" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="+ AFTER pool"
-                android:backgroundTint="#1a2a3a" android:textColor="#00ccff"
-                android:fontFamily="monospace" android:textSize="11sp"/>
-        </LinearLayout>
-
-        <!-- Gimmicks (collapsible) -->
-        <TextView android:id="@+id/label_gimmicks" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // GIMMICKS" style="@style/SectionLabel"
-            android:clickable="true" android:focusable="true"/>
-        <LinearLayout android:id="@+id/section_gimmicks" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="16dp"
-            android:visibility="gone">
-            <LinearLayout android:id="@+id/gimmicks_container" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical"/>
-        </LinearLayout>
-
-        <!-- Engine Mode A/B Toggle (Phase 5) -->
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// ENGINE MODE" style="@style/SectionLabel"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:gravity="center_vertical"
-            android:background="#111111" android:padding="14dp" android:layout_marginBottom="14dp">
-            <TextView android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Classic ← → Sculpted"
-                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp"/>
-            <Switch android:id="@+id/switch_engine_mode"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:thumbTint="#00ff88" android:trackTint="#333333"/>
-        </LinearLayout>
-        <TextView android:id="@+id/tv_engine_mode_desc" android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Classic: SherpaEngine + full DSP chain\nSculpted: StyleSculptor/ScaleMapper + reduced DSP"
-            android:textSize="10sp" android:textColor="#446644" android:fontFamily="monospace"
-            android:layout_marginBottom="14dp" android:layout_marginTop="-8dp"/>
 
         <!-- Preview & Save -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

@@ -26,19 +26,8 @@ class ProfilesFragment : Fragment() {
     private lateinit var btnNew: Button
     private lateinit var seekPitch: SeekBar;  private lateinit var tvPitch: TextView
     private lateinit var seekSpeed: SeekBar;  private lateinit var tvSpeed: TextView
-    private lateinit var seekBreathInt: SeekBar;   private lateinit var tvBreathInt: TextView
-    private lateinit var seekBreathCurve: SeekBar; private lateinit var tvBreathCurve: TextView
-    private lateinit var seekBreathPause: SeekBar; private lateinit var tvBreathPause: TextView
-    private lateinit var seekStutterInt: SeekBar;  private lateinit var tvStutterInt: TextView
-    private lateinit var seekStutterPos: SeekBar;  private lateinit var tvStutterPos: TextView
-    private lateinit var seekStutterFreq: SeekBar; private lateinit var tvStutterFreq: TextView
-    private lateinit var seekStutterPause: SeekBar;private lateinit var tvStutterPause: TextView
-    private lateinit var seekIntonInt: SeekBar;    private lateinit var tvIntonInt: TextView
-    private lateinit var seekIntonVar: SeekBar;    private lateinit var tvIntonVar: TextView
     private lateinit var profileGrid: LinearLayout
     private lateinit var voiceGrid: LinearLayout
-    private lateinit var presetsScroll: LinearLayout
-    private lateinit var gimmicksContainer: LinearLayout
     private lateinit var genderRow: LinearLayout
     private lateinit var nationRow: LinearLayout
 
@@ -54,21 +43,14 @@ class ProfilesFragment : Fragment() {
         setupCollapsibleSections(v)
         setupProfileSpinner()
         renderProfileGrid()
-        buildPresets()
         buildFilterButtons()
         renderVoiceGrid()
         setupButtons()
-        setupEngineToggle(v)
-        buildGimmicksEditor()
         loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
     }
 
     private fun setupCollapsibleSections(v: View) {
         setupCollapsibleSection(v, R.id.label_pitch_speed, R.id.section_pitch_speed, "// PITCH & SPEED")
-        setupCollapsibleSection(v, R.id.label_breathiness, R.id.section_breathiness, "// BREATHINESS")
-        setupCollapsibleSection(v, R.id.label_stuttering, R.id.section_stuttering, "// STUTTERING")
-        setupCollapsibleSection(v, R.id.label_intonation, R.id.section_intonation, "// INTONATION")
-        setupCollapsibleSection(v, R.id.label_gimmicks, R.id.section_gimmicks, "// GIMMICKS")
     }
 
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
@@ -93,21 +75,10 @@ class ProfilesFragment : Fragment() {
         btnDelete       = v.findViewById(R.id.btn_delete)
         btnNew          = v.findViewById(R.id.btn_new_profile)
         voiceGrid       = v.findViewById(R.id.voice_grid)
-        presetsScroll   = v.findViewById(R.id.layout_presets)
-        gimmicksContainer = v.findViewById(R.id.gimmicks_container)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
-        seekPitch       = v.findViewById(R.id.seek_pitch);         tvPitch       = v.findViewById(R.id.tv_pitch)
-        seekSpeed       = v.findViewById(R.id.seek_speed);         tvSpeed       = v.findViewById(R.id.tv_speed)
-        seekBreathInt   = v.findViewById(R.id.seek_breath_int);    tvBreathInt   = v.findViewById(R.id.tv_breath_int)
-        seekBreathCurve = v.findViewById(R.id.seek_breath_curve);  tvBreathCurve = v.findViewById(R.id.tv_breath_curve)
-        seekBreathPause = v.findViewById(R.id.seek_breath_pause);  tvBreathPause = v.findViewById(R.id.tv_breath_pause)
-        seekStutterInt  = v.findViewById(R.id.seek_stutter_int);   tvStutterInt  = v.findViewById(R.id.tv_stutter_int)
-        seekStutterPos  = v.findViewById(R.id.seek_stutter_pos);   tvStutterPos  = v.findViewById(R.id.tv_stutter_pos)
-        seekStutterFreq = v.findViewById(R.id.seek_stutter_freq);  tvStutterFreq = v.findViewById(R.id.tv_stutter_freq)
-        seekStutterPause= v.findViewById(R.id.seek_stutter_pause); tvStutterPause= v.findViewById(R.id.tv_stutter_pause)
-        seekIntonInt    = v.findViewById(R.id.seek_intonation_int);tvIntonInt    = v.findViewById(R.id.tv_intonation_int)
-        seekIntonVar    = v.findViewById(R.id.seek_intonation_var);tvIntonVar    = v.findViewById(R.id.tv_intonation_var)
+        seekPitch       = v.findViewById(R.id.seek_pitch);  tvPitch = v.findViewById(R.id.tv_pitch)
+        seekSpeed       = v.findViewById(R.id.seek_speed);  tvSpeed = v.findViewById(R.id.tv_speed)
     }
 
     private fun buildFilterButtons() {
@@ -115,7 +86,6 @@ class ProfilesFragment : Fragment() {
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
-        // Only show filters relevant to cloud voices (user-facing)
         val genders = VoiceRegistry.genders()
         genders.forEach { g ->
             genderRow.addView(filterBtn(g, genderFilter == g) {
@@ -123,7 +93,7 @@ class ProfilesFragment : Fragment() {
             })
         }
 
-        val languages = VoiceRegistry.userFacingLanguages()
+        val languages = VoiceRegistry.languages()
         languages.forEach { l ->
             nationRow.addView(filterBtn(l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
@@ -149,40 +119,125 @@ class ProfilesFragment : Fragment() {
         voiceGrid.removeAllViews()
         val ctx = requireContext()
 
-        // ── Cloud voices are the primary user-facing selection ────────────
+        // ── Cloud voices (Orpheus) — primary ──────────────────────────────
         val cloudEnabled = CloudTtsEngine.isEnabled()
         val cloudSubtitle = if (cloudEnabled)
             "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices"
         else
             "Requires API key — set in Settings"
-        voiceGrid.addView(buildSectionHeader("VOICES", cloudSubtitle, 0xFFffaa44.toInt()))
+        voiceGrid.addView(buildSectionHeader("ORPHEUS (CLOUD)", cloudSubtitle, 0xFFffaa44.toInt()))
         renderCloudVoices()
 
-        // ── Offline fallback info (not selectable) ──────────────────────
-        if (!cloudEnabled) {
-            val kokoroReady = VoiceDownloadManager.isModelReady(ctx)
-            val fallbackSubtitle = if (kokoroReady)
-                "Auto-fallback when cloud unavailable  ·  Kokoro model ready"
-            else
-                "Auto-fallback when cloud unavailable  ·  model not downloaded"
-            voiceGrid.addView(android.view.View(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 0
-                ).also { it.setMargins(0, 20, 0, 0) }
+        // ── Kokoro voices (offline) ──────────────────────────────────────
+        val kokoroReady = VoiceDownloadManager.isModelReady(ctx)
+        val kokoroSubtitle = if (kokoroReady) "Offline  ·  Model ready" else "Offline  ·  Model not downloaded"
+        val kokoroDownloadAction: (() -> Unit)? = if (!kokoroReady
+            && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
+            { startKokoroDownload() }
+        } else null
+        voiceGrid.addView(buildSectionHeader("KOKORO (OFFLINE)", kokoroSubtitle, 0xFF00ccff.toInt(), kokoroDownloadAction))
+        if (!kokoroReady) {
+            voiceGrid.addView(TextView(ctx).apply {
+                text = "Download the offline model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) so speech works without internet."
+                textSize = 11f; setTextColor(0xFF666666.toInt())
+                setPadding(14, 4, 14, 8)
             })
-            val fallbackDownloadAction: (() -> Unit)? = if (!kokoroReady
-                && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
-                { startKokoroDownload() }
-            } else null
-            voiceGrid.addView(buildSectionHeader("OFFLINE FALLBACK", fallbackSubtitle, 0xFF555555.toInt(), fallbackDownloadAction))
-            if (!kokoroReady) {
-                voiceGrid.addView(TextView(ctx).apply {
-                    text = "Download the offline model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) so speech works without internet."
-                    textSize = 11f; setTextColor(0xFF666666.toInt())
-                    setPadding(14, 4, 14, 8)
-                })
-            }
+        } else {
+            renderKokoroVoices()
         }
+
+        // ── Piper voices (offline) ──────────────────────────────────────
+        voiceGrid.addView(buildSectionHeader("PIPER (OFFLINE)", "Offline  ·  Per-voice download", 0xFF88ccff.toInt()))
+        renderPiperVoices()
+    }
+
+    private fun renderCloudVoices() {
+        val cloudEnabled = CloudTtsEngine.isEnabled()
+        val filtered = VoiceRegistry.CLOUD_VOICES.filter { v ->
+            val gOk = genderFilter == "All" || v.gender == genderFilter
+            val lOk = languageFilter == "All" || v.language == languageFilter
+            gOk && lOk
+        }
+        if (filtered.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No voices match filter."))
+            return
+        }
+        addVoiceRows(filtered.map { v ->
+            val active = currentProfile.voiceName == v.id
+            buildVoiceCard(
+                name = v.displayName,
+                icon = if (v.gender == "Female") "♀" else "♂",
+                iconColor = if (cloudEnabled) {
+                    if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
+                } else 0xFF444444.toInt(),
+                badge = "☁ Orpheus",
+                voiceId = v.id, active = active, accent = 0xFFffaa44.toInt(),
+                enabled = cloudEnabled,
+                onClick = if (cloudEnabled) {
+                    { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+                } else null
+            )
+        })
+    }
+
+    private fun renderKokoroVoices() {
+        val entries = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).filter { v ->
+            val gOk = genderFilter == "All" || v.gender == genderFilter
+            val lOk = languageFilter == "All" || v.language == languageFilter
+            gOk && lOk
+        }
+        if (entries.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No voices match filter."))
+            return
+        }
+        addVoiceRows(entries.map { v ->
+            val active = currentProfile.voiceName == v.id
+            buildVoiceCard(
+                name = v.displayName,
+                icon = if (v.gender == "Female") "♀" else "♂",
+                iconColor = if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt(),
+                badge = "🔇 Kokoro",
+                voiceId = v.id, active = active, accent = 0xFF00ccff.toInt(),
+                enabled = true,
+                onClick = { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+            )
+        })
+    }
+
+    private fun renderPiperVoices() {
+        val entries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER).filter { v ->
+            val gOk = genderFilter == "All" || v.gender == genderFilter
+            val lOk = languageFilter == "All" || v.language == languageFilter
+            gOk && lOk
+        }
+        if (entries.isEmpty()) {
+            voiceGrid.addView(emptyLabel("No voices match filter."))
+            return
+        }
+        val ctx = requireContext()
+        addVoiceRows(entries.map { v ->
+            val active = currentProfile.voiceName == v.id
+            val ready = VoiceRegistry.isReady(ctx, v.id)
+            val downloading = PiperDownloadManager.isDownloading(v.id)
+            val badge = when {
+                ready -> "🔇 Piper"
+                downloading -> "⬇ ..."
+                else -> "⬇ tap"
+            }
+            buildVoiceCard(
+                name = v.displayName,
+                icon = if (v.gender == "Female") "♀" else "♂",
+                iconColor = if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt(),
+                badge = badge,
+                voiceId = v.id, active = active, accent = 0xFF88ccff.toInt(),
+                enabled = ready,
+                onClick = if (ready) {
+                    { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+                } else if (!downloading) {
+                    { startPiperDownload(v.id) }
+                } else null
+            )
+        })
     }
 
     private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
@@ -193,10 +248,9 @@ class ProfilesFragment : Fragment() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lp.setMargins(0, 0, 0, 10); layoutParams = lp
+            lp.setMargins(0, 14, 0, 10); layoutParams = lp
         }
 
-        // Accent bar + title row
         val titleRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -227,66 +281,6 @@ class ProfilesFragment : Fragment() {
         return container
     }
 
-    private fun renderCloudVoices() {
-        val cloudEnabled = CloudTtsEngine.isEnabled()
-
-        val filtered = VoiceRegistry.CLOUD_VOICES.filter { v ->
-            val gOk = genderFilter == "All" || v.gender == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-
-        if (filtered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No voices match filter."))
-            return
-        }
-
-        // Group by cloud engine
-        val engineOrder = listOf(
-            VoiceRegistry.CloudEngine.ORPHEUS to "Orpheus 3B",
-            VoiceRegistry.CloudEngine.CHATTERBOX to "Chatterbox Turbo",
-            VoiceRegistry.CloudEngine.QWEN3_TTS to "Qwen3-TTS"
-        )
-        for ((engineType, engineLabel) in engineOrder) {
-            val voices = filtered.filter { it.cloudEngine == engineType }
-            if (voices.isEmpty()) continue
-            voiceGrid.addView(langHeader(engineLabel, voices.size, 0xFF886633.toInt()))
-            addVoiceRows(voices.map { v -> buildCloudCard(v, cloudEnabled) })
-        }
-    }
-
-    private fun buildCloudCard(v: VoiceRegistry.CloudVoice, cloudEnabled: Boolean): android.view.View {
-        val active = currentProfile.voiceName == v.id
-
-        val card = buildVoiceCard(
-            name = v.displayName, icon = v.genderIcon,
-            iconColor = if (cloudEnabled) v.genderColor else 0xFF444444.toInt(),
-            badge = when (v.cloudEngine) {
-                VoiceRegistry.CloudEngine.ORPHEUS -> "☁ Orpheus"
-                VoiceRegistry.CloudEngine.CHATTERBOX -> "☁ Chatterbox"
-                VoiceRegistry.CloudEngine.QWEN3_TTS -> "☁ Qwen3"
-            },
-            voiceId = v.id,
-            active = active, accent = 0xFFffaa44.toInt(), enabled = cloudEnabled,
-            onClick = if (cloudEnabled) {
-                { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-            } else null
-        )
-
-        // Status indicator
-        val statusView = TextView(requireContext()).apply {
-            text = if (cloudEnabled) "cloud" else "no API key"
-            textSize = 10f; gravity = android.view.Gravity.CENTER
-            setTextColor(if (cloudEnabled) 0xFF886633.toInt() else 0xFFff4444.toInt())
-            setPadding(0, 4, 0, 0)
-        }
-        (card as LinearLayout).addView(statusView)
-        return card
-    }
-
-    /**
-     * Shared card builder for both Kokoro and Piper voices.
-     */
     private fun buildVoiceCard(
         name: String, icon: String, iconColor: Int, badge: String, voiceId: String,
         active: Boolean, accent: Int, enabled: Boolean, onClick: (() -> Unit)?
@@ -315,13 +309,10 @@ class ProfilesFragment : Fragment() {
 
             if (onClick != null) setOnClickListener { onClick() }
 
-            // Gender icon
             addView(TextView(ctx).apply {
                 text = icon; textSize = 22f; gravity = android.view.Gravity.CENTER
                 setTextColor(iconColor)
             })
-
-            // Name
             addView(TextView(ctx).apply {
                 text = name; textSize = 13f; gravity = android.view.Gravity.CENTER
                 setTextColor(when {
@@ -333,8 +324,6 @@ class ProfilesFragment : Fragment() {
                            else android.graphics.Typeface.DEFAULT
                 setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
             })
-
-            // Badge (flag + nationality/quality)
             addView(TextView(ctx).apply {
                 text = badge; textSize = 9f; gravity = android.view.Gravity.CENTER
                 setTextColor(if (active) accent.and(0x00FFFFFF).or(0x99000000.toInt())
@@ -355,25 +344,12 @@ class ProfilesFragment : Fragment() {
                 )
             }
             rowCards.forEach { row.addView(it) }
-            // Fill remaining space in incomplete rows
             repeat(cols - rowCards.size) {
                 row.addView(android.view.View(ctx).apply {
                     layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
                 })
             }
             voiceGrid.addView(row)
-        }
-    }
-
-    private fun langHeader(lang: String, count: Int, color: Int): android.view.View {
-        return TextView(requireContext()).apply {
-            text = "${lang.uppercase()}  ($count)"
-            textSize = 10f; setTextColor(color)
-            setPadding(6, 14, 0, 4)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
         }
     }
 
@@ -413,8 +389,6 @@ class ProfilesFragment : Fragment() {
         PiperDownloadManager.onProgress = { id, pct ->
             activity?.runOnUiThread {
                 if (!isAdded) return@runOnUiThread
-                val tv = voiceGrid.findViewWithTag<TextView>("piper_status_$id")
-                tv?.text = if (pct < 0) "extracting..." else "$pct%"
             }
         }
         PiperDownloadManager.downloadVoice(ctx, voiceId)
@@ -428,306 +402,6 @@ class ProfilesFragment : Fragment() {
         statusView.text = if (pct < 0) "⏳ Extracting model files..." else "⬇ Downloading voices: $pct%"
         barView.isIndeterminate = pct < 0
         if (pct >= 0) barView.progress = pct
-    }
-
-    private fun buildPresets() {
-        presetsScroll.removeAllViews()
-        VoiceProfile.PRESETS.forEach { preset ->
-            val btn = Button(requireContext()).apply {
-                text = "${preset.emoji}\n${preset.name}"; textSize = 11f
-                setBackgroundColor(0xFF1a2a1a.toInt()); setTextColor(0xFF00ff88.toInt())
-                setPadding(20, 12, 20, 12)
-                val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                lp.setMargins(0, 0, 10, 8); layoutParams = lp
-                setOnClickListener {
-                    loadProfileToUI(preset.copy(id = currentProfile.id, name = currentProfile.name, voiceName = currentProfile.voiceName))
-                }
-            }
-            presetsScroll.addView(btn)
-        }
-    }
-
-    private fun buildCommentaryEditor() {
-        val v = view ?: return
-        val container = v.findViewById<LinearLayout>(R.id.commentary_pools_container)
-        container.removeAllViews()
-
-        currentProfile.commentaryPools.forEachIndexed { idx, pool ->
-            container.addView(buildPoolCard(pool, idx))
-        }
-
-        v.findViewById<Button>(R.id.btn_add_pre_comment).setOnClickListener {
-            showAddPoolDialog("pre")
-        }
-        v.findViewById<Button>(R.id.btn_add_post_comment).setOnClickListener {
-            showAddPoolDialog("post")
-        }
-    }
-
-    private fun buildPoolCard(pool: CommentaryPool, idx: Int): View {
-        val card = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF111111.toInt()); setPadding(14, 12, 14, 12)
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, 6); layoutParams = lp
-        }
-
-        // Header: position badge + condition label + delete
-        val header = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-        val posBadge = TextView(requireContext()).apply {
-            text = if (pool.position == "pre") "BEFORE" else "AFTER"
-            textSize = 10f; setPadding(10, 4, 10, 4)
-            setBackgroundColor(if (pool.position == "pre") 0xFF1a3a2a.toInt() else 0xFF1a2a3a.toInt())
-            setTextColor(if (pool.position == "pre") 0xFF00ff88.toInt() else 0xFF00ccff.toInt())
-        }
-        val condLabel = TextView(requireContext()).apply {
-            text = "  ${pool.condition.label()}"
-            textSize = 12f; setTextColor(0xFF888888.toInt())
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val freqLabel = TextView(requireContext()).apply {
-            text = "${pool.frequency}%"; textSize = 11f; setTextColor(0xFFffaa44.toInt())
-            setPadding(0, 0, 10, 0)
-        }
-        val btnDel = Button(requireContext()).apply {
-            text = "✕"; textSize = 11f; setTextColor(0xFFff4444.toInt())
-            setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 4, 12, 4)
-            setOnClickListener {
-                val updated = currentProfile.commentaryPools.toMutableList().also { it.removeAt(idx) }
-                currentProfile = currentProfile.copy(commentaryPools = updated)
-                buildCommentaryEditor()
-            }
-        }
-        header.addView(posBadge); header.addView(condLabel); header.addView(freqLabel); header.addView(btnDel)
-        card.addView(header)
-
-        // Frequency slider
-        val seekFreq = SeekBar(requireContext()).apply {
-            max = 100; progress = pool.frequency
-            progressTintList = android.content.res.ColorStateList.valueOf(0xFFffaa44.toInt())
-            thumbTintList = android.content.res.ColorStateList.valueOf(0xFFffaa44.toInt())
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 8, 0, 8); layoutParams = lp
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, pv: Int, fromUser: Boolean) {
-                    if (fromUser) {
-                        freqLabel.text = "$pv%"
-                        val updated = currentProfile.commentaryPools.toMutableList()
-                        updated[idx] = pool.copy(frequency = pv)
-                        currentProfile = currentProfile.copy(commentaryPools = updated)
-                    }
-                }
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {}
-            })
-        }
-        card.addView(seekFreq)
-
-        // Lines
-        val linesContainer = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-        val lines = pool.lines.toMutableList()
-
-        fun renderLines() {
-            linesContainer.removeAllViews()
-            lines.forEachIndexed { li, line ->
-                val row = LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.HORIZONTAL; setPadding(0, 3, 0, 3)
-                }
-                val et = android.widget.EditText(requireContext()).apply {
-                    setText(line); hint = "Say something..."; textSize = 12f
-                    setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF444444.toInt())
-                    setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 6, 10, 6)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    addTextChangedListener(object : android.text.TextWatcher {
-                        override fun afterTextChanged(s: android.text.Editable?) {
-                            lines[li] = s.toString()
-                            val updatedPools = currentProfile.commentaryPools.toMutableList()
-                            updatedPools[idx] = pool.copy(lines = lines.toList())
-                            currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                        }
-                        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                    })
-                }
-                val del = Button(requireContext()).apply {
-                    text = "✕"; textSize = 10f; setTextColor(0xFFff4444.toInt())
-                    setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(10, 4, 10, 4)
-                    setOnClickListener {
-                        lines.removeAt(li)
-                        val updatedPools = currentProfile.commentaryPools.toMutableList()
-                        updatedPools[idx] = pool.copy(lines = lines.toList())
-                        currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                        renderLines()
-                    }
-                }
-                row.addView(et); row.addView(del); linesContainer.addView(row)
-            }
-        }
-        renderLines()
-        card.addView(linesContainer)
-
-        val btnAddLine = Button(requireContext()).apply {
-            text = "+ line"; textSize = 11f; setTextColor(0xFF00ff88.toInt())
-            setBackgroundColor(0xFF1a2a1a.toInt()); setPadding(14, 4, 14, 4)
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 6, 0, 0); layoutParams = lp
-            setOnClickListener {
-                lines.add("")
-                val updatedPools = currentProfile.commentaryPools.toMutableList()
-                updatedPools[idx] = pool.copy(lines = lines.toList())
-                currentProfile = currentProfile.copy(commentaryPools = updatedPools)
-                renderLines()
-            }
-        }
-        card.addView(btnAddLine)
-        return card
-    }
-
-    private fun showAddPoolDialog(position: String) {
-        val ctx = requireContext()
-        val layout = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 10)
-        }
-
-        // type → display label pairs — both arrays derived from the same source to stay in sync
-        val conditions = listOf(
-            "always"            to "Always",
-            "sender_human"      to "From a human",
-            "source_personal"   to "Personal message",
-            "source_game"       to "Game notification",
-            "source_financial"  to "Financial / bank",
-            "source_service"    to "Delivery / service",
-            "intent_request"    to "Contains question or request",
-            "intent_alert"      to "Urgent alert",
-            "intent_greeting"   to "Greeting",
-            "intent_plea"       to "Pleading",
-            "urgency_expiring"  to "Phone call / expiring",
-            "urgency_real"      to "Genuinely urgent",
-            "stakes_emotional"  to "Emotional stakes",
-            "stakes_financial"  to "Financial stakes",
-            "stakes_high"       to "High stakes",
-            "stakes_low"        to "Low / no stakes",
-            "warmth_high"       to "Warm message",
-            "warmth_distressed" to "Distressed sender",
-            "intensity_high"    to "High intensity",
-            "intensity_low"     to "Low intensity",
-            "time_night"        to "Night time (10 pm–6 am)",
-            "time_morning"      to "Morning (7 am–10 am)",
-            "flooded"           to "Many notifications today"
-        )
-        var selectedType = conditions[0].first
-
-        val typeSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item,
-                conditions.map { it.second })
-        }
-        typeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                selectedType = conditions[pos].first
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
-
-        layout.addView(typeSpinner)
-
-        AlertDialog.Builder(ctx)
-            .setTitle("Add ${if (position == "pre") "before" else "after"} commentary pool")
-            .setView(layout)
-            .setPositiveButton("Add") { _, _ ->
-                val condition = CommentaryCondition(selectedType)
-                val newPool = CommentaryPool(position = position, condition = condition, lines = listOf(""), frequency = 40)
-                val updated = currentProfile.commentaryPools.toMutableList().also { it.add(newPool) }
-                currentProfile = currentProfile.copy(commentaryPools = updated)
-                buildCommentaryEditor()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun buildGimmicksEditor() {
-        gimmicksContainer.removeAllViews()
-        val allTypes = listOf("giggle","sigh","huh","mmm","woah","ugh","aww","gasp","yawn","hmm","laugh","tsk")
-        allTypes.forEach { type ->
-            val existing = currentProfile.gimmicks.find { it.type == type }
-            val freq = existing?.frequency ?: 0
-            val pos = existing?.position ?: "RANDOM"
-
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                setBackgroundColor(0xFF111111.toInt())
-                setPadding(16, 12, 16, 12)
-                val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                lp.setMargins(0, 0, 0, 4); layoutParams = lp
-            }
-
-            val topRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-
-            val label = TextView(requireContext()).apply {
-                text = type.replaceFirstChar { it.uppercase() }
-                textSize = 13f; setTextColor(0xFFcccccc.toInt())
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            val freqLabel = TextView(requireContext()).apply {
-                text = "$freq%"; textSize = 12f; setTextColor(0xFF00ff88.toInt())
-                setPadding(0, 0, 8, 0); minWidth = 44
-            }
-
-            val seekFreq = SeekBar(requireContext()).apply {
-                max = 100; progress = freq
-                progressTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
-                thumbTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(s: SeekBar?, v: Int, fromUser: Boolean) {
-                        if (fromUser) {
-                            freqLabel.text = "$v%"
-                            updateGimmick(type, v, pos)
-                        }
-                    }
-                    override fun onStartTrackingTouch(s: SeekBar?) {}
-                    override fun onStopTrackingTouch(s: SeekBar?) {}
-                })
-            }
-
-            topRow.addView(label); topRow.addView(freqLabel); topRow.addView(seekFreq)
-            row.addView(topRow)
-
-            // Position selector
-            val posRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL; setPadding(0, 6, 0, 0)
-            }
-            listOf("START", "MID", "END", "RANDOM").forEach { p ->
-                val pb = Button(requireContext()).apply {
-                    text = p.lowercase(); textSize = 9f
-                    setBackgroundColor(if (p == pos) 0xFF223322.toInt() else 0xFF1a1a1a.toInt())
-                    setTextColor(if (p == pos) 0xFF00ff88.toInt() else 0xFF444444.toInt())
-                    setPadding(12, 4, 12, 4)
-                    val lp2 = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                    lp2.setMargins(0, 0, 6, 0); layoutParams = lp2
-                    setOnClickListener {
-                        updateGimmick(type, seekFreq.progress, p)
-                        buildGimmicksEditor()
-                    }
-                }
-                posRow.addView(pb)
-            }
-            row.addView(posRow)
-            gimmicksContainer.addView(row)
-        }
-    }
-
-    private fun updateGimmick(type: String, frequency: Int, position: String) {
-        val updated = currentProfile.gimmicks.toMutableList()
-        updated.removeAll { it.type == type }
-        if (frequency > 0) updated.add(GimmickConfig(type, frequency, position))
-        currentProfile = currentProfile.copy(gimmicks = updated)
     }
 
     // ── Profile grid (cards) ───────────────────────────────────────────────
@@ -755,7 +429,6 @@ class ProfilesFragment : Fragment() {
             row!!.addView(card)
         }
 
-        // Fill remaining cells in last row with spacers
         val remainder = profiles.size % columns
         if (remainder != 0) {
             for (i in remainder until columns) {
@@ -777,7 +450,6 @@ class ProfilesFragment : Fragment() {
                 it.setMargins(4, 0, 4, 0)
             }
 
-            // Tap to select
             setOnClickListener {
                 activeProfileId = p.id
                 prefs.edit().putString("active_profile_id", activeProfileId).apply()
@@ -787,21 +459,18 @@ class ProfilesFragment : Fragment() {
                 profileSpinner.setSelection(idx)
             }
 
-            // Long-press to rename
             setOnLongClickListener {
                 showRenameDialog(p)
                 true
             }
         }
 
-        // Emoji
         card.addView(TextView(ctx).apply {
             text = p.emoji
             textSize = 24f
             gravity = android.view.Gravity.CENTER
         })
 
-        // Profile name (main label)
         card.addView(TextView(ctx).apply {
             text = p.name
             textSize = 11f
@@ -811,11 +480,10 @@ class ProfilesFragment : Fragment() {
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
 
-        // Voice name (small, below)
-        val voiceLabel = p.voiceAlias.ifBlank { p.voiceName }
-        if (voiceLabel.isNotBlank()) {
+        val voiceEntry = VoiceRegistry.byId(p.voiceName)
+        if (voiceEntry != null) {
             card.addView(TextView(ctx).apply {
-                text = voiceLabel
+                text = voiceEntry.displayName
                 textSize = 9f
                 setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
                 gravity = android.view.Gravity.CENTER
@@ -823,7 +491,6 @@ class ProfilesFragment : Fragment() {
             })
         }
 
-        // Active indicator
         if (isActive) {
             card.addView(android.view.View(ctx).apply {
                 setBackgroundColor(0xFF00ff88.toInt())
@@ -863,8 +530,7 @@ class ProfilesFragment : Fragment() {
     private fun setupProfileSpinner() {
         profileSpinner.adapter = ArrayAdapter(requireContext(),
             android.R.layout.simple_spinner_dropdown_item, profiles.map { p ->
-                val alias = p.voiceAlias
-                if (alias.isNotBlank()) "${p.emoji} ${p.name} ($alias)" else "${p.emoji} ${p.name}"
+                "${p.emoji} ${p.name}"
             })
         val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
         profileSpinner.setSelection(idx)
@@ -881,9 +547,8 @@ class ProfilesFragment : Fragment() {
     private fun setupButtons() {
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
-            val rules = loadWordingRules()
             val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
-            NotificationReaderService.instance?.testSpeak(text, p, rules)
+            NotificationReaderService.instance?.testSpeak(text, p)
                 ?: Toast.makeText(context, "Service not running — grant permission first.", Toast.LENGTH_SHORT).show()
         }
         btnSave.setOnClickListener {
@@ -921,59 +586,9 @@ class ProfilesFragment : Fragment() {
                     renderProfileGrid()
                 }.setNegativeButton("Cancel", null).show()
         }
-        view?.findViewById<Button>(R.id.btn_rename_voice)?.setOnClickListener {
-            val ctx = context ?: return@setOnClickListener
-            val et = EditText(ctx).apply {
-                hint = "Voice nickname (leave empty to clear)"
-                setText(currentProfile.voiceAlias)
-            }
-            AlertDialog.Builder(ctx)
-                .setTitle("Rename Voice")
-                .setMessage("Set a nickname for this voice in the current profile. This won't change the original voice name.")
-                .setView(et)
-                .setPositiveButton("Save") { _, _ ->
-                    val alias = et.text.toString().trim()
-                    currentProfile = currentProfile.copy(voiceAlias = alias)
-                    val idx = profiles.indexOfFirst { it.id == currentProfile.id }
-                    if (idx >= 0) profiles[idx] = currentProfile
-                    VoiceProfile.saveAll(profiles, prefs)
-                    setupProfileSpinner()
-                    renderProfileGrid()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
             NotificationReaderService.instance?.stopSpeaking()
         }
-    }
-
-    /**
-     * Phase 5: A/B testing toggle — Classic (SherpaEngine + full DSP) vs
-     * Sculpted (StyleSculptor/ScaleMapper + reduced DSP).
-     */
-    private fun setupEngineToggle(v: View) {
-        val switch = v.findViewById<Switch>(R.id.switch_engine_mode) ?: return
-        val desc = v.findViewById<TextView>(R.id.tv_engine_mode_desc)
-
-        // Load persisted preference (default: sculpted/lego mode ON)
-        val sculptedEnabled = prefs.getBoolean("engine_sculpted_mode", true)
-        switch.isChecked = sculptedEnabled
-        updateEngineMode(sculptedEnabled, desc)
-
-        switch.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit().putBoolean("engine_sculpted_mode", isChecked).apply()
-            updateEngineMode(isChecked, desc)
-            // Apply to active YatagamiSynthesizer
-            AudioPipeline.setSculptedMode(isChecked)
-        }
-    }
-
-    private fun updateEngineMode(sculpted: Boolean, desc: TextView?) {
-        desc?.text = if (sculpted)
-            "Sculpted: StyleSculptor/ScaleMapper + reduced DSP\nEmotion baked into synthesis — natural"
-        else
-            "Classic: SherpaEngine + full DSP chain\nEmotion applied as post-processing effects"
     }
 
     private fun loadProfileToUI(p: VoiceProfile) {
@@ -982,54 +597,17 @@ class ProfilesFragment : Fragment() {
         tvPitch.text = "Pitch: %.2f".format(p.pitch)
         seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)
         tvSpeed.text = "Speed: %.2f".format(p.speed)
-        seekBreathInt.max = 100; seekBreathInt.progress = p.breathIntensity; tvBreathInt.text = "Intensity: ${p.breathIntensity}"
-        seekBreathCurve.max = 100; seekBreathCurve.progress = (p.breathCurvePosition * 100).toInt(); tvBreathCurve.text = "Curve: ${(p.breathCurvePosition*100).toInt()}%"
-        seekBreathPause.max = 100; seekBreathPause.progress = p.breathPause; tvBreathPause.text = "Pause: ${p.breathPause}"
-        seekStutterInt.max = 100; seekStutterInt.progress = p.stutterIntensity; tvStutterInt.text = "Intensity: ${p.stutterIntensity}"
-        seekStutterPos.max = 100; seekStutterPos.progress = (p.stutterPosition*100).toInt(); tvStutterPos.text = "Position: ${(p.stutterPosition*100).toInt()}%"
-        seekStutterFreq.max = 100; seekStutterFreq.progress = p.stutterFrequency; tvStutterFreq.text = "Frequency: ${p.stutterFrequency}%"
-        seekStutterPause.max = 100; seekStutterPause.progress = p.stutterPause; tvStutterPause.text = "Pause: ${p.stutterPause}"
-        seekIntonInt.max = 100; seekIntonInt.progress = p.intonationIntensity; tvIntonInt.text = "Intensity: ${p.intonationIntensity}"
-        seekIntonVar.max = 100; seekIntonVar.progress = (p.intonationVariation*100).toInt(); tvIntonVar.text = "Variation: ${(p.intonationVariation*100).toInt()}%"
 
-        attachSeek(seekPitch)      { tvPitch.text = "Pitch: %.2f".format((it+50)/100f) }
-        attachSeek(seekSpeed)      { tvSpeed.text = "Speed: %.2f".format((it+50)/100f) }
-        attachSeek(seekBreathInt)  { tvBreathInt.text = "Intensity: $it" }
-        attachSeek(seekBreathCurve){ tvBreathCurve.text = "Curve: $it%" }
-        attachSeek(seekBreathPause){ tvBreathPause.text = "Pause: $it" }
-        attachSeek(seekStutterInt) { tvStutterInt.text = "Intensity: $it" }
-        attachSeek(seekStutterPos) { tvStutterPos.text = "Position: $it%" }
-        attachSeek(seekStutterFreq){ tvStutterFreq.text = "Frequency: $it%" }
-        attachSeek(seekStutterPause){tvStutterPause.text = "Pause: $it" }
-        attachSeek(seekIntonInt)   { tvIntonInt.text = "Intensity: $it" }
-        attachSeek(seekIntonVar)   { tvIntonVar.text = "Variation: $it%" }
+        attachSeek(seekPitch) { tvPitch.text = "Pitch: %.2f".format((it + 50) / 100f) }
+        attachSeek(seekSpeed) { tvSpeed.text = "Speed: %.2f".format((it + 50) / 100f) }
 
-        buildCommentaryEditor()
-        buildGimmicksEditor()
         renderVoiceGrid()
     }
 
     private fun readProfileFromUI() = currentProfile.copy(
-        pitch               = (seekPitch.progress + 50) / 100f,
-        speed               = (seekSpeed.progress + 50) / 100f,
-        breathIntensity     = seekBreathInt.progress,
-        breathCurvePosition = seekBreathCurve.progress / 100f,
-        breathPause         = seekBreathPause.progress,
-        stutterIntensity    = seekStutterInt.progress,
-        stutterPosition     = seekStutterPos.progress / 100f,
-        stutterFrequency    = seekStutterFreq.progress,
-        stutterPause        = seekStutterPause.progress,
-        intonationIntensity = seekIntonInt.progress,
-        intonationVariation = seekIntonVar.progress / 100f
+        pitch = (seekPitch.progress + 50) / 100f,
+        speed = (seekSpeed.progress + 50) / 100f
     )
-
-    private fun loadWordingRules(): List<Pair<String, String>> {
-        val json = prefs.getString("wording_rules", null) ?: return emptyList()
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).map { val o = arr.getJSONObject(it); Pair(o.optString("find"), o.optString("replace")) }
-        } catch (e: Exception) { emptyList() }
-    }
 
     private fun attachSeek(s: SeekBar, onChange: (Int) -> Unit) {
         s.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -1054,10 +632,6 @@ class ProfilesFragment : Fragment() {
         super.onDestroyView()
     }
 
-    /**
-     * Periodically refresh the voice grid while any download is in progress.
-     * Checks every 2 seconds; stops automatically when no downloads are active.
-     */
     private fun startDownloadRefresh() {
         stopDownloadRefresh()
         refreshRunnable = object : Runnable {
@@ -1069,12 +643,10 @@ class ProfilesFragment : Fragment() {
                     renderVoiceGrid()
                     refreshHandler.postDelayed(this, 2000)
                 } else {
-                    // One final refresh to show completed state
                     renderVoiceGrid()
                 }
             }
         }
-        // Only start polling if something is downloading
         val kokoroDownloading = VoiceDownloadManager.state == VoiceDownloadManager.State.DOWNLOADING
         val piperDownloading = PiperDownloadManager.isAnyDownloading()
         if (kokoroDownloading || piperDownloading) {

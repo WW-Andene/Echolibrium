@@ -9,19 +9,9 @@ import androidx.preference.PreferenceManager
  *
  * Supported commands:
  *   - "can you repeat?" / "repeat that" / "say that again"
- *     → Repeats the last notification that was spoken
- *
  *   - "how long ago?" / "when was that?"
- *     → Says how much time passed since the last notification
- *
  *   - "stop" / "shut up" / "be quiet"
- *     → Stops current speech
- *
  *   - "what time is it?"
- *     → Speaks the current time
- *
- *   - "how are you feeling?" / "what's your mood?"
- *     → Describes the current MoodState in natural language
  */
 object VoiceCommandHandler {
 
@@ -41,16 +31,11 @@ object VoiceCommandHandler {
     private val TIME_TRIGGERS = listOf(
         "what time is it", "what's the time", "tell me the time", "current time"
     )
-    private val MOOD_TRIGGERS = listOf(
-        "how are you feeling", "how are you", "what's your mood",
-        "how do you feel", "what mood", "your mood"
-    )
 
     fun handleCommand(ctx: Context, candidates: List<String>): Boolean {
         val normalized = candidates.map { it.lowercase().trim() }
         return when {
             matchesAny(normalized, REPEAT_TRIGGERS) -> { handleRepeat(ctx); true }
-            matchesAny(normalized, MOOD_TRIGGERS) -> { handleMood(ctx); true }
             matchesAny(normalized, TIME_AGO_TRIGGERS) -> { handleTimeAgo(ctx); true }
             matchesAny(normalized, STOP_TRIGGERS) -> { handleStop(); true }
             matchesAny(normalized, TIME_TRIGGERS) -> { handleTime(ctx); true }
@@ -94,53 +79,13 @@ object VoiceCommandHandler {
         Log.d(TAG, "Handled: time command")
     }
 
-    private fun handleMood(ctx: Context) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-        val mood = MoodState.load(prefs).decayed()
-        speak(ctx, describeMood(mood))
-        Log.d(TAG, "Handled: mood command (v=${mood.valence}, a=${mood.arousal}, s=${mood.stability})")
-    }
-
-    private fun describeMood(mood: MoodState): String {
-        val valenceWord = when {
-            mood.valence > 0.6f  -> "really good"
-            mood.valence > 0.3f  -> "pretty positive"
-            mood.valence > 0.1f  -> "okay"
-            mood.valence > -0.1f -> "neutral"
-            mood.valence > -0.3f -> "a little off"
-            mood.valence > -0.6f -> "not great"
-            else                 -> "pretty rough"
-        }
-        val arousalWord = when {
-            mood.arousal > 0.8f  -> "wired"
-            mood.arousal > 0.6f  -> "alert"
-            mood.arousal > 0.4f  -> "awake"
-            mood.arousal > 0.2f  -> "a bit tired"
-            else                 -> "exhausted"
-        }
-        val stabilityNote = when {
-            mood.stability < 0.3f -> " and honestly a bit all over the place"
-            mood.stability < 0.5f -> " and kind of unsettled"
-            else -> ""
-        }
-        val countNote = when {
-            mood.sessionCount == 0 -> "Haven't read anything yet today."
-            mood.sessionCount < 5  -> "Only read a few so far."
-            mood.sessionCount < 20 -> ""
-            mood.sessionCount < 50 -> "It's been a busy day."
-            else                   -> "It's been nonstop today."
-        }
-        val base = "I'm feeling $valenceWord. Energy-wise, $arousalWord$stabilityNote."
-        return if (countNote.isNotEmpty()) "$base $countNote" else base
-    }
-
     private fun speak(ctx: Context, text: String) {
         val service = NotificationReaderService.instance ?: return
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val profiles = VoiceProfile.loadAll(prefs)
         val profileId = prefs.getString("active_profile_id", "") ?: ""
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        service.testSpeak(text, profile, emptyList())
+        service.testSpeak(text, profile)
     }
 
     private fun formatElapsed(ms: Long): String {

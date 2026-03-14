@@ -56,11 +56,9 @@ class LogcatFragment : Fragment() {
 
         // Kyōkan pipeline tags for focused debugging
         private val PIPELINE_TAGS = setOf(
-            "AudioPipeline", "AudioDsp", "DspChain", "StyleSculptor", "ScaleMapper",
-            "DirectOrtEngine", "YatagamiSynth", "SherpaEngine", "VoiceModulator",
-            "SignalExtractor", "PhonemeTokenizer", "PhonicAnalyzer", "ObservationDb",
+            "AudioPipeline", "AudioDsp", "SherpaEngine", "CloudTtsEngine",
             "NotifReader", "VoiceDownload", "PiperDownload", "DownloadUtil",
-            "CustomCore", "CrashLogger", "VoiceCommandListener", "VoiceCommandHandler",
+            "CrashLogger", "VoiceCommandListener", "VoiceCommandHandler",
             "NotifTranslator", "TtsAliveService"
         )
 

@@ -12,21 +12,14 @@ import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
 
 /**
- * Cloud TTS engine — Orpheus 3B via a proxy server.
- *
- * The app never holds an API key. It POSTs to the proxy, which
- * injects its own credentials and forwards to DeepInfra.
- *
- * Proxy contract:
- *   POST {PROXY_BASE_URL}
- *   Body: { "model": "...", "input": "...", "response_format": "pcm", "voice": "..." }
- *   Response: raw PCM bytes (16-bit signed LE, 24 kHz mono)
+ * Cloud TTS engine — Orpheus 3B via DeepInfra's OpenAI-compatible /audio/speech API.
  *
  * Returns PCM FloatArray + sample rate, matching SherpaEngine's contract.
  */
 object CloudTtsEngine {
 
     private const val TAG = "CloudTtsEngine"
+    private const val BASE_URL = "https://api.deepinfra.com/v1/openai/audio/speech"
     private const val SAMPLE_RATE = 24000
     private const val MODEL_ID = "canopylabs/orpheus-3b-0.1-ft"
 
@@ -40,24 +33,30 @@ object CloudTtsEngine {
         .build()
 
     @Volatile
-    private var proxyUrl: String? = null
+    private var apiKey: String? = null
 
     @Volatile
     private var enabled = false
 
-    fun configure(url: String) {
-        proxyUrl = url.trimEnd('/')
-        enabled = url.isNotBlank()
-        Log.i(TAG, "Cloud TTS ${if (enabled) "enabled (proxy: $proxyUrl)" else "disabled"}")
+    fun configure(key: String) {
+        apiKey = key
+        enabled = key.isNotBlank()
+        Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}")
     }
 
-    fun isEnabled(): Boolean = enabled && !proxyUrl.isNullOrBlank()
+    fun updateApiKey(key: String) {
+        apiKey = key
+        enabled = key.isNotBlank()
+        Log.i(TAG, "Cloud TTS API key updated: ${if (enabled) "enabled" else "disabled"}")
+    }
+
+    fun isEnabled(): Boolean = enabled && apiKey != null
 
     private const val MAX_RETRIES = 1
     private const val RETRY_DELAY_MS = 1500L
 
     /**
-     * Synthesize text to PCM audio via the proxy server.
+     * Synthesize text to PCM audio via DeepInfra Orpheus.
      * Retries once on transient failures (5xx, network errors).
      *
      * @return Pair(pcm, sampleRate) or null on failure
@@ -67,9 +66,9 @@ object CloudTtsEngine {
         voice: String? = null,
         language: String? = null
     ): Pair<FloatArray, Int>? {
-        val url = proxyUrl
-        if (url.isNullOrBlank()) {
-            Log.w(TAG, "No proxy URL configured")
+        val key = apiKey
+        if (key.isNullOrBlank()) {
+            Log.w(TAG, "No API key configured")
             return null
         }
 
@@ -84,7 +83,8 @@ object CloudTtsEngine {
 
         for (attempt in 0..MAX_RETRIES) {
             val request = Request.Builder()
-                .url(url)
+                .url(BASE_URL)
+                .addHeader("Authorization", "Bearer $key")
                 .addHeader("Content-Type", "application/json")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
@@ -97,6 +97,7 @@ object CloudTtsEngine {
                     if (!response.isSuccessful) {
                         val body = response.body?.string()?.take(200) ?: "no body"
                         Log.e(TAG, "HTTP ${response.code}: $body (${elapsedMs}ms)")
+                        // Retry on 5xx server errors
                         if (response.code in 500..599 && attempt < MAX_RETRIES) {
                             Log.w(TAG, "Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1})")
                             Thread.sleep(RETRY_DELAY_MS)
@@ -127,7 +128,7 @@ object CloudTtsEngine {
     }
 
     /**
-     * Convert raw PCM bytes (16-bit signed LE) to FloatArray [-1.0, 1.0].
+     * Convert raw PCM bytes (16-bit signed LE from DeepInfra) to FloatArray [-1.0, 1.0].
      */
     private fun pcmBytesToFloat(bytes: ByteArray): FloatArray {
         val shortBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()

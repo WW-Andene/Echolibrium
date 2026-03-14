@@ -42,10 +42,10 @@ android {
     }
     buildTypes {
         debug {
-            buildConfigField "String", "PROXY_BASE_URL", "\"${localProps.getProperty('PROXY_BASE_URL', '')}\""
+            buildConfigField "String", "DEEPINFRA_API_KEY", "\"${localProps.getProperty('DEEPINFRA_API_KEY', '')}\""
         }
         release {
-            buildConfigField "String", "PROXY_BASE_URL", "\"${localProps.getProperty('PROXY_BASE_URL', '')}\""
+            buildConfigField "String", "DEEPINFRA_API_KEY", "\"\""
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -141,6 +141,9 @@ dependencies {
     // ML Kit Language Identification (on-device)
     implementation 'com.google.mlkit:language-id:17.0.6'
 
-    // HTTP client for cloud TTS proxy
+    // Encrypted SharedPreferences for API key storage
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+
+    // HTTP client for DeepInfra cloud TTS API
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }

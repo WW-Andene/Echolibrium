@@ -1,6 +1,0 @@
-name = "kyokan-tts-proxy"
-main = "worker.js"
-compatibility_date = "2024-01-01"
-
-# Set your DeepInfra API key as a secret (never in code):
-#   npx wrangler secret put DEEPINFRA_API_KEY

@@ -193,12 +193,13 @@ class ProfilesFragment : Fragment() {
         val cloudSubtitle = if (cloudEnabled)
             "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices  ·  streaming"
         else
-            "DeepInfra API  ·  requires API key in local.properties"
-        voiceGrid.addView(buildSectionHeader("CLOUD", cloudSubtitle, 0xFFffaa44.toInt()))
+            "DeepInfra API  ·  tap 🔑 to enter API key"
+        val cloudKeyAction: (() -> Unit) = { showDeepInfraKeyDialog() }
+        voiceGrid.addView(buildSectionHeader("CLOUD", cloudSubtitle, 0xFFffaa44.toInt(), onDownloadAll = cloudKeyAction, downloadIcon = "🔑"))
         renderCloudVoices()
     }
 
-    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
+    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null, downloadIcon: String = "⬇"): android.view.View {
         val ctx = requireContext()
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -225,7 +226,7 @@ class ProfilesFragment : Fragment() {
         })
         if (onDownloadAll != null) {
             titleRow.addView(TextView(ctx).apply {
-                text = "⬇"; textSize = 18f; setTextColor(accent)
+                text = downloadIcon; textSize = 18f; setTextColor(accent)
                 setPadding(16, 0, 8, 0)
                 setOnClickListener { onDownloadAll() }
             })
@@ -441,7 +442,9 @@ class ProfilesFragment : Fragment() {
             active = active, accent = 0xFFffaa44.toInt(), enabled = cloudEnabled,
             onClick = if (cloudEnabled) {
                 { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-            } else null
+            } else {
+                { showDeepInfraKeyDialog() }
+            }
         )
 
         // Status indicator
@@ -453,6 +456,34 @@ class ProfilesFragment : Fragment() {
         }
         (card as LinearLayout).addView(statusView)
         return card
+    }
+
+    private fun showDeepInfraKeyDialog() {
+        val ctx = requireContext()
+        val currentKey = try { SecureKeyStore.getDeepInfraKey(ctx) } catch (_: Exception) { null }
+
+        val input = EditText(ctx).apply {
+            hint = "DeepInfra API key"
+            setText(currentKey ?: "")
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(48, 32, 48, 32)
+            setTextColor(0xFFdddddd.toInt())
+            setHintTextColor(0xFF666666.toInt())
+            setBackgroundColor(0xFF1a1a1a.toInt())
+        }
+
+        AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
+            .setTitle("DeepInfra API Key")
+            .setMessage("Enter your DeepInfra API key to enable cloud voices (Orpheus, Chatterbox, Qwen3-TTS).")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val key = input.text.toString().trim()
+                SecureKeyStore.setDeepInfraKey(ctx, key)
+                CloudTtsEngine.configure(key)
+                renderVoiceGrid()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /**

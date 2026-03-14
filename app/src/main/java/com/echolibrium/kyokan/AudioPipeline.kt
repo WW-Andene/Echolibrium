@@ -134,12 +134,18 @@ object AudioPipeline {
     }
 
     /**
-     * Configure CloudTtsEngine with the DeepInfra API key from BuildConfig.
-     * Key is injected at compile time from local.properties (gitignored).
-     * If no key is set, cloud TTS stays disabled and local engines are used.
+     * Configure CloudTtsEngine with the DeepInfra API key.
+     * Priority: EncryptedSharedPreferences → BuildConfig (compile-time from local.properties).
+     * If no key is found in either source, cloud TTS stays disabled.
      */
     private fun initCloudTts(ctx: Context) {
-        val key = BuildConfig.DEEPINFRA_API_KEY
+        val secureKey = try {
+            SecureKeyStore.getDeepInfraKey(ctx)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read secure prefs for DeepInfra key", e)
+            null
+        }
+        val key = if (!secureKey.isNullOrBlank()) secureKey else BuildConfig.DEEPINFRA_API_KEY
         CloudTtsEngine.configure(key, observationDb)
     }
 

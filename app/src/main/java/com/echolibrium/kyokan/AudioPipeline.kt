@@ -133,18 +133,18 @@ object AudioPipeline {
         val voiceId = item.voiceId
 
         // ── Synthesize ──────────────────────────────────────────────────
-        val result = if (VoiceRegistry.isCloud(voiceId)) {
+        val result: Pair<FloatArray, Int> = if (VoiceRegistry.isCloud(voiceId)) {
             // Try Orpheus cloud
             synthesizeWithCloud(item.text, item)
                 ?: run {
                     Log.w(TAG, "Cloud voice $voiceId unavailable, no fallback for cloud voices")
-                    null
+                    return
                 }
         } else if (PiperVoices.isPiperVoice(voiceId)) {
-            synthesizeWithPiper(ctx, voiceId, item.text, item.speed)
+            synthesizeWithPiper(ctx, voiceId, item.text, item.speed) ?: return
         } else {
-            synthesizeWithKokoro(ctx, voiceId, item.text, item.speed)
-        } ?: return
+            synthesizeWithKokoro(ctx, voiceId, item.text, item.speed) ?: return
+        }
 
         val (rawPcm, sampleRate) = result
 

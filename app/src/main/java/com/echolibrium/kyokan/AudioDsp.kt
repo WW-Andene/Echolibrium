@@ -387,8 +387,8 @@ object AudioDsp {
         applyVocalFry(pcm, sampleRate, landmarks)
     }
 
-    fun applyTrailingOffPublic(pcm: FloatArray) {
-        applyTrailingOff(pcm, null)
+    fun applyTrailingOffPublic(pcm: FloatArray, landmarks: PhonicLandmarks? = null) {
+        applyTrailingOff(pcm, landmarks)
     }
 
     fun applySoftLimiterPublic(pcm: FloatArray) {

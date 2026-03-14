@@ -226,7 +226,7 @@ class TrailingOffNode : DspNode {
     override var enabled = true
     override fun process(samples: FloatArray, ctx: UtteranceContext): FloatArray {
         if (!ctx.modulated.shouldTrailOff) return samples
-        AudioDsp.applyTrailingOffPublic(samples)
+        AudioDsp.applyTrailingOffPublic(samples, ctx.landmarks)
         return samples
     }
 }

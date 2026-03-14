@@ -134,5 +134,5 @@ data class SignalMap(
     fun isSystem()  = senderType == SenderType.SYSTEM || senderType == SenderType.BOT
     fun isNight()   = hourOfDay >= 22 || hourOfDay < 6
     fun isMorning() = hourOfDay in 7..10
-    fun isFlooded() = floodCount >= 5
+    fun isFlooded() = floodTier >= FloodTier.FLOODED
 }

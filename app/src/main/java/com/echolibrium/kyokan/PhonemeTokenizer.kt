@@ -349,7 +349,6 @@ private val LETTER_RULES: List<Pair<String, String>> = listOf(
     "ible" to "ɪbəl",
     "ture" to "tʃɚ",
     "sure" to "ʃɚ",
-    "ough" to "oʊ",
     "ous" to "əs",
     "ing" to "ɪŋ",
     "ong" to "ɔŋ",
@@ -693,6 +692,21 @@ private val WORD_DICT: Map<String, String> = mapOf(
     "important" to "ɪmˈpɔɹtənt",
     "different" to "ˈdɪfɹənt",
     "possible" to "ˈpɑsɪbəl",
+
+    // Words with irregular "ough" pronunciation (rule-based fallback only handles "ʌf")
+    "though" to "ðoʊ",
+    "although" to "ɔːlˈðoʊ",
+    "through" to "θɹuː",
+    "thought" to "θɔːt",
+    "enough" to "ɪˈnʌf",
+    "dough" to "doʊ",
+    "cough" to "kɔːf",
+    "rough" to "ɹʌf",
+    "tough" to "tʌf",
+    "thorough" to "ˈθɚoʊ",
+    "bought" to "bɔːt",
+    "brought" to "bɹɔːt",
+    "ought" to "ɔːt",
 )
 
 // Numbers 0-19 + tens

@@ -43,9 +43,11 @@ android {
     buildTypes {
         debug {
             buildConfigField "String", "DEEPINFRA_API_KEY", "\"${localProps.getProperty('DEEPINFRA_API_KEY', '')}\""
+            buildConfigField "String", "PROXY_BASE_URL", "\"${localProps.getProperty('PROXY_BASE_URL', '')}\""
         }
         release {
             buildConfigField "String", "DEEPINFRA_API_KEY", "\"\""
+            buildConfigField "String", "PROXY_BASE_URL", "\"${localProps.getProperty('PROXY_BASE_URL', '')}\""
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

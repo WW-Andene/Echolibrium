@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
 object CloudTtsEngine {
 
     private const val TAG = "CloudTtsEngine"
-    private const val BASE_URL = "https://api.deepinfra.com/v1/openai/audio/speech"
+    private const val DIRECT_URL = "https://api.deepinfra.com/v1/openai/audio/speech"
     private const val SAMPLE_RATE = 24000
     private const val MODEL_ID = "canopylabs/orpheus-3b-0.1-ft"
 
@@ -35,22 +35,32 @@ object CloudTtsEngine {
     @Volatile
     private var apiKey: String? = null
 
+    /** Cloudflare Worker proxy URL — when set, requests go through the proxy (no API key needed). */
+    @Volatile
+    private var proxyUrl: String? = null
+
     @Volatile
     private var enabled = false
 
-    fun configure(key: String) {
+    /**
+     * Configure with optional proxy URL and/or direct API key.
+     * Proxy takes priority: if set, cloud TTS is enabled without a local key.
+     */
+    fun configure(key: String, proxy: String = "") {
         apiKey = key
-        enabled = key.isNotBlank()
-        Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}")
+        proxyUrl = proxy.ifBlank { null }
+        enabled = proxyUrl != null || key.isNotBlank()
+        Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}" +
+                if (proxyUrl != null) " (via proxy)" else "")
     }
 
     fun updateApiKey(key: String) {
         apiKey = key
-        enabled = key.isNotBlank()
+        enabled = proxyUrl != null || key.isNotBlank()
         Log.i(TAG, "Cloud TTS API key updated: ${if (enabled) "enabled" else "disabled"}")
     }
 
-    fun isEnabled(): Boolean = enabled && apiKey != null
+    fun isEnabled(): Boolean = enabled
 
     private const val MAX_RETRIES = 1
     private const val RETRY_DELAY_MS = 1500L
@@ -66,9 +76,10 @@ object CloudTtsEngine {
         voice: String? = null,
         language: String? = null
     ): Pair<FloatArray, Int>? {
+        val proxy = proxyUrl
         val key = apiKey
-        if (key.isNullOrBlank()) {
-            Log.w(TAG, "No API key configured")
+        if (proxy == null && key.isNullOrBlank()) {
+            Log.w(TAG, "No proxy or API key configured")
             return null
         }
 
@@ -81,13 +92,21 @@ object CloudTtsEngine {
             put("voice", v)
         }
 
+        // Use proxy if available, otherwise hit DeepInfra directly
+        val url = proxy ?: DIRECT_URL
+
         for (attempt in 0..MAX_RETRIES) {
-            val request = Request.Builder()
-                .url(BASE_URL)
-                .addHeader("Authorization", "Bearer $key")
+            val requestBuilder = Request.Builder()
+                .url(url)
                 .addHeader("Content-Type", "application/json")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .build()
+
+            // Only add Authorization when hitting DeepInfra directly (proxy handles its own key)
+            if (proxy == null && !key.isNullOrBlank()) {
+                requestBuilder.addHeader("Authorization", "Bearer $key")
+            }
+
+            val request = requestBuilder.build()
 
             val start = System.nanoTime()
 

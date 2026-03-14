@@ -57,7 +57,9 @@ class ObservationDb private constructor(context: Context) :
                 emotion_blend TEXT,
                 flood_tier TEXT,
                 mood_valence REAL,
-                mood_arousal REAL
+                mood_arousal REAL,
+                engine_type TEXT DEFAULT 'SHERPA_KOKORO',
+                sculpted INTEGER DEFAULT 0
             )
         """)
 

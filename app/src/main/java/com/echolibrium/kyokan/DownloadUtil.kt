@@ -127,7 +127,14 @@ object DownloadUtil {
                                 .removePrefix(stripPrefix)
                         }
                         if (relativePath.isNotBlank()) {
-                            val outFile = File(destDir, relativePath)
+                            val outFile = File(destDir, relativePath).canonicalFile
+                            // Guard against path traversal (e.g. "../../etc/passwd")
+                            if (!outFile.path.startsWith(destDir.canonicalPath + File.separator)
+                                && outFile != destDir.canonicalFile) {
+                                Log.w(TAG, "Skipping path-traversal entry: ${entry.name}")
+                                entry = tar.nextTarEntry
+                                continue
+                            }
                             if (entry.isDirectory) {
                                 outFile.mkdirs()
                             } else {

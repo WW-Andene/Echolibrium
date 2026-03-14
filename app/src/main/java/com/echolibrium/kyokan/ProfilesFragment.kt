@@ -115,18 +115,15 @@ class ProfilesFragment : Fragment() {
         genderRow.removeAllViews()
         nationRow.removeAllViews()
 
-        // Merge genders from all engines (including cloud)
-        val cloudGenders = VoiceRegistry.CLOUD_VOICES.map { it.gender }.distinct()
-        val genders = (KokoroVoices.genders() + PiperVoices.genders() + cloudGenders).distinct()
+        // Only show filters relevant to cloud voices (user-facing)
+        val genders = VoiceRegistry.genders()
         genders.forEach { g ->
             genderRow.addView(filterBtn(g, genderFilter == g) {
                 genderFilter = g; buildFilterButtons(); renderVoiceGrid()
             })
         }
 
-        // Merge languages from all engines (including cloud)
-        val cloudLanguages = VoiceRegistry.CLOUD_VOICES.map { it.language }.distinct()
-        val languages = (KokoroVoices.languages() + PiperVoices.languages() + listOf("All") + cloudLanguages).distinct()
+        val languages = VoiceRegistry.userFacingLanguages()
         languages.forEach { l ->
             nationRow.addView(filterBtn(l, languageFilter == l) {
                 languageFilter = l; buildFilterButtons(); renderVoiceGrid()
@@ -152,50 +149,40 @@ class ProfilesFragment : Fragment() {
         voiceGrid.removeAllViews()
         val ctx = requireContext()
 
-        // ── KOKORO section ──────────────────────────────────────────────────
-        val kokoroDownloadIcon: (() -> Unit)? = if (!VoiceDownloadManager.isModelReady(ctx)
-            && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
-            { startKokoroDownload() }
-        } else null
-        val kokoroSubtitle = if (VoiceDownloadManager.isModelReady(ctx))
-            "Shared model  ·  11 speakers"
-        else
-            "Shared model  ·  11 speakers  ·  ~${VoiceDownloadManager.MODEL_SIZE_MB}MB one-time download"
-        voiceGrid.addView(buildSectionHeader("KOKORO", kokoroSubtitle, 0xFF00ff88.toInt(), kokoroDownloadIcon))
-        renderKokoroVoices()
-
-        // ── Spacing ─────────────────────────────────────────────────────────
-        voiceGrid.addView(android.view.View(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0
-            ).also { it.setMargins(0, 20, 0, 0) }
-        })
-
-        // ── PIPER section ───────────────────────────────────────────────────
-        val piperNotDownloaded = PiperVoices.ALL.filter {
-            PiperDownloadManager.getState(ctx, it.id) == PiperDownloadManager.State.NOT_DOWNLOADED
-        }
-        val piperDownloadIcon: (() -> Unit)? = if (piperNotDownloaded.isNotEmpty()) {
-            { piperNotDownloaded.forEach { v -> startPiperDownload(v.id) } }
-        } else null
-        voiceGrid.addView(buildSectionHeader("PIPER", "Per-voice download  ·  ~40MB each", 0xFF88ccff.toInt(), piperDownloadIcon))
-        renderPiperVoices()
-
-        // ── Spacing ─────────────────────────────────────────────────────────
-        voiceGrid.addView(android.view.View(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0
-            ).also { it.setMargins(0, 20, 0, 0) }
-        })
-
-        // ── CLOUD section (DeepInfra: Orpheus, Chatterbox, Qwen3-TTS) ────
+        // ── Cloud voices are the primary user-facing selection ────────────
         val cloudEnabled = CloudTtsEngine.isEnabled()
         val cloudSubtitle = if (cloudEnabled)
-            "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices  ·  streaming"
+            "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices"
         else
-            "DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices  ·  requires update"
-        voiceGrid.addView(buildSectionHeader("CLOUD", cloudSubtitle, 0xFFffaa44.toInt()))
+            "Requires API key — set in Settings"
+        voiceGrid.addView(buildSectionHeader("VOICES", cloudSubtitle, 0xFFffaa44.toInt()))
         renderCloudVoices()
+
+        // ── Offline fallback info (not selectable) ──────────────────────
+        if (!cloudEnabled) {
+            val kokoroReady = VoiceDownloadManager.isModelReady(ctx)
+            val fallbackSubtitle = if (kokoroReady)
+                "Auto-fallback when cloud unavailable  ·  Kokoro model ready"
+            else
+                "Auto-fallback when cloud unavailable  ·  model not downloaded"
+            voiceGrid.addView(android.view.View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0
+                ).also { it.setMargins(0, 20, 0, 0) }
+            })
+            val fallbackDownloadAction: (() -> Unit)? = if (!kokoroReady
+                && VoiceDownloadManager.state != VoiceDownloadManager.State.DOWNLOADING) {
+                { startKokoroDownload() }
+            } else null
+            voiceGrid.addView(buildSectionHeader("OFFLINE FALLBACK", fallbackSubtitle, 0xFF555555.toInt(), fallbackDownloadAction))
+            if (!kokoroReady) {
+                voiceGrid.addView(TextView(ctx).apply {
+                    text = "Download the offline model (~${VoiceDownloadManager.MODEL_SIZE_MB}MB) so speech works without internet."
+                    textSize = 11f; setTextColor(0xFF666666.toInt())
+                    setPadding(14, 4, 14, 8)
+                })
+            }
+        }
     }
 
     private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null): android.view.View {
@@ -240,164 +227,6 @@ class ProfilesFragment : Fragment() {
         return container
     }
 
-    private fun renderKokoroVoices() {
-        val ctx = requireContext()
-        val modelReady = VoiceDownloadManager.isModelReady(ctx)
-        val modelState = VoiceDownloadManager.state
-
-        val filtered = KokoroVoices.ALL.filter { v ->
-            val gOk = genderFilter == "All" || v.gender == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-
-        if (filtered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No Kokoro voices match filter."))
-            return
-        }
-
-        filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-            voiceGrid.addView(langHeader(lang, voices.size, 0xFF446644.toInt()))
-            addVoiceRows(voices.map { v -> buildKokoroCard(v, modelReady, modelState) })
-        }
-    }
-
-    private fun buildKokoroCard(v: KokoroVoice, modelReady: Boolean, modelState: VoiceDownloadManager.State): android.view.View {
-        val ctx = requireContext()
-        val active = currentProfile.voiceName == v.id
-
-        val statusText: String
-        val statusColor: Int
-        val statusClickable: Boolean
-
-        if (modelReady) {
-            statusText = "ready"
-            statusColor = 0xFF446644.toInt()
-            statusClickable = false
-        } else when (modelState) {
-            VoiceDownloadManager.State.DOWNLOADING -> {
-                val pct = VoiceDownloadManager.progressPercent
-                statusText = if (pct < 0) "extracting..." else "$pct%"
-                statusColor = 0xFFffcc00.toInt()
-                statusClickable = false
-            }
-            VoiceDownloadManager.State.ERROR -> {
-                statusText = "retry"
-                statusColor = 0xFFff4444.toInt()
-                statusClickable = true
-            }
-            else -> {
-                statusText = "get model"
-                statusColor = 0xFF00ff88.toInt()
-                statusClickable = true
-            }
-        }
-
-        val card = buildVoiceCard(
-            name = v.displayName, icon = v.genderIcon,
-            iconColor = if (modelReady) v.genderColor else 0xFF444444.toInt(),
-            badge = "${v.flagEmoji} ${v.nationality}", voiceId = v.id,
-            active = active, accent = 0xFF00ff88.toInt(), enabled = modelReady,
-            onClick = if (modelReady) {
-                { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-            } else null
-        )
-
-        // Add status / download indicator
-        val statusView = TextView(ctx).apply {
-            tag = "kokoro_status_${v.id}"
-            text = if (!modelReady && modelState != VoiceDownloadManager.State.DOWNLOADING
-                && modelState != VoiceDownloadManager.State.ERROR) "⬇ $statusText" else statusText
-            textSize = 10f; gravity = android.view.Gravity.CENTER
-            setTextColor(statusColor)
-            setPadding(0, 4, 0, 0)
-            if (statusClickable) {
-                setOnClickListener { startKokoroDownload() }
-            }
-        }
-        (card as LinearLayout).addView(statusView)
-        return card
-    }
-
-    private fun renderPiperVoices() {
-        val ctx = requireContext()
-        val filtered = PiperVoices.ALL.filter { v ->
-            val gOk = genderFilter == "All" || v.gender == genderFilter
-            val lOk = languageFilter == "All" || v.language == languageFilter
-            gOk && lOk
-        }
-
-        if (filtered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No Piper voices match filter."))
-            return
-        }
-
-        filtered.groupBy { it.language }.entries.sortedBy { it.key }.forEach { (lang, voices) ->
-            voiceGrid.addView(langHeader(lang, voices.size, 0xFF446688.toInt()))
-            addVoiceRows(voices.map { v -> buildPiperCardNew(v) })
-        }
-    }
-
-    private fun buildPiperCardNew(v: PiperVoice): android.view.View {
-        val ctx = requireContext()
-        val state = PiperDownloadManager.getState(ctx, v.id)
-        val ready = state == PiperDownloadManager.State.READY
-        val active = currentProfile.voiceName == v.id
-
-        val statusText: String
-        val statusColor: Int
-        val statusClickable: Boolean
-
-        when (state) {
-            PiperDownloadManager.State.READY -> {
-                statusText = "ready"
-                statusColor = 0xFF446644.toInt()
-                statusClickable = false
-            }
-            PiperDownloadManager.State.DOWNLOADING -> {
-                val pct = PiperDownloadManager.getProgress(v.id)
-                statusText = if (pct < 0) "extracting..." else "$pct%"
-                statusColor = 0xFFffcc00.toInt()
-                statusClickable = false
-            }
-            PiperDownloadManager.State.ERROR -> {
-                statusText = "retry"
-                statusColor = 0xFFff4444.toInt()
-                statusClickable = true
-            }
-            PiperDownloadManager.State.NOT_DOWNLOADED -> {
-                statusText = "~${v.sizeMb}MB"
-                statusColor = 0xFF88ccff.toInt()
-                statusClickable = true
-            }
-        }
-
-        val card = buildVoiceCard(
-            name = v.displayName, icon = v.genderIcon,
-            iconColor = if (ready) v.genderColor else 0xFF444444.toInt(),
-            badge = "${v.flagEmoji} ${v.quality}", voiceId = v.id,
-            active = active, accent = 0xFF88ccff.toInt(), enabled = ready,
-            onClick = if (ready) {
-                { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-            } else null
-        )
-
-        // Add status / download indicator
-        val statusView = TextView(ctx).apply {
-            tag = "piper_status_${v.id}"
-            text = if (!ready && state != PiperDownloadManager.State.DOWNLOADING
-                && state != PiperDownloadManager.State.ERROR) "⬇ $statusText" else statusText
-            textSize = 10f; gravity = android.view.Gravity.CENTER
-            setTextColor(statusColor)
-            setPadding(0, 4, 0, 0)
-            if (statusClickable) {
-                setOnClickListener { startPiperDownload(v.id) }
-            }
-        }
-        (card as LinearLayout).addView(statusView)
-        return card
-    }
-
     private fun renderCloudVoices() {
         val cloudEnabled = CloudTtsEngine.isEnabled()
 
@@ -408,7 +237,7 @@ class ProfilesFragment : Fragment() {
         }
 
         if (filtered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No Cloud voices match filter."))
+            voiceGrid.addView(emptyLabel("No voices match filter."))
             return
         }
 

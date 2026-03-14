@@ -134,12 +134,29 @@ object AudioPipeline {
     }
 
     /**
-     * Configure CloudTtsEngine with the DeepInfra API key from BuildConfig.
-     * Key is injected at compile time: local.properties (dev) or CI secret (release).
+     * Configure CloudTtsEngine with the DeepInfra API key.
+     * Priority: 1) EncryptedSharedPreferences (in-app entry), 2) BuildConfig (compile-time).
      * If no key is set, cloud TTS stays disabled and local engines are used.
      */
     private fun initCloudTts(ctx: Context) {
-        val key = BuildConfig.DEEPINFRA_API_KEY
+        // Try in-app entered key first (EncryptedSharedPreferences)
+        val userKey = try {
+            val masterKey = androidx.security.crypto.MasterKey.Builder(ctx)
+                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            val securePrefs = androidx.security.crypto.EncryptedSharedPreferences.create(
+                ctx, "kyokan_secure_prefs", masterKey,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            securePrefs.getString("deepinfra_api_key", "") ?: ""
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read secure prefs for API key", e)
+            ""
+        }
+
+        // Fall back to compile-time BuildConfig key
+        val key = userKey.ifBlank { BuildConfig.DEEPINFRA_API_KEY }
         CloudTtsEngine.configure(key, observationDb)
     }
 
@@ -208,11 +225,18 @@ object AudioPipeline {
 
     private fun processItem(ctx: Context, item: Item) {
         // ── Step 1: Transform text ─────────────────────────────────────────
-        // When text was machine-translated, only apply wording rules (clean substitutions).
-        // Skip gimmicks, breathiness, stutter, intonation — they insert garbage characters
-        // (like "h", "Ha") into the translated text that TTS reads as literal sounds.
-        val processed = if (item.translated) {
-            VoiceTransform.applyWordingRules(item.rawText, item.rules)
+        // Skip text-level effects (breathiness "h" insertion, stuttering, intonation stretching)
+        // for cloud voices and translated text — cloud engines read these as literal sounds.
+        // Commentary and gimmicks are kept for cloud voices (they produce natural speech sounds).
+        val isCloudVoice = VoiceRegistry.isCloud(item.profile.voiceName)
+        val processed = if (item.translated || isCloudVoice) {
+            var r = VoiceTransform.applyWordingRules(item.rawText, item.rules)
+            if (!item.translated) {
+                // Cloud voices can handle commentary and gimmicks (natural speech sounds)
+                r = VoiceTransform.applyCommentary(r, item.profile, item.signal)
+                r = VoiceTransform.applyGimmicks(r, item.profile.gimmicks, item.signal)
+            }
+            r
         } else {
             VoiceTransform.process(
                 text      = item.rawText,
@@ -312,7 +336,7 @@ object AudioPipeline {
         }
 
         // ── Step 6: Pitch shift (resampling-based, preserves duration) ───
-        val pcm = AudioDsp.pitchShift(dspPcm, item.modulated.pitch)
+        val pcm = AudioDsp.pitchShift(dspPcm, item.modulated.pitch, sampleRate)
 
         // ── Step 7: Play at native sample rate (no playbackRate hack) ────
         playPcm(pcm, sampleRate)

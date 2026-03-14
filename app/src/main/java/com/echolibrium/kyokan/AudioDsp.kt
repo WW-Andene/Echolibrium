@@ -32,40 +32,17 @@ import kotlin.random.Random
 object AudioDsp {
 
     /**
-     * Apply all DSP effects from a ModulatedVoice to raw PCM samples.
-     *
-     * @param samples      Raw float PCM from SherpaEngine (-1.0 to 1.0)
-     * @param sampleRate   Sample rate in Hz (typically 22050)
-     * @param modulated    Modulated voice params (has breath intensity etc.)
-     * @param landmarks    Optional phonic landmarks for context-aware DSP
-     */
-    fun apply(
-        samples: FloatArray,
-        sampleRate: Int,
-        modulated: ModulatedVoice,
-        landmarks: PhonicLandmarks? = null
-    ): FloatArray {
-        if (samples.isEmpty()) return samples
-        if (sampleRate <= 0) return samples
-        return try {
-            applyInternal(samples, sampleRate, modulated, landmarks)
-        } catch (e: Exception) {
-            android.util.Log.e("AudioDsp", "Error in DSP pipeline", e)
-            samples.copyOf()
-        }
-    }
-
-    /**
      * Pitch-shift audio via high-quality resampling. Preserves duration
      * by resampling to change pitch, then time-stretching back via
      * overlap-add. This replaces the old playbackRate approach which
      * shifted pitch AND speed together.
      *
-     * @param samples   Input PCM
-     * @param pitch     Pitch multiplier (1.0 = no change, 1.5 = up 50%, 0.75 = down 25%)
+     * @param samples    Input PCM
+     * @param pitch      Pitch multiplier (1.0 = no change, 1.5 = up 50%, 0.75 = down 25%)
+     * @param sampleRate Sample rate in Hz for correct OLA window sizing
      * @return Pitch-shifted PCM at the same duration and sample rate
      */
-    fun pitchShift(samples: FloatArray, pitch: Float): FloatArray {
+    fun pitchShift(samples: FloatArray, pitch: Float, sampleRate: Int = 24000): FloatArray {
         if (samples.isEmpty()) return samples
         if (pitch in 0.99f..1.01f) return samples  // no-op for near-unity
 
@@ -86,7 +63,7 @@ object AudioDsp {
 
         // Step 2: Time-stretch back to original duration via overlap-add (OLA)
         // This restores the original tempo while keeping the pitch shift
-        return olaTimeStretch(resampled, samples.size, 22050)
+        return olaTimeStretch(resampled, samples.size, sampleRate)
     }
 
     /**
@@ -134,72 +111,6 @@ object AudioDsp {
         }
 
         return output
-    }
-
-    private fun applyInternal(
-        samples: FloatArray,
-        sampleRate: Int,
-        modulated: ModulatedVoice,
-        landmarks: PhonicLandmarks?
-    ): FloatArray {
-        val pcm = samples.copyOf()
-        // Keep dry copy for ramp-in blending
-        val dry = samples.copyOf()
-
-        val intensityScale = if (landmarks != null) {
-            lerp(0.6f, 1.2f, (landmarks.dynamicRange - 1f) / 5f)
-        } else 1.0f
-
-        // 1. Volume/gain
-        if (modulated.volume != 1.0f) {
-            applyVolume(pcm, modulated.volume)
-        }
-
-        // 2. Soft saturation — very gentle to avoid distortion
-        applySoftSaturation(pcm)
-
-        // 3. Formant smoothing
-        applyFormantSmoothing(pcm, sampleRate)
-
-        // 4. Breathiness noise mixing — use squared curve for smoother intensity
-        if (modulated.breathIntensity >= 5) {
-            applyBreathiness(pcm, sampleRate, modulated.breathIntensity, landmarks, intensityScale)
-        }
-
-        // 5. Spectral tilt — proportional to breathiness
-        if (modulated.breathIntensity >= 10) {
-            applySpectralTilt(pcm, sampleRate, modulated.breathIntensity / 100f)
-        }
-
-        // 6. Jitter simulation — with crossfaded windows to prevent clicks
-        if (modulated.jitterAmount > 0.01f) {
-            applyJitter(pcm, sampleRate, modulated.jitterAmount * intensityScale, landmarks)
-        }
-
-        // 7. Vocal fry at phrase endings
-        if (modulated.shouldTrailOff) {
-            applyVocalFry(pcm, sampleRate, landmarks)
-        }
-
-        // 8. Trailing off
-        if (modulated.shouldTrailOff) {
-            applyTrailingOff(pcm, landmarks)
-        }
-
-        // 9. Effect ramp-in — crossfade from dry to wet over first 30ms
-        // Prevents abrupt effect onset when parameters change between utterances
-        val rampSamples = (sampleRate * 0.030f).toInt().coerceAtMost(pcm.size)
-        if (rampSamples > 0) {
-            for (i in 0 until rampSamples) {
-                val wet = i.toFloat() / rampSamples  // 0→1 over 30ms
-                pcm[i] = dry[i] * (1f - wet) + pcm[i] * wet
-            }
-        }
-
-        // 10. Final soft limiter — prevents hard clipping from compound effects
-        applySoftLimiter(pcm)
-
-        return pcm
     }
 
     // ── Volume/gain ────────────────────────────────────────────────────────────

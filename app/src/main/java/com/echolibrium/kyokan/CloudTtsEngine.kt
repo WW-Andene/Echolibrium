@@ -72,6 +72,16 @@ object CloudTtsEngine {
         Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}")
     }
 
+    /**
+     * Update the API key at runtime (e.g., from in-app settings entry).
+     * Called when user enters a key via EncryptedSharedPreferences.
+     */
+    fun updateApiKey(key: String) {
+        apiKey = key
+        enabled = key.isNotBlank()
+        Log.i(TAG, "Cloud TTS API key updated: ${if (enabled) "enabled" else "disabled"}")
+    }
+
     fun isEnabled(): Boolean = enabled && apiKey != null
 
     /**

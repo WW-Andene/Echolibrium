@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="#0d0d0d">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:padding="12dp">
+        <TextView
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="LOGCAT" android:textColor="#00ff88" android:textSize="18sp"
+            android:fontFamily="monospace" android:letterSpacing="0.15"
+            android:textStyle="bold"/>
+        <TextView android:id="@+id/tv_line_count"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#555555" android:textSize="11sp" android:fontFamily="monospace"
+            android:layout_marginEnd="12dp"/>
+        <Button android:id="@+id/btn_clear"
+            android:layout_width="wrap_content" android:layout_height="36dp"
+            android:text="CLEAR" android:textColor="#aaaaaa" android:textSize="11sp"
+            android:fontFamily="monospace" android:background="#1a1a1a"
+            android:paddingStart="12dp" android:paddingEnd="12dp"
+            android:minWidth="0dp" android:minHeight="0dp"/>
+    </LinearLayout>
+
+    <!-- Filter bar -->
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingBottom="8dp">
+
+        <EditText android:id="@+id/et_filter"
+            android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1"
+            android:hint="Filter…" android:textColorHint="#444444"
+            android:textColor="#cccccc" android:textSize="13sp" android:fontFamily="monospace"
+            android:background="#111111" android:paddingStart="10dp" android:paddingEnd="10dp"
+            android:singleLine="true" android:imeOptions="actionDone"
+            android:inputType="text"/>
+
+        <Spinner android:id="@+id/spinner_level"
+            android:layout_width="wrap_content" android:layout_height="36dp"
+            android:layout_marginStart="8dp" android:background="#111111"
+            android:popupBackground="#1a1a1a"/>
+    </LinearLayout>
+
+    <!-- Tag filter chips -->
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingBottom="8dp">
+        <TextView android:id="@+id/chip_app_only"
+            android:layout_width="wrap_content" android:layout_height="28dp"
+            android:text=" APP ONLY " android:textColor="#555555" android:textSize="11sp"
+            android:fontFamily="monospace" android:background="#1a1a1a"
+            android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
+            android:layout_marginEnd="8dp"/>
+        <TextView android:id="@+id/chip_pipeline"
+            android:layout_width="wrap_content" android:layout_height="28dp"
+            android:text=" PIPELINE " android:textColor="#555555" android:textSize="11sp"
+            android:fontFamily="monospace" android:background="#1a1a1a"
+            android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
+            android:layout_marginEnd="8dp"/>
+        <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_autoscroll"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"/>
+        <TextView
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Auto-scroll" android:textColor="#888888" android:textSize="11sp"
+            android:fontFamily="monospace" android:layout_marginStart="4dp"/>
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#222222"/>
+
+    <!-- Log output -->
+    <ScrollView android:id="@+id/scroll_log"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:fillViewport="true">
+        <TextView android:id="@+id/tv_log"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#aaaaaa" android:textSize="11sp" android:fontFamily="monospace"
+            android:lineSpacingExtra="2dp" android:padding="12dp"
+            android:textIsSelectable="true"/>
+    </ScrollView>
+</LinearLayout>

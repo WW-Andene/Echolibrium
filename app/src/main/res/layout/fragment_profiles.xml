@@ -8,12 +8,15 @@
             android:text="VOICE PROFILES" android:textSize="20sp" android:textStyle="bold"
             android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
 
-        <!-- Profile selector -->
+        <!-- Profile grid -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// ACTIVE PROFILE" style="@style/SectionLabel"/>
-        <Spinner android:id="@+id/spinner_profile" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:background="#111111"
-            android:padding="12dp" android:layout_marginBottom="8dp"/>
+            android:text="// PROFILES" style="@style/SectionLabel"/>
+
+        <!-- Grid of profile cards (built dynamically) -->
+        <LinearLayout android:id="@+id/profile_grid" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:layout_marginBottom="8dp"/>
+
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="16dp">
             <Button android:id="@+id/btn_rename_voice" android:layout_width="wrap_content"
@@ -29,6 +32,10 @@
                 android:layout_height="wrap_content" android:text="DELETE"
                 android:backgroundTint="#2a1a1a" android:textColor="#ff4444" android:fontFamily="monospace"/>
         </LinearLayout>
+
+        <!-- Hidden spinner kept for compatibility -->
+        <Spinner android:id="@+id/spinner_profile" android:layout_width="match_parent"
+            android:layout_height="0dp" android:visibility="gone"/>
 
         <!-- Personality presets -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -159,12 +166,36 @@
                 android:fontFamily="monospace" android:textSize="11sp"/>
         </LinearLayout>
 
-        <!-- Gimmicks -->
+        <!-- Gimmicks (collapsible) -->
+        <TextView android:id="@+id/label_gimmicks" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="▸ // GIMMICKS" style="@style/SectionLabel"
+            android:clickable="true" android:focusable="true"/>
+        <LinearLayout android:id="@+id/section_gimmicks" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="16dp"
+            android:visibility="gone">
+            <LinearLayout android:id="@+id/gimmicks_container" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical"/>
+        </LinearLayout>
+
+        <!-- Engine Mode A/B Toggle (Phase 5) -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="// GIMMICKS  (giggle · sigh · huh · mmm · woah · ugh · aww · gasp · yawn · hmm · laugh · tsk)"
-            style="@style/SectionLabel"/>
-        <LinearLayout android:id="@+id/gimmicks_container" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="16dp"/>
+            android:text="// ENGINE MODE" style="@style/SectionLabel"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:background="#111111" android:padding="14dp" android:layout_marginBottom="14dp">
+            <TextView android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Classic ← → Sculpted"
+                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp"/>
+            <Switch android:id="@+id/switch_engine_mode"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:thumbTint="#00ff88" android:trackTint="#333333"/>
+        </LinearLayout>
+        <TextView android:id="@+id/tv_engine_mode_desc" android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Classic: SherpaEngine + full DSP chain\nSculpted: StyleSculptor/ScaleMapper + reduced DSP"
+            android:textSize="10sp" android:textColor="#446644" android:fontFamily="monospace"
+            android:layout_marginBottom="14dp" android:layout_marginTop="-8dp"/>
 
         <!-- Preview & Save -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

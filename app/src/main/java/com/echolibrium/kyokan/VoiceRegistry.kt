@@ -82,10 +82,7 @@ object VoiceRegistry {
         val entry = byId(voiceId) ?: return false
         return when (entry.engine) {
             Engine.KOKORO -> VoiceDownloadManager.isModelReady(ctx)
-            Engine.PIPER -> {
-                val voiceDir = java.io.File(ctx.filesDir, "sherpa/piper/$voiceId")
-                voiceDir.exists() && java.io.File(voiceDir, "model.onnx").exists()
-            }
+            Engine.PIPER -> PiperDownloadManager.isVoiceReady(ctx, voiceId)
             Engine.CLOUD -> CloudTtsEngine.isEnabled()
         }
     }

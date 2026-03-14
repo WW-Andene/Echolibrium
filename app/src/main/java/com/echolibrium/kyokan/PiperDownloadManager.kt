@@ -29,8 +29,30 @@ object PiperDownloadManager {
     private val voiceErrors = ConcurrentHashMap<String, String>()
     private val downloading = mutableSetOf<String>()
 
-    @Volatile var onStateChange: ((voiceId: String, DownloadState) -> Unit)? = null
-    @Volatile var onProgress: ((voiceId: String, Int) -> Unit)? = null
+    private val stateListeners = mutableListOf<(voiceId: String, DownloadState) -> Unit>()
+    private val progressListeners = mutableListOf<(voiceId: String, Int) -> Unit>()
+    private val listenersLock = Object()
+
+    fun addStateListener(l: (voiceId: String, DownloadState) -> Unit) {
+        synchronized(listenersLock) { stateListeners.add(l) }
+    }
+    fun removeStateListener(l: (voiceId: String, DownloadState) -> Unit) {
+        synchronized(listenersLock) { stateListeners.remove(l) }
+    }
+    fun addProgressListener(l: (voiceId: String, Int) -> Unit) {
+        synchronized(listenersLock) { progressListeners.add(l) }
+    }
+    fun removeProgressListener(l: (voiceId: String, Int) -> Unit) {
+        synchronized(listenersLock) { progressListeners.remove(l) }
+    }
+
+    // Backward-compat setters — used nowhere internally, kept for external callers
+    var onStateChange: ((voiceId: String, DownloadState) -> Unit)?
+        get() = null
+        set(value) { if (value != null) synchronized(listenersLock) { stateListeners.clear(); stateListeners.add(value) } }
+    var onProgress: ((voiceId: String, Int) -> Unit)?
+        get() = null
+        set(value) { if (value != null) synchronized(listenersLock) { progressListeners.clear(); progressListeners.add(value) } }
 
     // ── Paths ───────────────────────────────────────────────────────────────
 
@@ -135,11 +157,11 @@ object PiperDownloadManager {
 
             DownloadUtil.download(url, tmpFile) { pct ->
                 voiceProgress[voiceId] = pct
-                onProgress?.invoke(voiceId, pct)
+                notifyProgress(voiceId, pct)
             }
 
             Log.d(TAG, "Extracting $voiceId")
-            onProgress?.invoke(voiceId, -1)
+            notifyProgress(voiceId, -1)
             val archiveDir = PiperVoices.archiveDirName(voiceId)
             val targetDir = getVoiceDir(ctx, voiceId)
             targetDir.mkdirs()
@@ -172,7 +194,7 @@ object PiperDownloadManager {
                 DownloadUtil.download(url, tmpFile) { pct ->
                     val scaled = (pct * 75) / 100
                     voiceProgress[voiceId] = scaled
-                    onProgress?.invoke(voiceId, scaled)
+                    notifyProgress(voiceId, scaled)
                 }
                 tmpFile.renameTo(onnxFile)
             } catch (e: Exception) {
@@ -185,7 +207,7 @@ object PiperDownloadManager {
         val tokensFile = File(targetDir, "tokens.txt")
         if (!tokensFile.exists()) {
             voiceProgress[voiceId] = 76
-            onProgress?.invoke(voiceId, 76)
+            notifyProgress(voiceId, 76)
             downloadTokensFromOnnxJson(ctx, voice, tokensFile)
         }
 
@@ -195,13 +217,13 @@ object PiperDownloadManager {
         val espeakDir = File(targetDir, "espeak-ng-data")
         if (!espeakDir.exists()) {
             voiceProgress[voiceId] = 96
-            onProgress?.invoke(voiceId, 96)
+            notifyProgress(voiceId, 96)
             val sharedEspeak = File(getSharedDir(ctx), "espeak-ng-data")
             sharedEspeak.copyRecursively(espeakDir)
         }
 
         voiceProgress[voiceId] = 100
-        onProgress?.invoke(voiceId, 100)
+        notifyProgress(voiceId, 100)
     }
 
     /**
@@ -249,14 +271,14 @@ object PiperDownloadManager {
         try {
             Log.d(TAG, "Downloading shared espeak-ng-data")
             voiceProgress[voiceId] = 82
-            onProgress?.invoke(voiceId, 82)
+            notifyProgress(voiceId, 82)
             DownloadUtil.download(PiperVoices.espeakDataUrl(), tmpFile) { pct ->
                 val scaled = 82 + (pct * 12) / 100
                 voiceProgress[voiceId] = scaled
-                onProgress?.invoke(voiceId, scaled)
+                notifyProgress(voiceId, scaled)
             }
             Log.d(TAG, "Extracting espeak-ng-data")
-            onProgress?.invoke(voiceId, -1)
+            notifyProgress(voiceId, -1)
             DownloadUtil.extractTarBz2(tmpFile, sharedDir)
         } finally {
             tmpFile.delete()
@@ -275,7 +297,11 @@ object PiperDownloadManager {
 
     private fun updateState(voiceId: String, state: DownloadState) {
         voiceStates[voiceId] = state
-        onStateChange?.invoke(voiceId, state)
+        synchronized(listenersLock) { stateListeners.toList() }.forEach { it(voiceId, state) }
+    }
+
+    private fun notifyProgress(voiceId: String, pct: Int) {
+        synchronized(listenersLock) { progressListeners.toList() }.forEach { it(voiceId, pct) }
     }
 
 }

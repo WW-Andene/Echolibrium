@@ -53,6 +53,12 @@ class ProfilesFragment : Fragment() {
         activeProfileId = prefs.getString("active_profile_id", "") ?: ""
         if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
 
+        // Register download listeners once (cleaned up in onDestroyView)
+        VoiceDownloadManager.addStateListener(kokoroStateListener)
+        VoiceDownloadManager.addProgressListener(kokoroProgressListener)
+        PiperDownloadManager.addStateListener(piperStateListener)
+        PiperDownloadManager.addProgressListener(piperProgressListener)
+
         setupCollapsibleSections(v)
         setupProfileSpinner()
         renderProfileGrid()
@@ -154,7 +160,9 @@ class ProfilesFragment : Fragment() {
                     icon = if (v.gender == "Female") "♀" else "♂",
                     iconColor = if (cloudEnabled) {
                         if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
-                    } else 0xFF444444.toInt(),
+                    } else {
+                        if (v.gender == "Female") 0xFF664455.toInt() else 0xFF445566.toInt()
+                    },
                     status = if (cloudEnabled) "cloud" else "no API key",
                     statusColor = if (cloudEnabled) 0xFF886633.toInt() else 0xFFff4444.toInt(),
                     voiceId = v.id,
@@ -214,7 +222,9 @@ class ProfilesFragment : Fragment() {
                     icon = if (v.gender == "Female") "♀" else "♂",
                     iconColor = if (kokoroReady) {
                         if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
-                    } else 0xFF444444.toInt(),
+                    } else {
+                        if (v.gender == "Female") 0xFF664455.toInt() else 0xFF445566.toInt()
+                    },
                     status = status,
                     statusColor = statusColor,
                     voiceId = v.id,
@@ -276,7 +286,13 @@ class ProfilesFragment : Fragment() {
                             "Male" -> 0xFF88ccff.toInt()
                             else -> 0xFFaaaaaa.toInt()
                         }
-                    } else 0xFF444444.toInt(),
+                    } else {
+                        when (v.gender) {
+                            "Female" -> 0xFF664455.toInt()
+                            "Male" -> 0xFF445566.toInt()
+                            else -> 0xFF555555.toInt()
+                        }
+                    },
                     status = status,
                     statusColor = statusColor,
                     voiceId = v.id,
@@ -362,8 +378,8 @@ class ProfilesFragment : Fragment() {
                     setColor(0xFF0d1a1a.toInt())
                     setStroke((2 * dp).toInt(), accent)
                 } else {
-                    setColor(if (enabled) 0xFF151515.toInt() else 0xFF0e0e0e.toInt())
-                    setStroke(1, 0xFF222222.toInt())
+                    setColor(if (enabled) 0xFF151515.toInt() else 0xFF111111.toInt())
+                    setStroke(1, if (enabled) 0xFF222222.toInt() else 0xFF1a1a1a.toInt())
                 }
             }
 
@@ -393,6 +409,35 @@ class ProfilesFragment : Fragment() {
                 text = status; textSize = 10f; gravity = android.view.Gravity.CENTER
                 setTextColor(statusColor)
             })
+
+            // Inline preview button — only shown when voice is ready
+            if (enabled) {
+                addView(TextView(ctx).apply {
+                    text = "▶ preview"
+                    textSize = 9f
+                    gravity = android.view.Gravity.CENTER
+                    setTextColor(accent.and(0x00FFFFFF.toInt()).or(0x99000000.toInt())) // 60% alpha of accent
+                    setPadding(0, (4 * dp).toInt(), 0, 0)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        val previewText = txtPreview.text.toString().ifBlank { "Hello! This is $name." }
+                        val tempProfile = currentProfile.copy(voiceName = voiceId)
+                        val service = NotificationReaderService.instance
+                        if (service != null) {
+                            service.testSpeak(previewText, tempProfile)
+                        } else {
+                            AudioPipeline.start(ctx)
+                            AudioPipeline.enqueue(AudioPipeline.Item(
+                                text = previewText,
+                                voiceId = voiceId,
+                                pitch = tempProfile.pitch,
+                                speed = tempProfile.speed
+                            ))
+                        }
+                    }
+                })
+            }
         }
     }
 
@@ -457,66 +502,19 @@ class ProfilesFragment : Fragment() {
     // ── Downloads ───────────────────────────────────────────────────────────
 
     private fun startKokoroDownload() {
-        val ctx = requireContext()
-        VoiceDownloadManager.onProgress = { _ ->
-            activity?.runOnUiThread {
-                if (isAdded) renderVoiceGrid()
-            }
-        }
-        VoiceDownloadManager.onStateChange = { state ->
-            activity?.runOnUiThread {
-                if (isAdded) {
-                    renderVoiceGrid()
-                    if (state == DownloadState.ERROR) {
-                        Toast.makeText(context, "Kokoro download failed: ${VoiceDownloadManager.errorMessage}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-        VoiceDownloadManager.downloadModel(ctx)
+        VoiceDownloadManager.downloadModel(requireContext())
         renderVoiceGrid()
         startDownloadRefresh()
     }
 
     private fun startPiperDownload(voiceId: String) {
-        val ctx = requireContext()
-        PiperDownloadManager.onStateChange = { vid, state ->
-            activity?.runOnUiThread {
-                if (isAdded) {
-                    renderVoiceGrid()
-                    if (state == DownloadState.ERROR) {
-                        Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-        PiperDownloadManager.onProgress = { _, _ ->
-            activity?.runOnUiThread {
-                if (isAdded) renderVoiceGrid()
-            }
-        }
-        PiperDownloadManager.downloadVoice(ctx, voiceId)
+        PiperDownloadManager.downloadVoice(requireContext(), voiceId)
         renderVoiceGrid()
         startDownloadRefresh()
     }
 
     private fun downloadAllPiper() {
         val ctx = requireContext()
-        PiperDownloadManager.onStateChange = { vid, state ->
-            activity?.runOnUiThread {
-                if (isAdded) {
-                    renderVoiceGrid()
-                    if (state == DownloadState.ERROR) {
-                        Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-        PiperDownloadManager.onProgress = { _, _ ->
-            activity?.runOnUiThread {
-                if (isAdded) renderVoiceGrid()
-            }
-        }
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
         piperEntries.forEach { v ->
             if (!VoiceRegistry.isReady(ctx, v.id) && !PiperDownloadManager.isDownloading(v.id)) {
@@ -564,13 +562,23 @@ class ProfilesFragment : Fragment() {
 
     private fun buildProfileCard(p: VoiceProfile, isActive: Boolean): android.view.View {
         val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setPadding(8, 16, 8, 16)
-            setBackgroundColor(if (isActive) 0xFF1a3a1a.toInt() else 0xFF151515.toInt())
+            setPadding((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 8 * dp
+                if (isActive) {
+                    setColor(0xFF1a3a1a.toInt())
+                    setStroke((2 * dp).toInt(), 0xFF00ff88.toInt())
+                } else {
+                    setColor(0xFF151515.toInt())
+                    setStroke(1, 0xFF222222.toInt())
+                }
+            }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
-                it.setMargins(4, 0, 4, 0)
+                it.setMargins((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
             }
 
             setOnClickListener {
@@ -618,8 +626,8 @@ class ProfilesFragment : Fragment() {
             card.addView(android.view.View(ctx).apply {
                 setBackgroundColor(0xFF00ff88.toInt())
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 3
-                ).also { it.setMargins(12, 8, 12, 0) }
+                    LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
+                ).also { it.setMargins((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), 0) }
             })
         }
 
@@ -671,6 +679,34 @@ class ProfilesFragment : Fragment() {
         activity?.runOnUiThread {
             if (isAdded) Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
         }
+    }
+
+    // Download listeners — registered once, cleaned up in onDestroyView
+    private val kokoroStateListener: (DownloadState) -> Unit = { state ->
+        activity?.runOnUiThread {
+            if (isAdded) {
+                renderVoiceGrid()
+                if (state == DownloadState.ERROR) {
+                    Toast.makeText(context, "Kokoro download failed: ${VoiceDownloadManager.errorMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    private val kokoroProgressListener: (Int) -> Unit = { _ ->
+        activity?.runOnUiThread { if (isAdded) renderVoiceGrid() }
+    }
+    private val piperStateListener: (String, DownloadState) -> Unit = { vid, state ->
+        activity?.runOnUiThread {
+            if (isAdded) {
+                renderVoiceGrid()
+                if (state == DownloadState.ERROR) {
+                    Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    private val piperProgressListener: (String, Int) -> Unit = { _, _ ->
+        activity?.runOnUiThread { if (isAdded) renderVoiceGrid() }
     }
 
     private fun setupButtons() {
@@ -776,6 +812,10 @@ class ProfilesFragment : Fragment() {
     override fun onDestroyView() {
         stopDownloadRefresh()
         AudioPipeline.removeSynthesisErrorListener(synthesisErrorListener)
+        VoiceDownloadManager.removeStateListener(kokoroStateListener)
+        VoiceDownloadManager.removeProgressListener(kokoroProgressListener)
+        PiperDownloadManager.removeStateListener(piperStateListener)
+        PiperDownloadManager.removeProgressListener(piperProgressListener)
         super.onDestroyView()
     }
 

@@ -26,9 +26,30 @@ object VoiceDownloadManager {
     @Volatile var progressPercent: Int = 0
     @Volatile var errorMessage: String = ""
 
-    // Standardized callback properties matching PiperDownloadManager (H3)
-    @Volatile var onProgress: ((Int) -> Unit)? = null
-    @Volatile var onStateChange: ((DownloadState) -> Unit)? = null
+    private val stateListeners = mutableListOf<(DownloadState) -> Unit>()
+    private val progressListeners = mutableListOf<(Int) -> Unit>()
+    private val listenersLock = Object()
+
+    fun addStateListener(l: (DownloadState) -> Unit) {
+        synchronized(listenersLock) { stateListeners.add(l) }
+    }
+    fun removeStateListener(l: (DownloadState) -> Unit) {
+        synchronized(listenersLock) { stateListeners.remove(l) }
+    }
+    fun addProgressListener(l: (Int) -> Unit) {
+        synchronized(listenersLock) { progressListeners.add(l) }
+    }
+    fun removeProgressListener(l: (Int) -> Unit) {
+        synchronized(listenersLock) { progressListeners.remove(l) }
+    }
+
+    // Backward-compat setters — used nowhere internally, kept for external callers
+    var onProgress: ((Int) -> Unit)?
+        get() = null
+        set(value) { if (value != null) synchronized(listenersLock) { progressListeners.clear(); progressListeners.add(value) } }
+    var onStateChange: ((DownloadState) -> Unit)?
+        get() = null
+        set(value) { if (value != null) synchronized(listenersLock) { stateListeners.clear(); stateListeners.add(value) } }
 
     // ── Paths ─────────────────────────────────────────────────────────────────
 
@@ -59,11 +80,11 @@ object VoiceDownloadManager {
                 Log.d(TAG, "Downloading from $DOWNLOAD_URL")
                 DownloadUtil.download(DOWNLOAD_URL, tmpFile) { pct ->
                     progressPercent = pct
-                    onProgress?.invoke(pct)
+                    notifyProgress(pct)
                 }
 
                 Log.d(TAG, "Extracting to ${getSherpaDir(ctx)}")
-                onProgress?.invoke(-1)  // signal "extracting"
+                notifyProgress(-1)  // signal "extracting"
                 DownloadUtil.extractTarBz2(tmpFile, getSherpaDir(ctx))
 
                 tmpFile.delete()
@@ -94,7 +115,11 @@ object VoiceDownloadManager {
 
     private fun updateState(s: DownloadState) {
         state = s
-        onStateChange?.invoke(s)
+        synchronized(listenersLock) { stateListeners.toList() }.forEach { it(s) }
+    }
+
+    private fun notifyProgress(pct: Int) {
+        synchronized(listenersLock) { progressListeners.toList() }.forEach { it(pct) }
     }
 
 }

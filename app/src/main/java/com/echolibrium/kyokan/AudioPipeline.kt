@@ -61,26 +61,10 @@ object AudioPipeline {
     }
 
     /**
-     * Configure CloudTtsEngine with the DeepInfra API key.
-     * Priority: 1) EncryptedSharedPreferences (in-app entry), 2) BuildConfig (compile-time).
+     * Configure CloudTtsEngine with the proxy URL from BuildConfig.
      */
     private fun initCloudTts(ctx: Context) {
-        val userKey = try {
-            val masterKey = androidx.security.crypto.MasterKey.Builder(ctx)
-                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val securePrefs = androidx.security.crypto.EncryptedSharedPreferences.create(
-                ctx, "kyokan_secure_prefs", masterKey,
-                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-            securePrefs.getString("deepinfra_api_key", "") ?: ""
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not read secure prefs for API key", e)
-            ""
-        }
-        val key = userKey.ifBlank { BuildConfig.DEEPINFRA_API_KEY }
-        CloudTtsEngine.configure(key)
+        CloudTtsEngine.configure(BuildConfig.PROXY_BASE_URL)
     }
 
     fun stop() {

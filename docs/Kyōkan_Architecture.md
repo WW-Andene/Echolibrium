@@ -6,9 +6,9 @@
 
 ## What Is This Project?
 
-**Kyōkan** (共感, "empathy") / **Echolibrium** / **Kokoro Reader** is an Android app that reads notifications aloud using fully offline TTS. It doesn't just read — it *reacts* to what it reads, modulating voice pitch, speed, breathiness, and stutter based on the emotional content of each notification.
+**Kyōkan** (共感, "empathy") / **Echolibrium** is an Android app that reads notifications aloud using fully offline TTS. It doesn't just read — it *reacts* to what it reads, modulating voice pitch, speed, breathiness, and stutter based on the emotional content of each notification.
 
-- **Package:** `com.kokoro.reader`
+- **Package:** `com.echolibrium.kyokan`
 - **Min SDK:** 26 (Android 8.0)
 - **Target SDK:** 34
 - **ABI:** arm64-v8a only
@@ -50,7 +50,7 @@ This is the most important thing to understand. The app runs in **two separate O
 
 ## Source File Map
 
-All source is in `app/src/main/java/com/kokoro/reader/`.
+All source is in `app/src/main/java/com/echolibrium/kyokan/`.
 
 ### Core Engine (runs in :tts process)
 

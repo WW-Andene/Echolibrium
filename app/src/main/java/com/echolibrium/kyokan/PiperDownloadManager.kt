@@ -73,9 +73,9 @@ object PiperDownloadManager {
         synchronized(downloading) { downloading.isNotEmpty() }
 
     fun getState(ctx: Context, voiceId: String): DownloadState {
-        if (isVoiceReady(ctx, voiceId)) return DownloadDownloadState.READY
-        if (isDownloading(voiceId)) return DownloadDownloadState.DOWNLOADING
-        return voiceStates[voiceId] ?: DownloadDownloadState.NOT_DOWNLOADED
+        if (isVoiceReady(ctx, voiceId)) return DownloadState.READY
+        if (isDownloading(voiceId)) return DownloadState.DOWNLOADING
+        return voiceStates[voiceId] ?: DownloadState.NOT_DOWNLOADED
     }
 
     fun getProgress(voiceId: String): Int =

@@ -52,7 +52,6 @@ class LogcatFragment : Fragment() {
     companion object {
         private const val MAX_LINES = 5000
         private const val TRIM_TO = 4000
-        private const val UI_UPDATE_MS = 250L
         private val APP_PACKAGE = "com.echolibrium.kyokan"
 
         // Kyōkan pipeline tags for focused debugging
@@ -275,7 +274,7 @@ class LogcatFragment : Fragment() {
         if (LEVEL_ORDER.indexOf(line.level) < LEVEL_ORDER.indexOf(minLevel)) return false
 
         // App-only mode
-        if (appOnlyMode && !line.raw.contains(APP_PACKAGE) && !isAppPid(line.pid)) return false
+        if (appOnlyMode && !line.raw.contains(APP_PACKAGE)) return false
 
         // Pipeline mode
         if (pipelineMode && line.tag !in PIPELINE_TAGS) return false
@@ -287,12 +286,6 @@ class LogcatFragment : Fragment() {
         }
 
         return true
-    }
-
-    private fun isAppPid(pid: String): Boolean {
-        // Simple heuristic — check if any pipeline tag appears from this PID
-        // This is a best-effort; full PID tracking would need /proc queries
-        return false
     }
 
     private fun levelColor(level: Char) = when (level) {

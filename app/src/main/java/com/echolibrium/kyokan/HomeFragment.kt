@@ -231,14 +231,6 @@ class HomeFragment : Fragment() {
         }))
     }
 
-    private fun loadWordingRules(): List<Pair<String, String>> {
-        val json = prefs.getString("wording_rules", null) ?: return emptyList()
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).map { val o = arr.getJSONObject(it); Pair(o.optString("find"), o.optString("replace")) }
-        } catch (e: Exception) { emptyList() }
-    }
-
     private fun seek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
         override fun onProgressChanged(s: SeekBar?, v: Int, fromUser: Boolean) { if (fromUser) onChange(v) }
         override fun onStartTrackingTouch(s: SeekBar?) {}

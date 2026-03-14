@@ -7,12 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
-import android.os.PowerManager
 import android.util.Log
+import androidx.core.app.ServiceCompat
 
 /**
  * Foreground service that keeps the TTS pipeline alive when the app is backgrounded.
@@ -20,10 +19,9 @@ import android.util.Log
  * Without this, OEMs (Xiaomi, Samsung, etc.) aggressively kill the process,
  * which tears down NotificationReaderService and stops reading notifications.
  *
- * This service:
- *  - Posts a persistent notification (required for foreground services)
- *  - Holds a partial wake lock so the CPU stays on for synthesis
- *  - Survives screen-off and app-switch scenarios
+ * Uses mediaPlayback FGS type — the correct type for TTS audio output.
+ * No permanent wake lock: the mediaPlayback FGS provides sufficient process
+ * priority, and AudioPipeline holds a scoped wake lock only during synthesis.
  */
 class TtsAliveService : Service() {
 
@@ -46,32 +44,23 @@ class TtsAliveService : Service() {
         }
     }
 
-    private var wakeLock: PowerManager.WakeLock? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private val wakeLockRenewer = object : Runnable {
-        override fun run() {
-            wakeLock?.let {
-                if (it.isHeld) it.release()
-                it.acquire(10 * 60 * 1000L)
-                handler.postDelayed(this, 9 * 60 * 1000L)
-            }
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
-        acquireWakeLock()
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        )
         Log.d(TAG, "TTS alive service started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY // restart if killed
+        return START_STICKY
     }
 
     override fun onDestroy() {
-        releaseWakeLock()
         Log.d(TAG, "TTS alive service stopped")
         super.onDestroy()
     }
@@ -117,25 +106,5 @@ class TtsAliveService : Service() {
                 .setOngoing(true)
                 .build()
         }
-    }
-
-    private fun acquireWakeLock() {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "Kyokan::TtsAlive"
-        ).apply {
-            acquire(10 * 60 * 1000L) // 10-minute timeout
-        }
-        // Schedule re-acquisition before timeout expires
-        handler.postDelayed(wakeLockRenewer, 9 * 60 * 1000L)
-    }
-
-    private fun releaseWakeLock() {
-        handler.removeCallbacks(wakeLockRenewer)
-        wakeLock?.let {
-            if (it.isHeld) it.release()
-        }
-        wakeLock = null
     }
 }

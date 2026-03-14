@@ -2,7 +2,11 @@ package com.echolibrium.kyokan
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import androidx.preference.PreferenceManager
+import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -28,23 +32,10 @@ class NotificationReaderService : NotificationListenerService() {
         var instance: NotificationReaderService? = null
         private const val KEY_EXPIRY_MS = 5 * 60 * 1000L
 
+        private const val TAG = "NotifReader"
+
         @Volatile var lastSpokenText: String = ""
         @Volatile var lastNotificationTime: Long = 0L
-
-        private val FR_CONTRACTION_PATTERNS = listOf(
-            "\\bc'est\\b", "\\bj'ai\\b", "\\bn'est\\b", "\\bqu'\\b",
-            "\\bl'\\w", "\\bd'\\w", "\\bs'\\w", "\\bn'\\w"
-        ).map { Regex(it) }
-
-        private val FR_WORD_PATTERNS = listOf(
-            "\\bune\\b", "\\bles\\b", "\\bdes\\b", "\\baux\\b",
-            "\\bsont\\b", "\\bpas\\b", "\\bque\\b", "\\bqui\\b",
-            "\\bje\\b", "\\btu\\b", "\\bnous\\b", "\\bvous\\b", "\\bils\\b",
-            "\\bpour\\b", "\\bavec\\b", "\\bdans\\b",
-            "\\bbonjour\\b", "\\bmerci\\b", "\\bsalut\\b", "\\bbonsoir\\b",
-            "\\bcomment\\b", "\\bpourquoi\\b", "\\bquand\\b",
-            "\\bactivé\\b", "\\bdésactivé\\b", "\\bêtes\\b"
-        ).map { Regex(it) }
     }
 
     override fun onCreate() {
@@ -60,7 +51,7 @@ class NotificationReaderService : NotificationListenerService() {
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 if (hasPerm) VoiceCommandListener.start(this)
             } catch (e: Exception) {
-                android.util.Log.e("NotifReader", "Error starting voice commands", e)
+                Log.e(TAG, "Error starting voice commands", e)
             }
         }
     }
@@ -226,16 +217,31 @@ class NotificationReaderService : NotificationListenerService() {
         } catch (e: Exception) { null }
     }
 
+    private val languageIdentifier by lazy {
+        LanguageIdentification.getClient(
+            LanguageIdentificationOptions.Builder()
+                .setConfidenceThreshold(0.3f)
+                .build()
+        )
+    }
+
     private fun detectLanguage(text: String, appLangHint: String? = null): String {
-        val lower = text.lowercase()
-        val frenchAccents = lower.count { it in "éèêëàâùûôîïç" }
-        if (frenchAccents >= 2) return "fr"
-        val strongHits = FR_CONTRACTION_PATTERNS.count { it.containsMatchIn(lower) }
-        if (strongHits >= 1) return "fr"
-        val frenchHits = FR_WORD_PATTERNS.count { it.containsMatchIn(lower) }
-        if (frenchHits >= 3) return "fr"
-        if (frenchHits >= 1 && appLangHint == "fr") return "fr"
-        return "en"
+        if (text.isBlank()) return appLangHint ?: "en"
+
+        val latch = CountDownLatch(1)
+        var detected = "und"
+        languageIdentifier.identifyLanguage(text)
+            .addOnSuccessListener { langCode -> detected = langCode; latch.countDown() }
+            .addOnFailureListener { e ->
+                Log.w(TAG, "ML Kit language ID failed", e)
+                latch.countDown()
+            }
+
+        // Wait up to 500ms — this runs on the processingExecutor background thread
+        latch.await(500, TimeUnit.MILLISECONDS)
+
+        if (detected == "und") return appLangHint ?: "en"
+        return detected
     }
 
     fun testSpeak(text: String, profile: VoiceProfile) {

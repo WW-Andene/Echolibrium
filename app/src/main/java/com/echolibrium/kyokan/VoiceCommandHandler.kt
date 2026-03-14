@@ -49,9 +49,9 @@ object VoiceCommandHandler {
     private fun handleRepeat(ctx: Context) {
         val lastText = NotificationReaderService.lastSpokenText
         if (lastText.isBlank()) {
-            speak(ctx, "No notification has been read yet.")
+            speak(ctx, ctx.getString(R.string.cmd_no_notification_yet))
         } else {
-            speak(ctx, "Repeating: $lastText")
+            speak(ctx, ctx.getString(R.string.cmd_repeating, lastText))
         }
         Log.d(TAG, "Handled: repeat command")
     }
@@ -59,10 +59,10 @@ object VoiceCommandHandler {
     private fun handleTimeAgo(ctx: Context) {
         val lastTime = NotificationReaderService.lastNotificationTime
         if (lastTime == 0L) {
-            speak(ctx, "No notification has been received yet.")
+            speak(ctx, ctx.getString(R.string.cmd_no_notification_received))
         } else {
             val elapsed = System.currentTimeMillis() - lastTime
-            speak(ctx, "The last notification was ${formatElapsed(elapsed)} ago.")
+            speak(ctx, ctx.getString(R.string.cmd_last_notification_ago, formatElapsed(ctx, elapsed)))
         }
         Log.d(TAG, "Handled: time ago command")
     }
@@ -75,7 +75,7 @@ object VoiceCommandHandler {
     private fun handleTime(ctx: Context) {
         val timeStr = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
             .format(java.util.Date())
-        speak(ctx, "It is $timeStr.")
+        speak(ctx, ctx.getString(R.string.cmd_current_time, timeStr))
         Log.d(TAG, "Handled: time command")
     }
 
@@ -88,23 +88,29 @@ object VoiceCommandHandler {
         service.testSpeak(text, profile)
     }
 
-    private fun formatElapsed(ms: Long): String {
+    private fun formatElapsed(ctx: Context, ms: Long): String {
         val seconds = ms / 1000
         val minutes = seconds / 60
         val hours = minutes / 60
+        val remMinutes = minutes % 60
+        val remSeconds = seconds % 60
         return when {
-            hours > 0 -> {
-                val rm = minutes % 60
-                if (rm > 0) "$hours hour${if (hours > 1) "s" else ""} and $rm minute${if (rm > 1) "s" else ""}"
-                else "$hours hour${if (hours > 1) "s" else ""}"
+            hours > 0 && remMinutes > 0 -> when {
+                hours > 1 && remMinutes > 1 -> ctx.getString(R.string.elapsed_hours_minutes, hours, remMinutes)
+                hours == 1L && remMinutes > 1 -> ctx.getString(R.string.elapsed_hour_minutes, hours, remMinutes)
+                hours > 1 && remMinutes == 1L -> ctx.getString(R.string.elapsed_hours_minute, hours, remMinutes)
+                else -> ctx.getString(R.string.elapsed_hour_minute, hours, remMinutes)
             }
-            minutes > 0 -> {
-                val rs = seconds % 60
-                if (rs > 0) "$minutes minute${if (minutes > 1) "s" else ""} and $rs second${if (rs > 1) "s" else ""}"
-                else "$minutes minute${if (minutes > 1) "s" else ""}"
+            hours > 0 -> if (hours > 1) ctx.getString(R.string.elapsed_hours, hours) else ctx.getString(R.string.elapsed_hour, hours)
+            minutes > 0 && remSeconds > 0 -> when {
+                minutes > 1 && remSeconds > 1 -> ctx.getString(R.string.elapsed_minutes_seconds, minutes, remSeconds)
+                minutes == 1L && remSeconds > 1 -> ctx.getString(R.string.elapsed_minute_seconds, minutes, remSeconds)
+                minutes > 1 && remSeconds == 1L -> ctx.getString(R.string.elapsed_minutes_second, minutes, remSeconds)
+                else -> ctx.getString(R.string.elapsed_minute_second, minutes, remSeconds)
             }
-            seconds > 0 -> "$seconds second${if (seconds > 1) "s" else ""}"
-            else -> "less than a second"
+            minutes > 0 -> if (minutes > 1) ctx.getString(R.string.elapsed_minutes, minutes) else ctx.getString(R.string.elapsed_minute, minutes)
+            seconds > 0 -> if (seconds > 1) ctx.getString(R.string.elapsed_seconds, seconds) else ctx.getString(R.string.elapsed_second, seconds)
+            else -> ctx.getString(R.string.elapsed_less_than_second)
         }
     }
 }

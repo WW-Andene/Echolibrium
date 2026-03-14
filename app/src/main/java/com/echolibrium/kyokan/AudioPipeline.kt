@@ -146,14 +146,7 @@ object AudioPipeline {
             synthesizeWithKokoro(ctx, voiceId, item.text, item.speed) ?: return
         }
 
-        val (rawPcm, sampleRate) = result
-
-        // ── Pitch shift (if not 1.0) ────────────────────────────────────
-        val pcm = if (item.pitch != 1.0f) {
-            AudioDsp.pitchShift(rawPcm, item.pitch, sampleRate)
-        } else {
-            rawPcm
-        }
+        val (pcm, sampleRate) = result
 
         // ── Play ────────────────────────────────────────────────────────
         playPcm(pcm, sampleRate)

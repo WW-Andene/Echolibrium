@@ -1,2 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><string name="app_name">Kyōkan</string></resources>
+<resources>
+    <string name="app_name">Kyōkan</string>
+
+    <!-- Voice command responses -->
+    <string name="cmd_no_notification_yet">No notification has been read yet.</string>
+    <string name="cmd_repeating">Repeating: %1$s</string>
+    <string name="cmd_no_notification_received">No notification has been received yet.</string>
+    <string name="cmd_last_notification_ago">The last notification was %1$s ago.</string>
+    <string name="cmd_current_time">It is %1$s.</string>
+
+    <!-- Elapsed time formats -->
+    <string name="elapsed_hours_minutes">%1$d hours and %2$d minutes</string>
+    <string name="elapsed_hour_minutes">%1$d hour and %2$d minutes</string>
+    <string name="elapsed_hours_minute">%1$d hours and %2$d minute</string>
+    <string name="elapsed_hour_minute">%1$d hour and %2$d minute</string>
+    <string name="elapsed_hours">%1$d hours</string>
+    <string name="elapsed_hour">%1$d hour</string>
+    <string name="elapsed_minutes_seconds">%1$d minutes and %2$d seconds</string>
+    <string name="elapsed_minute_seconds">%1$d minute and %2$d seconds</string>
+    <string name="elapsed_minutes_second">%1$d minutes and %2$d second</string>
+    <string name="elapsed_minute_second">%1$d minute and %2$d second</string>
+    <string name="elapsed_minutes">%1$d minutes</string>
+    <string name="elapsed_minute">%1$d minute</string>
+    <string name="elapsed_seconds">%1$d seconds</string>
+    <string name="elapsed_second">%1$d second</string>
+    <string name="elapsed_less_than_second">less than a second</string>
+</resources>

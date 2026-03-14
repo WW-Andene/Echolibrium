@@ -23,8 +23,6 @@ android {
         // AAB (Play Store): all ABIs included, split per device via bundle.abi.enableSplit.
         ndk { abiFilters "arm64-v8a" }
 
-        // Inject DeepInfra API key from local.properties into BuildConfig
-        buildConfigField "String", "DEEPINFRA_API_KEY", "\"${localProps.getProperty('DEEPINFRA_API_KEY', '')}\""
     }
     signingConfigs {
         release {
@@ -43,7 +41,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            buildConfigField "String", "DEEPINFRA_API_KEY", "\"${localProps.getProperty('DEEPINFRA_API_KEY', '')}\""
+        }
         release {
+            buildConfigField "String", "DEEPINFRA_API_KEY", "\"\""
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -135,6 +137,9 @@ dependencies {
 
     // ML Kit Translation (on-device, offline after model download)
     implementation 'com.google.mlkit:translate:17.0.3'
+
+    // ML Kit Language Identification (on-device)
+    implementation 'com.google.mlkit:language-id:17.0.6'
 
     // Encrypted SharedPreferences for API key storage
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'

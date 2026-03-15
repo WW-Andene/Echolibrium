@@ -125,10 +125,10 @@ class AppsFragment : Fragment() {
 
         val top = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF111111.toInt()); setPadding(16, 14, 16, 14)
+            setBackgroundColor(0xFF181222.toInt()); setPadding(16, 14, 16, 14)
         }
         val label = TextView(requireContext()).apply {
-            text = rule.appLabel; textSize = 14f; setTextColor(0xFFcccccc.toInt())
+            text = rule.appLabel; textSize = 14f; setTextColor(0xFFd4cce0.toInt())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val toggle = SwitchCompat(requireContext()).apply { isChecked = rule.enabled }
@@ -136,7 +136,7 @@ class AppsFragment : Fragment() {
 
         val bottom = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF0d0d0d.toInt()); setPadding(16, 8, 16, 8)
+            setBackgroundColor(0xFF110d18.toInt()); setPadding(16, 8, 16, 8)
             visibility = if (rule.enabled) View.VISIBLE else View.GONE
         }
         toggle.setOnCheckedChangeListener { _, v ->

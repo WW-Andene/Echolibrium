@@ -1,53 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Core app colors -->
-    <color name="green">#00ff88</color>
-    <color name="green_dark">#00cc66</color>
-    <color name="bg">#0d0d0d</color>
-    <color name="surface">#111111</color>
-    <color name="surface_elevated">#1a1a1a</color>
-    <color name="nav_inactive">#555555</color>
+    <!-- Core app colors — Brand palette (indigo/purple/lavender/rose from logos) -->
+    <color name="green">#b898d4</color>
+    <color name="green_dark">#9b7eb8</color>
+    <color name="bg">#110d18</color>
+    <color name="surface">#181222</color>
+    <color name="surface_elevated">#201830</color>
+    <color name="nav_inactive">#5a4a6e</color>
     <color name="ic_launcher_background">#f5f0eb</color>
 
-    <!-- Text colors -->
-    <color name="text_primary">#cccccc</color>
-    <color name="text_secondary">#aaaaaa</color>
-    <color name="text_hint">#666666</color>
-    <color name="text_muted">#888888</color>
-    <color name="text_dimmed">#555555</color>
-    <color name="text_section">#66aa66</color>
-    <color name="text_section_label">#55aa55</color>
-    <color name="text_disabled">#666666</color>
+    <!-- Text colors — warm cream/lavender tones -->
+    <color name="text_primary">#d4cce0</color>
+    <color name="text_secondary">#b0a4c0</color>
+    <color name="text_hint">#6e5f82</color>
+    <color name="text_muted">#8a7a9e</color>
+    <color name="text_dimmed">#5a4a6e</color>
+    <color name="text_section">#9b7eb8</color>
+    <color name="text_section_label">#8a6eaa</color>
+    <color name="text_disabled">#6e5f82</color>
 
-    <!-- Accent colors -->
+    <!-- Accent colors — engine-specific colors kept per audit ("could coexist") -->
     <color name="accent_orange">#ffaa44</color>
     <color name="accent_cyan">#00ccff</color>
     <color name="accent_blue">#88ccff</color>
     <color name="accent_red">#ff4444</color>
     <color name="accent_dnd">#ffaa00</color>
     <color name="accent_save">#8888ff</color>
+    <color name="accent_rose">#c48da0</color>
 
-    <!-- Gender colors -->
-    <color name="gender_female">#ff88cc</color>
-    <color name="gender_male">#88ccff</color>
-    <color name="gender_neutral">#aaaaaa</color>
+    <!-- Gender colors — warm tones -->
+    <color name="gender_female">#d4a0b8</color>
+    <color name="gender_male">#88aad4</color>
+    <color name="gender_neutral">#b0a4c0</color>
 
-    <!-- Status colors -->
+    <!-- Status colors — functional, universal UX -->
     <color name="status_ready">#00cc66</color>
     <color name="status_error">#ff4444</color>
 
-    <!-- Background variants -->
-    <color name="btn_green_bg">#1a2a1a</color>
-    <color name="btn_red_bg">#2a1a1a</color>
-    <color name="btn_blue_bg">#1a1a2a</color>
-    <color name="card_active_bg">#0d1a1a</color>
-    <color name="card_enabled_bg">#151515</color>
-    <color name="card_disabled_bg">#0e0e0e</color>
-    <color name="card_border">#222222</color>
-    <color name="filter_active_bg">#1a3a1a</color>
+    <!-- Background variants — warm indigo/purple tints -->
+    <color name="btn_green_bg">#1e1530</color>
+    <color name="btn_red_bg">#2a1520</color>
+    <color name="btn_blue_bg">#1a1530</color>
+    <color name="card_active_bg">#2a1828</color>
+    <color name="card_enabled_bg">#1a1428</color>
+    <color name="card_disabled_bg">#140e1e</color>
+    <color name="card_border">#2a2040</color>
+    <color name="filter_active_bg">#251840</color>
 
     <!-- Divider -->
-    <color name="divider">#222222</color>
-    <color name="row_bg">#1a1a1a</color>
-    <color name="input_bg">#222222</color>
+    <color name="divider">#2a2040</color>
+    <color name="row_bg">#201830</color>
+    <color name="input_bg">#2a2040</color>
 </resources>

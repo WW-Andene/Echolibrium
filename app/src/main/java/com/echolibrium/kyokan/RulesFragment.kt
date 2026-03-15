@@ -19,6 +19,8 @@ import androidx.preference.PreferenceManager
 import org.json.JSONArray
 import org.json.JSONObject
 import android.widget.ArrayAdapter
+import androidx.transition.AutoTransition
+import androidx.transition.TransitionManager
 
 class RulesFragment : Fragment() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
@@ -127,6 +129,10 @@ class RulesFragment : Fragment() {
 
     private fun toggleSection(label: TextView, section: LinearLayout, name: String) {
         val visible = section.visibility == View.VISIBLE
+        val parent = section.parent as? ViewGroup
+        if (parent != null) {
+            TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
+        }
         section.visibility = if (visible) View.GONE else View.VISIBLE
         label.text = "${if (visible) "▸" else "▾"} // $name"
     }
@@ -153,7 +159,7 @@ class RulesFragment : Fragment() {
         rules.forEachIndexed { idx, (find, replace) ->
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(12, 10, 12, 10)
+                setBackgroundColor(0xFF201830.toInt()); setPadding(12, 10, 12, 10)
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 lp.setMargins(0, 0, 0, 4); layoutParams = lp
             }
@@ -161,8 +167,8 @@ class RulesFragment : Fragment() {
             fun editText(hint: String, value: String, onChanged: (String) -> Unit) =
                 EditText(requireContext()).apply {
                     setText(value); this.hint = hint; textSize = 13f
-                    setTextColor(0xFFcccccc.toInt()); setHintTextColor(0xFF666666.toInt())
-                    setBackgroundColor(0xFF222222.toInt()); setPadding(12, 8, 12, 8)
+                    setTextColor(0xFFd4cce0.toInt()); setHintTextColor(0xFF6e5f82.toInt())
+                    setBackgroundColor(0xFF2a2040.toInt()); setPadding(12, 8, 12, 8)
                     addTextChangedListener(object : TextWatcher {
                         override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -174,7 +180,7 @@ class RulesFragment : Fragment() {
             etFind.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
 
             val arrow = TextView(requireContext()).apply {
-                text = "→"; textSize = 14f; setTextColor(0xFF00ff88.toInt()); setPadding(8, 0, 8, 0)
+                text = "→"; textSize = 14f; setTextColor(0xFFb898d4.toInt()); setPadding(8, 0, 8, 0)
             }
 
             val etReplace = editText("Replace…", replace) { rules[idx] = rules[idx].first to it }
@@ -182,7 +188,7 @@ class RulesFragment : Fragment() {
 
             val btnDel = Button(requireContext()).apply {
                 text = "✕"; textSize = 12f; setTextColor(0xFFff4444.toInt())
-                setBackgroundColor(0xFF1a1a1a.toInt()); setPadding(16, 8, 16, 8)
+                setBackgroundColor(0xFF201830.toInt()); setPadding(16, 8, 16, 8)
                 setOnClickListener { rules.removeAt(idx); saveRules(); renderRules() }
             }
 
@@ -243,6 +249,10 @@ class RulesFragment : Fragment() {
         switch.setOnCheckedChangeListener { _, checked ->
             val lang = translateCodes[spinner.selectedItemPosition]
             prefs.edit().putBoolean(enabledKey, checked).putString(langKey, lang).apply()
+            val parent = spinner.parent as? ViewGroup
+            if (parent != null) {
+                TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 200 })
+            }
             spinner.visibility = if (checked) View.VISIBLE else View.GONE
             label.visibility = if (checked) View.VISIBLE else View.GONE
             updateTranslateStatus(status, checked, lang, sourceLang)

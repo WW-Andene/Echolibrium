@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent" android:background="#0d0d0d">
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="#110d18">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:padding="20dp">
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/voice_profiles" android:textSize="20sp" android:textStyle="bold"
-            android:textColor="#00ff88" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
+            android:textColor="#b898d4" android:fontFamily="monospace" android:layout_marginBottom="14dp"/>
 
         <!-- Profile grid -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -21,11 +21,11 @@
             android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="16dp">
             <Button android:id="@+id/btn_new_profile" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="@string/btn_new"
-                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+                android:backgroundTint="#1e1530" android:textColor="#b898d4"
                 android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btn_delete" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="@string/btn_delete"
-                android:backgroundTint="#2a1a1a" android:textColor="#ff4444" android:fontFamily="monospace"/>
+                android:backgroundTint="#2a1520" android:textColor="#ff4444" android:fontFamily="monospace"/>
         </LinearLayout>
 
         <!-- Hidden spinner kept for compatibility -->
@@ -52,19 +52,19 @@
             android:text="▸ // PITCH &amp; SPEED" style="@style/SectionLabel"
             android:clickable="true" android:focusable="true"/>
         <LinearLayout android:id="@+id/section_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="#111111" android:padding="16dp"
+            android:orientation="vertical" android:background="#181222" android:padding="16dp"
             android:layout_marginBottom="14dp" android:visibility="gone">
             <TextView android:id="@+id/tv_pitch" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Pitch: 1.00"
-                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
+                android:textColor="#b0a4c0" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_pitch" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="#00ff88" android:thumbTint="#00ff88" android:layout_marginBottom="14dp"
+                android:layout_height="wrap_content" android:progressTint="#b898d4" android:thumbTint="#b898d4" android:layout_marginBottom="14dp"
                 android:contentDescription="Voice pitch" android:labelFor="@id/tv_pitch"/>
             <TextView android:id="@+id/tv_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Speed: 1.00"
-                android:textColor="#aaaaaa" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
+                android:textColor="#b0a4c0" android:fontFamily="monospace" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_speed" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="#00ff88" android:thumbTint="#00ff88"
+                android:layout_height="wrap_content" android:progressTint="#b898d4" android:thumbTint="#b898d4"
                 android:contentDescription="Voice speed" android:labelFor="@id/tv_speed"/>
         </LinearLayout>
 
@@ -72,8 +72,8 @@
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/section_preview" style="@style/SectionLabel"/>
         <EditText android:id="@+id/txt_preview" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:background="#111111"
-            android:textColor="#cccccc" android:fontFamily="monospace" android:textSize="13sp"
+            android:layout_height="wrap_content" android:background="#181222"
+            android:textColor="#d4cce0" android:fontFamily="monospace" android:textSize="13sp"
             android:padding="12dp" android:layout_marginBottom="10dp"
             android:text="@string/preview_text"
             android:inputType="textMultiLine" android:minLines="2"/>
@@ -81,16 +81,16 @@
             android:orientation="horizontal" android:layout_marginBottom="24dp">
             <Button android:id="@+id/btn_test" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_test"
-                android:backgroundTint="#1a2a1a" android:textColor="#00ff88"
+                android:backgroundTint="#1e1530" android:textColor="#b898d4"
                 android:fontFamily="monospace" android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_save"
-                android:backgroundTint="#1a1a2a" android:textColor="#8888ff" android:fontFamily="monospace"/>
+                android:backgroundTint="#1a1530" android:textColor="#8888ff" android:fontFamily="monospace"/>
         </LinearLayout>
 
         <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="@string/btn_stop_speaking"
-            android:backgroundTint="#2a1a1a" android:textColor="#ff4444"
+            android:backgroundTint="#2a1520" android:textColor="#ff4444"
             android:fontFamily="monospace" android:layout_marginBottom="24dp"/>
 
     </LinearLayout>

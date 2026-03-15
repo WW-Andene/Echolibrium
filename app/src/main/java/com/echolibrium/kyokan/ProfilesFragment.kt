@@ -17,6 +17,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
+import androidx.transition.AutoTransition
+import androidx.transition.TransitionManager
 
 class ProfilesFragment : Fragment() {
 
@@ -78,6 +80,10 @@ class ProfilesFragment : Fragment() {
         label.contentDescription = "$title, collapsed. Tap to expand."
         label.setOnClickListener {
             val expanded = section.visibility == View.VISIBLE
+            val parent = section.parent as? ViewGroup
+            if (parent != null) {
+                TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
+            }
             section.visibility = if (expanded) View.GONE else View.VISIBLE
             label.text = "${if (expanded) "▸" else "▾"} $title"
             label.contentDescription = if (expanded) "$title, collapsed. Tap to expand."
@@ -123,8 +129,8 @@ class ProfilesFragment : Fragment() {
     private fun filterBtn(label: String, active: Boolean, onClick: () -> Unit): Button {
         return Button(requireContext()).apply {
             text = label; textSize = 11f
-            setBackgroundColor(if (active) 0xFF1a3a1a.toInt() else 0xFF111111.toInt())
-            setTextColor(if (active) 0xFF00ff88.toInt() else 0xFF666666.toInt())
+            setBackgroundColor(if (active) 0xFF251840.toInt() else 0xFF181222.toInt())
+            setTextColor(if (active) 0xFFb898d4.toInt() else 0xFF6e5f82.toInt())
             setPadding(20, 8, 20, 8)
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 8, 0); layoutParams = lp
@@ -160,9 +166,9 @@ class ProfilesFragment : Fragment() {
                     name = v.displayName,
                     icon = if (v.gender == "Female") "♀" else "♂",
                     iconColor = if (cloudEnabled) {
-                        if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
+                        if (v.gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
                     } else {
-                        if (v.gender == "Female") 0xFF664455.toInt() else 0xFF445566.toInt()
+                        if (v.gender == "Female") 0xFF4a2a3e.toInt() else 0xFF3a4058.toInt()
                     },
                     status = if (cloudEnabled) "cloud" else "no API key",
                     statusColor = if (cloudEnabled) 0xFF886633.toInt() else 0xFFff4444.toInt(),
@@ -215,16 +221,16 @@ class ProfilesFragment : Fragment() {
                     }
                     else -> {
                         status = "tap to download"
-                        statusColor = 0xFF666666.toInt()
+                        statusColor = 0xFF6e5f82.toInt()
                     }
                 }
                 buildVoiceCard(
                     name = v.displayName,
                     icon = if (v.gender == "Female") "♀" else "♂",
                     iconColor = if (kokoroReady) {
-                        if (v.gender == "Female") 0xFFff88cc.toInt() else 0xFF88ccff.toInt()
+                        if (v.gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
                     } else {
-                        if (v.gender == "Female") 0xFF664455.toInt() else 0xFF445566.toInt()
+                        if (v.gender == "Female") 0xFF4a2a3e.toInt() else 0xFF3a4058.toInt()
                     },
                     status = status,
                     statusColor = statusColor,
@@ -275,7 +281,7 @@ class ProfilesFragment : Fragment() {
                     }
                     else -> {
                         status = "tap to download"
-                        statusColor = 0xFF666666.toInt()
+                        statusColor = 0xFF6e5f82.toInt()
                     }
                 }
                 buildVoiceCard(
@@ -283,15 +289,15 @@ class ProfilesFragment : Fragment() {
                     icon = if (v.gender == "Female") "♀" else if (v.gender == "Male") "♂" else "◆",
                     iconColor = if (ready) {
                         when (v.gender) {
-                            "Female" -> 0xFFff88cc.toInt()
-                            "Male" -> 0xFF88ccff.toInt()
-                            else -> 0xFFaaaaaa.toInt()
+                            "Female" -> 0xFFd4a0b8.toInt()
+                            "Male" -> 0xFF88aad4.toInt()
+                            else -> 0xFFb0a4c0.toInt()
                         }
                     } else {
                         when (v.gender) {
-                            "Female" -> 0xFF664455.toInt()
-                            "Male" -> 0xFF445566.toInt()
-                            else -> 0xFF555555.toInt()
+                            "Female" -> 0xFF4a2a3e.toInt()
+                            "Male" -> 0xFF3a4058.toInt()
+                            else -> 0xFF5a4a6e.toInt()
                         }
                     },
                     status = status,
@@ -340,7 +346,7 @@ class ProfilesFragment : Fragment() {
         if (onDownloadAll != null) {
             titleRow.addView(Button(ctx).apply {
                 text = downloadIcon; textSize = 10f; setTextColor(accent)
-                setBackgroundColor(0xFF111111.toInt())
+                setBackgroundColor(0xFF181222.toInt())
                 setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
                 minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
                 setOnClickListener { onDownloadAll() }
@@ -349,7 +355,7 @@ class ProfilesFragment : Fragment() {
         container.addView(titleRow)
 
         container.addView(TextView(ctx).apply {
-            text = subtitle; textSize = 10f; setTextColor(0xFF555555.toInt())
+            text = subtitle; textSize = 10f; setTextColor(0xFF5a4a6e.toInt())
             setPadding((14 * dp).toInt(), (2 * dp).toInt(), 0, 0)
         })
 
@@ -376,11 +382,11 @@ class ProfilesFragment : Fragment() {
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 8 * dp
                 if (active) {
-                    setColor(0xFF0d1a1a.toInt())
+                    setColor(0xFF2a1828.toInt())
                     setStroke((2 * dp).toInt(), accent)
                 } else {
-                    setColor(if (enabled) 0xFF151515.toInt() else 0xFF111111.toInt())
-                    setStroke(1, if (enabled) 0xFF222222.toInt() else 0xFF1a1a1a.toInt())
+                    setColor(if (enabled) 0xFF1a1428.toInt() else 0xFF181222.toInt())
+                    setStroke(1, if (enabled) 0xFF2a2040.toInt() else 0xFF201830.toInt())
                 }
             }
 
@@ -399,8 +405,8 @@ class ProfilesFragment : Fragment() {
                 text = name; textSize = 13f; gravity = android.view.Gravity.CENTER
                 setTextColor(when {
                     active  -> accent
-                    enabled -> 0xFFdddddd.toInt()
-                    else    -> 0xFF888888.toInt()
+                    enabled -> 0xFFddd6e8.toInt()
+                    else    -> 0xFF8a7a9e.toInt()
                 })
                 typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD
                            else android.graphics.Typeface.DEFAULT
@@ -468,7 +474,7 @@ class ProfilesFragment : Fragment() {
 
     private fun emptyLabel(msg: String): android.view.View {
         return TextView(requireContext()).apply {
-            text = msg; setTextColor(0xFF66aa66.toInt()); textSize = 12f
+            text = msg; setTextColor(0xFF9b7eb8.toInt()); textSize = 12f
             setPadding(6, 8, 0, 8)
         }
     }
@@ -484,9 +490,9 @@ class ProfilesFragment : Fragment() {
             setText(currentKey ?: "")
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setPadding(48, 32, 48, 32)
-            setTextColor(0xFFdddddd.toInt())
-            setHintTextColor(0xFF666666.toInt())
-            setBackgroundColor(0xFF1a1a1a.toInt())
+            setTextColor(0xFFddd6e8.toInt())
+            setHintTextColor(0xFF6e5f82.toInt())
+            setBackgroundColor(0xFF201830.toInt())
         }
 
         AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
@@ -588,11 +594,11 @@ class ProfilesFragment : Fragment() {
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 8 * dp
                 if (isActive) {
-                    setColor(0xFF1a3a1a.toInt())
-                    setStroke((2 * dp).toInt(), 0xFF00ff88.toInt())
+                    setColor(0xFF2a1828.toInt())
+                    setStroke((2 * dp).toInt(), 0xFFc48da0.toInt())
                 } else {
-                    setColor(0xFF151515.toInt())
-                    setStroke(1, 0xFF222222.toInt())
+                    setColor(0xFF1a1428.toInt())
+                    setStroke(1, 0xFF2a2040.toInt())
                 }
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
@@ -625,7 +631,7 @@ class ProfilesFragment : Fragment() {
         card.addView(TextView(ctx).apply {
             text = p.name
             textSize = 11f
-            setTextColor(if (isActive) 0xFF00ff88.toInt() else 0xFFaaaaaa.toInt())
+            setTextColor(if (isActive) 0xFFc48da0.toInt() else 0xFFb0a4c0.toInt())
             gravity = android.view.Gravity.CENTER
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -636,7 +642,7 @@ class ProfilesFragment : Fragment() {
             card.addView(TextView(ctx).apply {
                 text = voiceEntry.displayName
                 textSize = 9f
-                setTextColor(if (isActive) 0xFF448844.toInt() else 0xFF555555.toInt())
+                setTextColor(if (isActive) 0xFF9b7eb8.toInt() else 0xFF5a4a6e.toInt())
                 gravity = android.view.Gravity.CENTER
                 maxLines = 1
             })
@@ -644,7 +650,7 @@ class ProfilesFragment : Fragment() {
 
         if (isActive) {
             card.addView(android.view.View(ctx).apply {
-                setBackgroundColor(0xFF00ff88.toInt())
+                setBackgroundColor(0xFFc48da0.toInt())
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
                 ).also { it.setMargins((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), 0) }

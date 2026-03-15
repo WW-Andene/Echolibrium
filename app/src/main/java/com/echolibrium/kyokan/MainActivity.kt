@@ -57,7 +57,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadFragment(f: Fragment) =
-        supportFragmentManager.beginTransaction().replace(R.id.fragment_container, f).commit()
+        supportFragmentManager.beginTransaction()
+            .setCustomAnimations(android.R.anim.fade_in, android.R.anim.fade_out)
+            .replace(R.id.fragment_container, f)
+            .commit()
 
     fun isNotificationAccessGranted(): Boolean {
         val cn = ComponentName(this, NotificationReaderService::class.java)

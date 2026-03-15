@@ -27,9 +27,9 @@ data class PiperVoice(
         else     -> "◆"
     }
     val genderColor get() = when (gender) {
-        "Female" -> 0xFFff88cc.toInt()
-        "Male"   -> 0xFF88ccff.toInt()
-        else     -> 0xFFaaaaaa.toInt()
+        "Female" -> 0xFFd4a0b8.toInt()
+        "Male"   -> 0xFF88aad4.toInt()
+        else     -> 0xFFb0a4c0.toInt()
     }
     val flagEmoji get() = when (locale) {
         "en_US" -> "🇺🇸"

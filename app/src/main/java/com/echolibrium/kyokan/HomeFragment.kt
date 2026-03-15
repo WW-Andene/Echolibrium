@@ -18,7 +18,11 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import androidx.appcompat.widget.SwitchCompat
+import androidx.transition.AutoTransition
+import androidx.transition.TransitionManager
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
@@ -26,6 +30,8 @@ import androidx.preference.PreferenceManager
 class HomeFragment : Fragment() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+
+    private var breathAnimator: ObjectAnimator? = null
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
@@ -70,6 +76,10 @@ class HomeFragment : Fragment() {
         layoutDnd.visibility = if (switchDnd.isChecked) View.VISIBLE else View.GONE
         switchDnd.setOnCheckedChangeListener { _, v2 ->
             prefs.edit().putBoolean("dnd_enabled", v2).apply()
+            val parent = layoutDnd.parent as? ViewGroup
+            if (parent != null) {
+                TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
+            }
             layoutDnd.visibility = if (v2) View.VISIBLE else View.GONE
         }
 
@@ -120,6 +130,12 @@ class HomeFragment : Fragment() {
         }
     }
 
+    override fun onDestroyView() {
+        breathAnimator?.cancel()
+        breathAnimator = null
+        super.onDestroyView()
+    }
+
     @Deprecated("Deprecated in Java")
     @Suppress("DEPRECATION")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -166,14 +182,14 @@ class HomeFragment : Fragment() {
 
         if (steps.isEmpty()) {
             btn.text = "✓ All permissions granted"
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1a2a1a.toInt())
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1e1530.toInt())
             btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
             txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
             txt.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
         } else {
             btn.text = "Setup: ${steps.first()}"
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF00ff88.toInt())
-            btn.setTextColor(0xFF000000.toInt())
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFb898d4.toInt())
+            btn.setTextColor(0xFF0a0710.toInt())
             val status = buildString {
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     append(if (!restricted) "✓ Restricted" else "✗ Restricted")
@@ -237,6 +253,22 @@ class HomeFragment : Fragment() {
             enabled && !hasPerm -> android.R.color.holo_orange_dark
             else -> android.R.color.darker_gray
         }))
+
+        // Breathing animation when actively listening
+        if (listening) {
+            if (breathAnimator == null || !breathAnimator!!.isRunning) {
+                breathAnimator = ObjectAnimator.ofFloat(tv, "alpha", 1f, 0.4f).apply {
+                    duration = 1500
+                    repeatMode = ValueAnimator.REVERSE
+                    repeatCount = ValueAnimator.INFINITE
+                    start()
+                }
+            }
+        } else {
+            breathAnimator?.cancel()
+            breathAnimator = null
+            tv.alpha = 1f
+        }
     }
 
 }

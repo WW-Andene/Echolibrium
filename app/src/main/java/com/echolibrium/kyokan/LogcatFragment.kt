@@ -70,13 +70,13 @@ class LogcatFragment : Fragment() {
 
         private val LEVEL_ORDER = "VDIWEF"
 
-        private val COLOR_VERBOSE = Color.parseColor("#555555")
-        private val COLOR_DEBUG   = Color.parseColor("#aaaaaa")
-        private val COLOR_INFO    = Color.parseColor("#00ff88")
+        private val COLOR_VERBOSE = Color.parseColor("#5a4a6e")
+        private val COLOR_DEBUG   = Color.parseColor("#b0a4c0")
+        private val COLOR_INFO    = Color.parseColor("#9b7eb8")
         private val COLOR_WARN    = Color.parseColor("#ffcc00")
         private val COLOR_ERROR   = Color.parseColor("#ff4444")
         private val COLOR_FATAL   = Color.parseColor("#ff0000")
-        private val COLOR_TAG     = Color.parseColor("#00ccff")
+        private val COLOR_TAG     = Color.parseColor("#c48da0")
     }
 
     data class LogLine(val raw: String, val level: Char, val tag: String, val message: String, val pid: String)
@@ -124,10 +124,10 @@ class LogcatFragment : Fragment() {
         // App-only chip
         chipAppOnly.setOnClickListener {
             appOnlyMode = !appOnlyMode
-            chipAppOnly.setTextColor(if (appOnlyMode) Color.parseColor("#00ff88") else Color.parseColor("#555555"))
+            chipAppOnly.setTextColor(if (appOnlyMode) Color.parseColor("#b898d4") else Color.parseColor("#5a4a6e"))
             if (appOnlyMode) {
                 pipelineMode = false
-                chipPipeline.setTextColor(Color.parseColor("#555555"))
+                chipPipeline.setTextColor(Color.parseColor("#5a4a6e"))
             }
             refreshDisplay()
         }
@@ -135,10 +135,10 @@ class LogcatFragment : Fragment() {
         // Pipeline chip
         chipPipeline.setOnClickListener {
             pipelineMode = !pipelineMode
-            chipPipeline.setTextColor(if (pipelineMode) Color.parseColor("#00ccff") else Color.parseColor("#555555"))
+            chipPipeline.setTextColor(if (pipelineMode) Color.parseColor("#9b7eb8") else Color.parseColor("#5a4a6e"))
             if (pipelineMode) {
                 appOnlyMode = false
-                chipAppOnly.setTextColor(Color.parseColor("#555555"))
+                chipAppOnly.setTextColor(Color.parseColor("#5a4a6e"))
             }
             refreshDisplay()
         }

@@ -56,6 +56,15 @@
     <color name="card_border">#2a2040</color>
     <color name="filter_active_bg">#251840</color>
 
+    <!-- ═══ Logcat level colors ═══ -->
+    <color name="log_verbose">#7e6e98</color>
+    <color name="log_debug">#b0a4c0</color>
+    <color name="log_info">#9b7eb8</color>
+    <color name="log_warn">#ffcc00</color>
+    <color name="log_error">#ff4444</color>
+    <color name="log_fatal">#ff0000</color>
+    <color name="log_tag">#c48da0</color>
+
     <!-- ═══ Divider & Input ═══ -->
     <color name="divider">#2a2040</color>
     <color name="row_bg">#201830</color>

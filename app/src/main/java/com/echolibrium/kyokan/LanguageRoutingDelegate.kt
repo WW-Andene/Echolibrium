@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -43,8 +42,10 @@ class LanguageRoutingDelegate(
 
     /** Called when voice_profiles or active_profile_id changes to refresh spinners. */
     fun refreshProfileSpinners(v: View) {
+        val profiles = VoiceProfile.loadAll(prefs)
+        val activeId = prefs.getString("active_profile_id", "") ?: ""
         for ((langCode, spinner) in profileSpinners) {
-            refreshSpinner(spinner, "lang_profile_$langCode")
+            refreshSpinner(spinner, "lang_profile_$langCode", profiles, activeId)
         }
     }
 
@@ -55,6 +56,10 @@ class LanguageRoutingDelegate(
             prefs.edit().putBoolean("lang_routing_enabled", checked).apply()
         }
 
+        // D-02: Cache profile list once instead of re-parsing per language
+        val profiles = VoiceProfile.loadAll(prefs)
+        val activeId = prefs.getString("active_profile_id", "") ?: ""
+
         // Build dynamic voice routing spinners
         val routingContainer = v.findViewById<LinearLayout>(R.id.voice_routing_container)
         routingContainer.removeAllViews()
@@ -62,7 +67,7 @@ class LanguageRoutingDelegate(
         for (langCode in translateCodes) {
             val langName = NotificationTranslator.LANGUAGES[langCode] ?: langCode
             val flag = langFlags[langCode] ?: ""
-            addVoiceRoutingRow(routingContainer, langCode, "$flag  $langName notifications \u2192 Voice:")
+            addVoiceRoutingRow(routingContainer, langCode, "$flag  $langName notifications \u2192 Voice:", profiles, activeId)
         }
 
         // Build dynamic translation routes
@@ -74,7 +79,7 @@ class LanguageRoutingDelegate(
         }
     }
 
-    private fun addVoiceRoutingRow(parent: LinearLayout, langCode: String, label: String) {
+    private fun addVoiceRoutingRow(parent: LinearLayout, langCode: String, label: String, profiles: List<VoiceProfile>, activeId: String) {
         val dp = { px: Int -> (px * context.resources.displayMetrics.density).toInt() }
 
         val labelTv = TextView(context).apply {
@@ -99,12 +104,10 @@ class LanguageRoutingDelegate(
         profileSpinners[langCode] = spinner
 
         val prefKey = "lang_profile_$langCode"
-        setupProfileSpinner(spinner, prefKey)
+        setupProfileSpinner(spinner, prefKey, profiles, activeId)
     }
 
-    private fun setupProfileSpinner(spinner: Spinner, prefKey: String) {
-        val profiles = VoiceProfile.loadAll(prefs)
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+    private fun setupProfileSpinner(spinner: Spinner, prefKey: String, profiles: List<VoiceProfile>, activeId: String) {
         val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: "Active profile"
         val names = listOf("($activeName)") + profiles.map { "${it.emoji} ${it.name}" }
         val ids = listOf("") + profiles.map { it.id }
@@ -114,17 +117,12 @@ class LanguageRoutingDelegate(
         val idx = ids.indexOf(savedId).coerceAtLeast(0)
         spinner.setSelection(idx)
 
-        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                prefs.edit().putString(prefKey, ids[position]).apply()
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        spinner.onItemSelectedSkipFirst { position ->
+            prefs.edit().putString(prefKey, ids[position]).apply()
         }
     }
 
-    private fun refreshSpinner(spinner: Spinner, prefKey: String) {
-        val profiles = VoiceProfile.loadAll(prefs)
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+    private fun refreshSpinner(spinner: Spinner, prefKey: String, profiles: List<VoiceProfile>, activeId: String) {
         val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: "Active profile"
         val names = listOf("($activeName)") + profiles.map { "${it.emoji} ${it.name}" }
         val ids = listOf("") + profiles.map { it.id }
@@ -234,23 +232,20 @@ class LanguageRoutingDelegate(
             }
         }
 
-        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                val lang = translateCodes[pos]
-                prefs.edit().putString(langKey, lang).apply()
-                if (switch.isChecked && lang != sourceLang) {
-                    status.text = "Downloading model\u2026"
-                    container.notificationTranslator.ensureModel(sourceLang, lang) { ok ->
-                        status.post {
-                            updateTranslateStatus(status, true, lang, sourceLang)
-                            if (!ok) status.text = "\u2717 Download failed \u2014 needs internet once"
-                        }
+        spinner.onItemSelectedSkipFirst { pos ->
+            val lang = translateCodes[pos]
+            prefs.edit().putString(langKey, lang).apply()
+            if (switch.isChecked && lang != sourceLang) {
+                status.text = "Downloading model\u2026"
+                container.notificationTranslator.ensureModel(sourceLang, lang) { ok ->
+                    status.post {
+                        updateTranslateStatus(status, true, lang, sourceLang)
+                        if (!ok) status.text = "\u2717 Download failed \u2014 needs internet once"
                     }
-                } else {
-                    updateTranslateStatus(status, switch.isChecked, lang, sourceLang)
                 }
+            } else {
+                updateTranslateStatus(status, switch.isChecked, lang, sourceLang)
             }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
         }
     }
 

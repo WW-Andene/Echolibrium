@@ -99,9 +99,16 @@ sealed class VoiceGridItem {
         val subtitle: String,
         val accent: Int,
         val actionLabel: String = "",
-        // Not compared by DiffUtil (lambdas), but needed for rendering
         @Transient val onAction: (() -> Unit)? = null
-    ) : VoiceGridItem()
+    ) : VoiceGridItem() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Header) return false
+            return title == other.title && subtitle == other.subtitle
+                && accent == other.accent && actionLabel == other.actionLabel
+        }
+        override fun hashCode(): Int = title.hashCode()
+    }
 
     data class Card(
         val voiceId: String,
@@ -114,7 +121,17 @@ sealed class VoiceGridItem {
         val accent: Int,
         val enabled: Boolean,
         @Transient val onClick: (() -> Unit)? = null
-    ) : VoiceGridItem()
+    ) : VoiceGridItem() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Card) return false
+            return voiceId == other.voiceId && name == other.name && icon == other.icon
+                && iconColor == other.iconColor && status == other.status
+                && statusColor == other.statusColor && active == other.active
+                && accent == other.accent && enabled == other.enabled
+        }
+        override fun hashCode(): Int = voiceId.hashCode()
+    }
 
     data class Empty(
         val engine: String,

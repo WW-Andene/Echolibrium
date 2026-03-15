@@ -78,19 +78,27 @@ class WordRulesDelegate(
                     })
                 }
 
-            val etFind = editText("Find…", find) { rules[idx] = it to rules[idx].second }
+            val ruleNum = idx + 1
+            val etFind = editText(context.getString(R.string.find_hint), find) { rules[idx] = it to rules[idx].second }
             etFind.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+            etFind.contentDescription = "Rule $ruleNum find text"
 
             val arrow = TextView(context).apply {
                 text = "→"; textSize = 14f; setTextColor(AppColors.primary(context)); setPadding(8, 0, 8, 0)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
-            val etReplace = editText("Replace…", replace) { rules[idx] = rules[idx].first to it }
+            val etReplace = editText(context.getString(R.string.replace_hint), replace) { rules[idx] = rules[idx].first to it }
             etReplace.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+            etReplace.contentDescription = "Rule $ruleNum replace text"
 
+            val dp = context.resources.displayMetrics.density
             val btnDel = Button(context).apply {
                 text = "✕"; textSize = 12f; setTextColor(AppColors.accentRed(context))
                 setBackgroundColor(AppColors.inputBg(context)); setPadding(16, 8, 16, 8)
+                minHeight = (48 * dp).toInt(); minimumHeight = (48 * dp).toInt()
+                minWidth = (48 * dp).toInt(); minimumWidth = (48 * dp).toInt()
+                contentDescription = "Delete rule $ruleNum"
                 setOnClickListener { rules.removeAt(idx); saveRules(); renderRules() }
             }
 

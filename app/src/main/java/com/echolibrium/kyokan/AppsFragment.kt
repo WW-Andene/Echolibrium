@@ -97,7 +97,7 @@ class AppsFragment : Fragment() {
     private fun loadInstalledApps() {
         val btn = view?.findViewById<Button>(R.id.btn_load_apps) ?: return
         btn.isEnabled = false
-        btn.text = "LOADING..."
+        btn.text = getString(R.string.loading)
 
         Thread {
             val pm = requireContext().packageManager
@@ -121,12 +121,12 @@ class AppsFragment : Fragment() {
                 if (!isAdded) return@runOnUiThread
                 rules.addAll(newRules)
                 if (rules.isEmpty()) {
-                    Toast.makeText(requireContext(), "No user apps found.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.no_user_apps), Toast.LENGTH_SHORT).show()
                 }
                 AppRule.saveAll(rules, prefs)
                 submitList()
                 btn.isEnabled = true
-                btn.text = "RELOAD APPS"
+                btn.text = getString(R.string.reload_apps)
             }
         }.start()
     }

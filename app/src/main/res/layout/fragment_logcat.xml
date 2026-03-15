@@ -15,7 +15,7 @@
             android:textStyle="bold"/>
         <TextView android:id="@+id/tv_line_count"
             android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:textColor="#7e6e98" android:textSize="11sp" android:fontFamily="monospace"
+            android:textColor="@color/log_verbose" android:textSize="11sp" android:fontFamily="monospace"
             android:layout_marginEnd="12dp"/>
         <Button android:id="@+id/btn_clear"
             android:layout_width="wrap_content" android:layout_height="36dp"
@@ -42,7 +42,7 @@
         <Spinner android:id="@+id/spinner_level"
             android:layout_width="wrap_content" android:layout_height="36dp"
             android:layout_marginStart="8dp" android:background="@color/surface"
-            android:popupBackground="#201830"/>
+            android:popupBackground="@color/surface_elevated"/>
     </LinearLayout>
 
     <!-- Tag filter chips -->
@@ -80,7 +80,7 @@
         android:fillViewport="true">
         <TextView android:id="@+id/tv_log"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#b0a4c0" android:textSize="11sp" android:fontFamily="monospace"
+            android:textColor="@color/log_debug" android:textSize="11sp" android:fontFamily="monospace"
             android:lineSpacingExtra="2dp" android:padding="12dp"
             android:textIsSelectable="true"/>
     </ScrollView>

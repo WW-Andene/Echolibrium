@@ -1,6 +1,5 @@
 package com.echolibrium.kyokan
 
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -18,6 +17,7 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -72,15 +72,15 @@ class LogcatFragment : Fragment() {
         )
 
         private val LEVEL_ORDER = "VDIWEF"
-
-        private val COLOR_VERBOSE = Color.parseColor("#7e6e98")
-        private val COLOR_DEBUG   = Color.parseColor("#b0a4c0")
-        private val COLOR_INFO    = Color.parseColor("#9b7eb8")
-        private val COLOR_WARN    = Color.parseColor("#ffcc00")
-        private val COLOR_ERROR   = Color.parseColor("#ff4444")
-        private val COLOR_FATAL   = Color.parseColor("#ff0000")
-        private val COLOR_TAG     = Color.parseColor("#c48da0")
     }
+
+    private var COLOR_VERBOSE = 0
+    private var COLOR_DEBUG   = 0
+    private var COLOR_INFO    = 0
+    private var COLOR_WARN    = 0
+    private var COLOR_ERROR   = 0
+    private var COLOR_FATAL   = 0
+    private var COLOR_TAG     = 0
 
     data class LogLine(val raw: String, val level: Char, val tag: String, val message: String, val pid: String)
 
@@ -88,6 +88,15 @@ class LogcatFragment : Fragment() {
         inflater.inflate(R.layout.fragment_logcat, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        val ctx = requireContext()
+        COLOR_VERBOSE = ContextCompat.getColor(ctx, R.color.log_verbose)
+        COLOR_DEBUG   = ContextCompat.getColor(ctx, R.color.log_debug)
+        COLOR_INFO    = ContextCompat.getColor(ctx, R.color.log_info)
+        COLOR_WARN    = ContextCompat.getColor(ctx, R.color.log_warn)
+        COLOR_ERROR   = ContextCompat.getColor(ctx, R.color.log_error)
+        COLOR_FATAL   = ContextCompat.getColor(ctx, R.color.log_fatal)
+        COLOR_TAG     = ContextCompat.getColor(ctx, R.color.log_tag)
+
         tvLog = v.findViewById(R.id.tv_log)
         tvLineCount = v.findViewById(R.id.tv_line_count)
         scrollView = v.findViewById(R.id.scroll_log)

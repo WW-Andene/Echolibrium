@@ -5,7 +5,6 @@ import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -18,8 +17,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.preference.PreferenceManager
-import androidx.transition.AutoTransition
-import androidx.transition.TransitionManager
 
 class ProfilesFragment : Fragment() {
 
@@ -132,24 +129,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun setupCollapsibleSections(v: View) {
-        setupCollapsibleSection(v, R.id.label_pitch_speed, R.id.section_pitch_speed, "Pitch & speed")
-    }
-
-    private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {
-        val label = v.findViewById<TextView>(labelId)
-        val section = v.findViewById<View>(sectionId)
-        label.contentDescription = "$title, collapsed. Tap to expand."
-        label.setOnClickListener {
-            val expanded = section.visibility == View.VISIBLE
-            val parent = section.parent as? ViewGroup
-            if (parent != null) {
-                TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
-            }
-            section.visibility = if (expanded) View.GONE else View.VISIBLE
-            label.text = "${if (expanded) "▸" else "▾"} $title"
-            label.contentDescription = if (expanded) "$title, collapsed. Tap to expand."
-                else "$title, expanded. Tap to collapse."
-        }
+        CollapsibleSectionHelper.setup(v, R.id.label_pitch_speed, R.id.section_pitch_speed, "Pitch & speed")
     }
 
     private fun bindViews(v: View) {
@@ -372,22 +352,25 @@ class ProfilesFragment : Fragment() {
         (languageFilter == "All" || v.language == languageFilter)
     }
 
-    private fun previewVoice(voiceId: String, name: String) {
+    private fun playPreview(text: String, profile: VoiceProfile) {
         val ctx = requireContext()
-        val previewText = txtPreview.text.toString().ifBlank { getString(R.string.preview_default, name) }
-        val tempProfile = currentProfile.copy(voiceName = voiceId)
         val service = NotificationReaderService.instance
         if (service != null) {
-            service.speakDirect(previewText, tempProfile)
+            service.speakDirect(text, profile)
         } else {
             c.audioPipeline.start(ctx)
             c.audioPipeline.enqueue(AudioPipeline.Item(
-                text = previewText,
-                voiceId = voiceId,
-                pitch = tempProfile.pitch,
-                speed = tempProfile.speed
+                text = text,
+                voiceId = profile.voiceName,
+                pitch = profile.pitch,
+                speed = profile.speed
             ))
         }
+    }
+
+    private fun previewVoice(voiceId: String, name: String) {
+        val previewText = txtPreview.text.toString().ifBlank { getString(R.string.preview_default, name) }
+        playPreview(previewText, currentProfile.copy(voiceName = voiceId))
     }
 
     // ── Cloud voice privacy consent ────────────────────────────────────────
@@ -445,23 +428,16 @@ class ProfilesFragment : Fragment() {
             .show()
     }
 
-    private var spinnerInitDone = false
-
     private fun setupProfileSpinner() {
-        spinnerInitDone = false
         profileSpinner.adapter = ArrayAdapter(requireContext(),
             android.R.layout.simple_spinner_dropdown_item, profiles.map { p ->
                 "${p.emoji} ${p.name}"
             })
         val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
         profileSpinner.setSelection(idx)
-        profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (!spinnerInitDone) { spinnerInitDone = true; return }
-                viewModel.setActiveProfile(profiles[pos].id)
-                loadProfileToUI(profiles[pos])
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
+        profileSpinner.onItemSelectedSkipFirst { pos ->
+            viewModel.setActiveProfile(profiles[pos].id)
+            loadProfileToUI(profiles[pos])
         }
     }
 
@@ -478,21 +454,7 @@ class ProfilesFragment : Fragment() {
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
             val text = txtPreview.text.toString().ifBlank { getString(R.string.preview_text) }
-            val ctx = requireContext()
-
-            // Use the service if running, otherwise start AudioPipeline directly
-            val service = NotificationReaderService.instance
-            if (service != null) {
-                service.speakDirect(text, p)
-            } else {
-                c.audioPipeline.start(ctx)
-                c.audioPipeline.enqueue(AudioPipeline.Item(
-                    text = text,
-                    voiceId = p.voiceName,
-                    pitch = p.pitch,
-                    speed = p.speed
-                ))
-            }
+            playPreview(text, p)
         }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()

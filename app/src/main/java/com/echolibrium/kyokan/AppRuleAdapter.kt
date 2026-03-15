@@ -3,7 +3,6 @@ package com.echolibrium.kyokan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.TextView
@@ -37,8 +36,6 @@ class AppRuleAdapter(
         val layoutOptions: View = v.findViewById(R.id.layout_options)
         val spinnerMode: Spinner = v.findViewById(R.id.spinner_mode)
         val spinnerProfile: Spinner = v.findViewById(R.id.spinner_profile)
-        var modeInitDone = false
-        var profileInitDone = false
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -54,10 +51,6 @@ class AppRuleAdapter(
 
         h.tvLabel.text = rule.appLabel
 
-        // Reset init flags before setting values
-        h.modeInitDone = false
-        h.profileInitDone = false
-
         h.switchEnabled.setOnCheckedChangeListener(null)
         h.switchEnabled.isChecked = rule.enabled
         h.layoutOptions.visibility = if (rule.enabled) View.VISIBLE else View.GONE
@@ -69,12 +62,8 @@ class AppRuleAdapter(
         // Mode spinner
         h.spinnerMode.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, MODES)
         h.spinnerMode.setSelection(MODE_VALS.indexOf(rule.readMode).coerceAtLeast(0))
-        h.spinnerMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (!h.modeInitDone) { h.modeInitDone = true; return }
-                onRuleChanged(rule.copy(readMode = MODE_VALS[pos]))
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
+        h.spinnerMode.onItemSelectedSkipFirst { pos ->
+            onRuleChanged(rule.copy(readMode = MODE_VALS[pos]))
         }
 
         // Profile spinner
@@ -82,13 +71,9 @@ class AppRuleAdapter(
         h.spinnerProfile.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, profileNames)
         val profileIdx = profiles.indexOfFirst { it.id == rule.profileId }
         h.spinnerProfile.setSelection((profileIdx + 1).coerceAtLeast(0))
-        h.spinnerProfile.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (!h.profileInitDone) { h.profileInitDone = true; return }
-                val pid = if (pos == 0) "" else profiles.getOrNull(pos - 1)?.id ?: ""
-                onRuleChanged(rule.copy(profileId = pid))
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
+        h.spinnerProfile.onItemSelectedSkipFirst { pos ->
+            val pid = if (pos == 0) "" else profiles.getOrNull(pos - 1)?.id ?: ""
+            onRuleChanged(rule.copy(profileId = pid))
         }
     }
 }

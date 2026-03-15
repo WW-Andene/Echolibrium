@@ -163,7 +163,7 @@ class AudioPipeline(
                     notifySynthesisError(voiceId, "Cloud voice failed — check internet or proxy setup")
                     return
                 }
-        } else if (PiperVoices.isPiperVoice(voiceId)) {
+        } else if (VoiceRegistry.isPiper(voiceId)) {
             synthesizeWithPiper(ctx, voiceId, item.text, item.speed)
                 ?: run {
                     notifySynthesisError(voiceId, "Piper voice not downloaded yet")

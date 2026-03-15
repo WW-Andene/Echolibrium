@@ -117,9 +117,6 @@ object PiperVoices {
     fun languages() = listOf("All") + ALL.map { it.language }.distinct().sorted()
     fun genders() = listOf("All", "Female", "Male")
 
-    /** True if this voice ID belongs to a Piper voice (not Kokoro) */
-    fun isPiperVoice(voiceId: String): Boolean = byId(voiceId) != null
-
     // All catalog voices have bundles on our GitHub release — always use bundled download
     fun hasBundledArchive(voiceId: String): Boolean = byId(voiceId) != null
 

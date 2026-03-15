@@ -11,7 +11,6 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.SeekBar
@@ -76,11 +75,8 @@ class HomeFragment : Fragment() {
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only")
         spinnerMode.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
         spinnerMode.setSelection(modeVals.indexOf(prefs.getString("read_mode", "full")).coerceAtLeast(0))
-        spinnerMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v2: View?, pos: Int, id: Long) {
-                prefs.edit().putString("read_mode", modeVals[pos]).apply()
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
+        spinnerMode.onItemSelectedSkipFirst { pos ->
+            prefs.edit().putString("read_mode", modeVals[pos]).apply()
         }
 
         switchAppName.isChecked = prefs.getBoolean("read_app_name", true)

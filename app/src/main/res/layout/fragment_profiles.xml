@@ -43,8 +43,10 @@
             android:layout_height="wrap_content" android:orientation="horizontal"
             android:layout_marginBottom="8dp"/>
 
-        <LinearLayout android:id="@+id/voice_grid" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical"
+        <androidx.recyclerview.widget.RecyclerView android:id="@+id/voice_grid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:nestedScrollingEnabled="false"
             android:layout_marginBottom="16dp"/>
 
         <!-- Pitch & Speed -->

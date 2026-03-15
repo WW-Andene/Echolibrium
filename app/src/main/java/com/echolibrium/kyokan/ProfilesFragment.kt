@@ -64,7 +64,8 @@ class ProfilesFragment : Fragment() {
     private lateinit var seekSpeed: SeekBar
     private lateinit var tvSpeed: TextView
     private lateinit var profileGrid: LinearLayout
-    private lateinit var voiceGrid: LinearLayout
+    private lateinit var voiceGrid: androidx.recyclerview.widget.RecyclerView
+    private lateinit var voiceGridAdapter: VoiceGridAdapter
     private lateinit var genderRow: LinearLayout
     private lateinit var nationRow: LinearLayout
 
@@ -155,6 +156,20 @@ class ProfilesFragment : Fragment() {
         tvPitch         = v.findViewById(R.id.tv_pitch)
         seekSpeed       = v.findViewById(R.id.seek_speed)
         tvSpeed         = v.findViewById(R.id.tv_speed)
+
+        // Set up voice grid RecyclerView with 3-column grid
+        voiceGridAdapter = VoiceGridAdapter(VoiceCardBuilder) { vid, vname -> previewVoice(vid, vname) }
+        val gridLayoutManager = androidx.recyclerview.widget.GridLayoutManager(requireContext(), 3)
+        gridLayoutManager.spanSizeLookup = object : androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int): Int {
+                return when (voiceGridAdapter.getItemViewType(position)) {
+                    VoiceGridAdapter.TYPE_HEADER, VoiceGridAdapter.TYPE_EMPTY -> 3
+                    else -> 1
+                }
+            }
+        }
+        voiceGrid.layoutManager = gridLayoutManager
+        voiceGrid.adapter = voiceGridAdapter
     }
 
     private fun buildFilterButtons() {
@@ -208,119 +223,128 @@ class ProfilesFragment : Fragment() {
 
     private fun renderVoiceGrid() {
         lastVoiceGridRender = System.currentTimeMillis()
-        voiceGrid.removeAllViews()
         val ctx = requireContext()
+        val items = mutableListOf<VoiceGridItem>()
 
         // ── Orpheus ──────────────────────────────────────────────────────
         val cloudEnabled = c.cloudTtsEngine.isEnabled()
-        val orpheusSubtitle = if (cloudEnabled)
-            getString(R.string.orpheus_subtitle_enabled, VoiceRegistry.CLOUD_VOICES.size)
-        else
-            getString(R.string.orpheus_subtitle_disabled)
-        val cloudKeyAction: (() -> Unit) = { showDeepInfraKeyDialog() }
-        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_orpheus), orpheusSubtitle, AppColors.engineOrpheus(requireContext()), cloudKeyAction, getString(R.string.key_btn)))
-
-        addFilteredVoiceCards(VoiceRegistry.cloudEntries) { v ->
-            buildVoiceCard(
-                name = v.displayName,
-                icon = genderIcon(v.gender),
-                iconColor = genderColor(v.gender, cloudEnabled),
-                status = if (cloudEnabled) getString(R.string.cloud_status) else getString(R.string.no_api_key),
-                statusColor = if (cloudEnabled) AppColors.cloudStatus(requireContext()) else AppColors.accentRed(requireContext()),
-                voiceId = v.id,
-                active = currentProfile.voiceName == v.id,
-                accent = AppColors.engineOrpheus(requireContext()),
-                enabled = cloudEnabled,
-                onClick = if (cloudEnabled) {
-                    { selectCloudVoice(v.id) }
-                } else {
-                    { showDeepInfraKeyDialog() }
-                }
-            )
+        items.add(VoiceGridItem.Header(
+            title = getString(R.string.engine_orpheus),
+            subtitle = if (cloudEnabled) getString(R.string.orpheus_subtitle_enabled, VoiceRegistry.CLOUD_VOICES.size)
+                       else getString(R.string.orpheus_subtitle_disabled),
+            accent = AppColors.engineOrpheus(ctx),
+            actionLabel = getString(R.string.key_btn),
+            onAction = { showDeepInfraKeyDialog() }
+        ))
+        val filteredCloud = filterVoices(VoiceRegistry.cloudEntries)
+        if (filteredCloud.isEmpty()) {
+            items.add(VoiceGridItem.Empty("orpheus", getString(R.string.no_voices_match)))
+        } else {
+            filteredCloud.forEach { v ->
+                items.add(VoiceGridItem.Card(
+                    voiceId = v.id, name = v.displayName,
+                    icon = genderIcon(v.gender), iconColor = genderColor(v.gender, cloudEnabled),
+                    status = if (cloudEnabled) getString(R.string.cloud_status) else getString(R.string.no_api_key),
+                    statusColor = if (cloudEnabled) AppColors.cloudStatus(ctx) else AppColors.accentRed(ctx),
+                    active = currentProfile.voiceName == v.id,
+                    accent = AppColors.engineOrpheus(ctx), enabled = cloudEnabled,
+                    onClick = if (cloudEnabled) {{ selectCloudVoice(v.id) }} else {{ showDeepInfraKeyDialog() }}
+                ))
+            }
         }
 
         // ── Kokoro ───────────────────────────────────────────────────────
         val kokoroReady = c.voiceDownloadManager.isModelReady(ctx)
         val kokoroDownloading = c.voiceDownloadManager.state == DownloadState.DOWNLOADING
         val kokoroCount = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).size
-        val kokoroSubtitle = when {
-            kokoroReady -> getString(R.string.kokoro_subtitle_ready, kokoroCount)
-            kokoroDownloading -> getString(R.string.kokoro_subtitle_downloading, kokoroCount)
-            else -> getString(R.string.kokoro_subtitle_size, kokoroCount, VoiceDownloadManager.MODEL_SIZE_MB)
-        }
-        val kokoroDownloadAll: (() -> Unit)? = if (!kokoroReady && !kokoroDownloading) {
-            { downloadDelegate.startKokoroDownload() }
-        } else null
-        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_kokoro), kokoroSubtitle, AppColors.engineKokoro(requireContext()), kokoroDownloadAll, getString(R.string.download_all_btn)))
-
-        addFilteredVoiceCards(VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO)) { v ->
-            val status: String
-            val statusColor: Int
-            when {
-                kokoroReady -> { status = getString(R.string.ready_status); statusColor = AppColors.statusReady(requireContext()) }
-                kokoroDownloading -> {
-                    val pct = c.voiceDownloadManager.progressPercent
-                    status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
-                    statusColor = AppColors.engineKokoro(requireContext())
+        items.add(VoiceGridItem.Header(
+            title = getString(R.string.engine_kokoro),
+            subtitle = when {
+                kokoroReady -> getString(R.string.kokoro_subtitle_ready, kokoroCount)
+                kokoroDownloading -> getString(R.string.kokoro_subtitle_downloading, kokoroCount)
+                else -> getString(R.string.kokoro_subtitle_size, kokoroCount, VoiceDownloadManager.MODEL_SIZE_MB)
+            },
+            accent = AppColors.engineKokoro(ctx),
+            actionLabel = getString(R.string.download_all_btn),
+            onAction = if (!kokoroReady && !kokoroDownloading) {{ downloadDelegate.startKokoroDownload() }} else null
+        ))
+        val filteredKokoro = filterVoices(VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO))
+        if (filteredKokoro.isEmpty()) {
+            items.add(VoiceGridItem.Empty("kokoro", getString(R.string.no_voices_match)))
+        } else {
+            filteredKokoro.forEach { v ->
+                val status: String; val statusColor: Int
+                when {
+                    kokoroReady -> { status = getString(R.string.ready_status); statusColor = AppColors.statusReady(ctx) }
+                    kokoroDownloading -> {
+                        val pct = c.voiceDownloadManager.progressPercent
+                        status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
+                        statusColor = AppColors.engineKokoro(ctx)
+                    }
+                    else -> { status = getString(R.string.tap_to_download); statusColor = AppColors.textDisabled(ctx) }
                 }
-                else -> { status = getString(R.string.tap_to_download); statusColor = AppColors.textDisabled(requireContext()) }
+                items.add(VoiceGridItem.Card(
+                    voiceId = v.id, name = v.displayName,
+                    icon = genderIcon(v.gender), iconColor = genderColor(v.gender, kokoroReady),
+                    status = status, statusColor = statusColor,
+                    active = currentProfile.voiceName == v.id,
+                    accent = AppColors.engineKokoro(ctx), enabled = kokoroReady,
+                    onClick = when {
+                        kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                        !kokoroDownloading -> {{ downloadDelegate.startKokoroDownload() }}
+                        else -> null
+                    }
+                ))
             }
-            buildVoiceCard(
-                name = v.displayName,
-                icon = genderIcon(v.gender),
-                iconColor = genderColor(v.gender, kokoroReady),
-                status = status, statusColor = statusColor,
-                voiceId = v.id, active = currentProfile.voiceName == v.id,
-                accent = AppColors.engineKokoro(requireContext()), enabled = kokoroReady,
-                onClick = when {
-                    kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
-                    !kokoroDownloading -> {{ downloadDelegate.startKokoroDownload() }}
-                    else -> null
-                }
-            )
         }
 
         // ── Piper ────────────────────────────────────────────────────────
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
         val piperReadyCount = piperEntries.count { VoiceRegistry.isReady(ctx, it.id) }
-        val piperSubtitle = getString(R.string.piper_subtitle, piperReadyCount, piperEntries.size)
         val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !c.piperDownloadManager.isDownloading(it.id) }
-        val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
-            { downloadDelegate.confirmDownloadAllPiper() }
-        } else null
-        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_piper), piperSubtitle, AppColors.enginePiper(requireContext()), piperDownloadAll, getString(R.string.download_all_btn)))
-
-        addFilteredVoiceCards(piperEntries) { v ->
-            val ready = VoiceRegistry.isReady(ctx, v.id)
-            val downloading = c.piperDownloadManager.isDownloading(v.id)
-            val status: String
-            val statusColor: Int
-            when {
-                ready -> { status = getString(R.string.ready_status); statusColor = AppColors.statusReady(requireContext()) }
-                downloading -> {
-                    val pct = c.piperDownloadManager.getProgress(v.id)
-                    status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
-                    statusColor = AppColors.enginePiper(requireContext())
+        items.add(VoiceGridItem.Header(
+            title = getString(R.string.engine_piper),
+            subtitle = getString(R.string.piper_subtitle, piperReadyCount, piperEntries.size),
+            accent = AppColors.enginePiper(ctx),
+            actionLabel = getString(R.string.download_all_btn),
+            onAction = if (piperHasUndownloaded) {{ downloadDelegate.confirmDownloadAllPiper() }} else null
+        ))
+        val filteredPiper = filterVoices(piperEntries)
+        if (filteredPiper.isEmpty()) {
+            items.add(VoiceGridItem.Empty("piper", getString(R.string.no_voices_match)))
+        } else {
+            filteredPiper.forEach { v ->
+                val ready = VoiceRegistry.isReady(ctx, v.id)
+                val downloading = c.piperDownloadManager.isDownloading(v.id)
+                val status: String; val statusColor: Int
+                when {
+                    ready -> { status = getString(R.string.ready_status); statusColor = AppColors.statusReady(ctx) }
+                    downloading -> {
+                        val pct = c.piperDownloadManager.getProgress(v.id)
+                        status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
+                        statusColor = AppColors.enginePiper(ctx)
+                    }
+                    else -> { status = getString(R.string.tap_to_download); statusColor = AppColors.textDisabled(ctx) }
                 }
-                else -> { status = getString(R.string.tap_to_download); statusColor = AppColors.textDisabled(requireContext()) }
+                items.add(VoiceGridItem.Card(
+                    voiceId = v.id, name = v.displayName,
+                    icon = genderIcon(v.gender), iconColor = genderColor(v.gender, ready),
+                    status = status, statusColor = statusColor,
+                    active = currentProfile.voiceName == v.id,
+                    accent = AppColors.enginePiper(ctx), enabled = ready,
+                    onClick = when {
+                        ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                        !downloading -> {{ downloadDelegate.startPiperDownload(v.id) }}
+                        else -> null
+                    }
+                ))
             }
-            buildVoiceCard(
-                name = v.displayName,
-                icon = genderIcon(v.gender),
-                iconColor = genderColor(v.gender, ready),
-                status = status, statusColor = statusColor,
-                voiceId = v.id, active = currentProfile.voiceName == v.id,
-                accent = AppColors.enginePiper(requireContext()), enabled = ready,
-                onClick = when {
-                    ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
-                    !downloading -> {{ downloadDelegate.startPiperDownload(v.id) }}
-                    else -> null
-                }
-            )
         }
+
+        voiceGridAdapter.submitList(items)
     }
 
-    // ── Voice grid helpers (M27: reduce repeated patterns) ──────────────────
+    // ── Voice grid helpers ──────────────────────────────────────────────────
 
     private fun genderIcon(gender: String) = when (gender) {
         "Female" -> "♀"; "Male" -> "♂"; else -> "◆"
@@ -336,34 +360,6 @@ class ProfilesFragment : Fragment() {
         (genderFilter == "All" || v.gender == genderFilter) &&
         (languageFilter == "All" || v.language == languageFilter)
     }
-
-    private fun addFilteredVoiceCards(
-        voices: List<VoiceRegistry.VoiceEntry>,
-        cardBuilder: (VoiceRegistry.VoiceEntry) -> android.view.View
-    ) {
-        val filtered = filterVoices(voices)
-        if (filtered.isEmpty()) {
-            voiceGrid.addView(emptyLabel(getString(R.string.no_voices_match)))
-        } else {
-            addVoiceRows(filtered.map(cardBuilder))
-        }
-    }
-
-    // ── UI builder delegation (extracted to VoiceCardBuilder) ────────────────
-
-    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null, downloadIcon: String = "⬇ ALL") =
-        VoiceCardBuilder.buildSectionHeader(requireContext(), title, subtitle, accent, onDownloadAll, downloadIcon)
-
-    private fun buildVoiceCard(
-        name: String, icon: String, iconColor: Int,
-        status: String, statusColor: Int,
-        voiceId: String, active: Boolean, accent: Int,
-        enabled: Boolean, onClick: (() -> Unit)?
-    ) = VoiceCardBuilder.buildVoiceCard(
-        requireContext(), name, icon, iconColor, status, statusColor,
-        voiceId, active, accent, enabled, onClick,
-        onPreview = if (enabled) { vid, vname -> previewVoice(vid, vname) } else null
-    )
 
     private fun previewVoice(voiceId: String, name: String) {
         val ctx = requireContext()
@@ -382,12 +378,6 @@ class ProfilesFragment : Fragment() {
             ))
         }
     }
-
-    private fun addVoiceRows(cards: List<android.view.View>) =
-        VoiceCardBuilder.addVoiceRows(voiceGrid, cards)
-
-    private fun emptyLabel(msg: String) =
-        VoiceCardBuilder.emptyLabel(requireContext(), msg)
 
     // ── Cloud voice privacy consent ────────────────────────────────────────
 

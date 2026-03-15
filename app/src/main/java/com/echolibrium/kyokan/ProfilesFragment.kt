@@ -373,7 +373,7 @@ class ProfilesFragment : Fragment() {
         val tempProfile = currentProfile.copy(voiceName = voiceId)
         val service = NotificationReaderService.instance
         if (service != null) {
-            service.testSpeak(previewText, tempProfile)
+            service.speakDirect(previewText, tempProfile)
         } else {
             c.audioPipeline.start(ctx)
             c.audioPipeline.enqueue(AudioPipeline.Item(
@@ -603,6 +603,7 @@ class ProfilesFragment : Fragment() {
         val et = EditText(ctx).apply {
             setText(p.name)
             hint = getString(R.string.profile_name_hint)
+            filters = arrayOf(android.text.InputFilter.LengthFilter(40)) // L6
             selectAll()
         }
         AlertDialog.Builder(ctx)
@@ -684,7 +685,7 @@ class ProfilesFragment : Fragment() {
             // Use the service if running, otherwise start AudioPipeline directly
             val service = NotificationReaderService.instance
             if (service != null) {
-                service.testSpeak(text, p)
+                service.speakDirect(text, p)
             } else {
                 c.audioPipeline.start(ctx)
                 c.audioPipeline.enqueue(AudioPipeline.Item(
@@ -702,7 +703,10 @@ class ProfilesFragment : Fragment() {
             Toast.makeText(context, getString(R.string.saved_profile, p.name), Toast.LENGTH_SHORT).show()
         }
         btnNew.setOnClickListener {
-            val et = EditText(requireContext()).apply { hint = getString(R.string.profile_name_hint) }
+            val et = EditText(requireContext()).apply {
+                hint = getString(R.string.profile_name_hint)
+                filters = arrayOf(android.text.InputFilter.LengthFilter(40)) // L6
+            }
             AlertDialog.Builder(requireContext()).setTitle(getString(R.string.new_profile)).setView(et)
                 .setPositiveButton(getString(R.string.create)) { _, _ ->
                     val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }

@@ -152,6 +152,9 @@
     <string name="privacy_disclosure">Privacy note: When using cloud voices, notification text is sent to DeepInfra servers for speech synthesis. This may include private message content. Local voices (Kokoro, Piper) keep all data on-device.</string>
     <string name="deepinfra_key_full_message">Enter your DeepInfra API key to enable cloud voices (Orpheus).\n\n%s</string>
 
+    <!-- L15: Onboarding -->
+    <string name="onboarding_welcome">Kyōkan reads your notifications aloud using natural TTS voices.\n\n1. Complete the setup below to grant permissions\n2. Go to Voices to download a voice model\n3. Configure per-app rules in the Apps tab\n\nTap the setup button to get started.</string>
+
     <!-- TTS alive notification -->
     <string name="notif_channel_name">Notification Reader Active</string>
     <string name="notif_channel_description">Keeps notification reading active in the background</string>

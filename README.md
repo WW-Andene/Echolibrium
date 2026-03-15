@@ -25,7 +25,7 @@ Notification reader for Android with multi-engine TTS and adaptive voice profile
 ## Build via GitHub Actions
 1. Push this repo to GitHub
 2. Actions → Build APK → Run workflow
-3. Download the APK from Artifacts (`Kyokan-v3` artifact name)
+3. Download the APK from Artifacts (`Kyokan-v4` artifact name)
 4. Install on device and grant permissions
 
 ## Install

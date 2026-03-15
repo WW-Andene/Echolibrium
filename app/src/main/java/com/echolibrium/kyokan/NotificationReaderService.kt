@@ -219,7 +219,8 @@ class NotificationReaderService : NotificationListenerService() {
         if (!prefs.getBoolean("dnd_enabled", false)) return false
         val start = prefs.getInt("dnd_start", 22)
         val end   = prefs.getInt("dnd_end",   8)
-        if (start == end) return true
+        // L2: start == end means no window — DND effectively disabled
+        if (start == end) return false
         val hour  = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         return if (start > end) hour >= start || hour < end else hour in start until end
     }
@@ -276,7 +277,8 @@ class NotificationReaderService : NotificationListenerService() {
         return detected
     }
 
-    fun testSpeak(text: String, profile: VoiceProfile) {
+    /** Speak text directly using the given profile (preview, voice commands). */
+    fun speakDirect(text: String, profile: VoiceProfile) {
         c.audioPipeline.enqueue(AudioPipeline.Item(
             text    = text,
             voiceId = profile.voiceName,

@@ -21,6 +21,14 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- L15: Onboarding hint for new users -->
+        <TextView android:id="@+id/txt_onboarding" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="16dp" android:background="#1a1428"
+            android:fontFamily="sans-serif" android:textSize="12sp" android:textColor="#b0a4c0"
+            android:lineSpacingExtra="4dp" android:layout_marginBottom="12dp"
+            android:visibility="gone"
+            android:text="@string/onboarding_welcome"/>
+
         <Button android:id="@+id/btn_setup" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:backgroundTint="#b898d4"
             android:textColor="#0a0710" android:fontFamily="sans-serif" android:layout_marginBottom="4dp"/>

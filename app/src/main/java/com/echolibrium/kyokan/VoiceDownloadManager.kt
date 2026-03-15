@@ -25,6 +25,7 @@ class VoiceDownloadManager {
     @Volatile var state: DownloadState = DownloadState.NOT_DOWNLOADED
     @Volatile var progressPercent: Int = 0
     @Volatile var errorMessage: String = ""
+    @Volatile private var downloadThread: Thread? = null
 
     private val stateListeners = mutableListOf<(DownloadState) -> Unit>()
     private val progressListeners = mutableListOf<(Int) -> Unit>()
@@ -42,14 +43,6 @@ class VoiceDownloadManager {
     fun removeProgressListener(l: (Int) -> Unit) {
         synchronized(listenersLock) { progressListeners.remove(l) }
     }
-
-    // Backward-compat setters — used nowhere internally, kept for external callers
-    var onProgress: ((Int) -> Unit)?
-        get() = null
-        set(value) { if (value != null) synchronized(listenersLock) { progressListeners.clear(); progressListeners.add(value) } }
-    var onStateChange: ((DownloadState) -> Unit)?
-        get() = null
-        set(value) { if (value != null) synchronized(listenersLock) { stateListeners.clear(); stateListeners.add(value) } }
 
     // ── Paths ─────────────────────────────────────────────────────────────────
 
@@ -74,7 +67,7 @@ class VoiceDownloadManager {
         updateState(DownloadState.DOWNLOADING)
         progressPercent = 0
 
-        Thread {
+        downloadThread = Thread {
             val tmpFile = File(getSherpaDir(ctx), "download.tar.bz2.tmp")
             try {
                 Log.d(TAG, "Downloading from $DOWNLOAD_URL")
@@ -97,13 +90,25 @@ class VoiceDownloadManager {
                     updateState(DownloadState.ERROR)
                 }
 
+            } catch (e: InterruptedException) {
+                tmpFile.delete()
+                Log.d(TAG, "Download cancelled")
+                updateState(DownloadState.NOT_DOWNLOADED)
             } catch (e: Exception) {
                 tmpFile.delete()
                 errorMessage = e.message ?: "Unknown error"
                 Log.e(TAG, "Download failed", e)
                 updateState(DownloadState.ERROR)
+            } finally {
+                downloadThread = null
             }
-        }.start()
+        }.also { it.start() }
+    }
+
+    /** L16: Cancel an in-progress download. */
+    fun cancelDownload() {
+        downloadThread?.interrupt()
+        downloadThread = null
     }
 
     fun deleteModel(ctx: Context) {

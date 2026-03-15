@@ -46,14 +46,16 @@ class NotificationRulesDelegate(private val prefs: SharedPreferences) {
             txtCooldown.text = "Cooldown per app: ${value}s"
         })
 
+        // L1: min=1 to prevent visual/logical mismatch (0 would be selectable but meaningless)
         val txtMaxQueue = v.findViewById<TextView>(R.id.txt_max_queue)
         val seekMaxQueue = v.findViewById<SeekBar>(R.id.seek_max_queue)
-        val maxQueue = prefs.getInt("notif_max_queue", 10)
+        seekMaxQueue.min = 1
+        val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
         seekMaxQueue.progress = maxQueue
         txtMaxQueue.text = "Max queue size: $maxQueue"
         seekMaxQueue.setOnSeekBarChangeListener(onSeekBarChange { value ->
-            prefs.edit().putInt("notif_max_queue", value.coerceAtLeast(1)).apply()
-            txtMaxQueue.text = "Max queue size: ${value.coerceAtLeast(1)}"
+            prefs.edit().putInt("notif_max_queue", value).apply()
+            txtMaxQueue.text = "Max queue size: $value"
         })
     }
 }

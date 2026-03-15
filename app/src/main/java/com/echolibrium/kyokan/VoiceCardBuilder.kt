@@ -155,10 +155,11 @@ object VoiceCardBuilder {
                 })
             }
 
-            // Inline preview button
+            // Inline preview button (L19: shows synthesizing feedback)
             if (enabled && onPreview != null) {
                 addView(TextView(ctx).apply {
-                    text = ctx.getString(R.string.preview_btn)
+                    val originalText = ctx.getString(R.string.preview_btn)
+                    text = originalText
                     textSize = 9f
                     gravity = Gravity.CENTER
                     setTextColor(accent.and(0x00FFFFFF.toInt()).or(0x99000000.toInt()))
@@ -166,7 +167,12 @@ object VoiceCardBuilder {
                     isClickable = true
                     isFocusable = true
                     contentDescription = "Preview $name voice"
-                    setOnClickListener { onPreview(voiceId, name) }
+                    setOnClickListener {
+                        text = "⏳ synthesizing…"
+                        isEnabled = false
+                        onPreview(voiceId, name)
+                        postDelayed({ text = originalText; isEnabled = true }, 2000)
+                    }
                 })
             }
         }

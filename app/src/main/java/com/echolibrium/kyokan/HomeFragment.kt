@@ -56,6 +56,12 @@ class HomeFragment : Fragment() {
         val seekDndEnd    = v.findViewById<SeekBar>(R.id.seek_dnd_end)
         val txtDndStart   = v.findViewById<TextView>(R.id.txt_dnd_start)
         val txtDndEnd     = v.findViewById<TextView>(R.id.txt_dnd_end)
+        // L15: Show onboarding for first-time users
+        val txtOnboarding = v.findViewById<TextView>(R.id.txt_onboarding)
+        if (!isNotifGranted() && !prefs.getBoolean("onboarding_dismissed", false)) {
+            txtOnboarding.visibility = View.VISIBLE
+        }
+
         updateSetup(btnSetup, txtSetup)
         btnSetup.setOnClickListener { openNextSetupStep() }
 
@@ -191,6 +197,9 @@ class HomeFragment : Fragment() {
             btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
             txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
             txt.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
+            // L15: Dismiss onboarding once setup complete
+            prefs.edit().putBoolean("onboarding_dismissed", true).apply()
+            view?.findViewById<TextView>(R.id.txt_onboarding)?.visibility = View.GONE
             // Post-setup guidance (M22)
             showGuidance()
         } else {

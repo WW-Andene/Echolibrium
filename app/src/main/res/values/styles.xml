@@ -28,4 +28,20 @@
     <style name="NavTabLabel">
         <item name="android:textSize">12sp</item>
     </style>
+    <!-- L12: Standardized button styles -->
+    <style name="KyokanButton">
+        <item name="android:backgroundTint">#1e1530</item>
+        <item name="android:textColor">#b898d4</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/text_body_sm</item>
+        <item name="android:minHeight">@dimen/touch_target_min</item>
+    </style>
+    <style name="KyokanButton.Danger">
+        <item name="android:backgroundTint">#2a1520</item>
+        <item name="android:textColor">#ff4444</item>
+    </style>
+    <style name="KyokanButton.Accent">
+        <item name="android:backgroundTint">#b898d4</item>
+        <item name="android:textColor">#0a0710</item>
+    </style>
 </resources>

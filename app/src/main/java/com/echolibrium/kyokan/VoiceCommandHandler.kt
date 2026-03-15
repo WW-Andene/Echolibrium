@@ -87,7 +87,7 @@ class VoiceCommandHandler {
         val profiles = VoiceProfile.loadAll(prefs)
         val profileId = prefs.getString("active_profile_id", "") ?: ""
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
-        service.testSpeak(text, profile)
+        service.speakDirect(text, profile)
     }
 
     private fun formatElapsed(ctx: Context, ms: Long): String {

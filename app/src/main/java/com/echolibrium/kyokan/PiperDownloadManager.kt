@@ -26,6 +26,7 @@ class PiperDownloadManager {
     private val voiceProgress = ConcurrentHashMap<String, Int>()
     private val voiceErrors = ConcurrentHashMap<String, String>()
     private val downloading = mutableSetOf<String>()
+    private val downloadThreads = ConcurrentHashMap<String, Thread>()
 
     private val stateListeners = mutableListOf<(voiceId: String, DownloadState) -> Unit>()
     private val progressListeners = mutableListOf<(voiceId: String, Int) -> Unit>()
@@ -43,14 +44,6 @@ class PiperDownloadManager {
     fun removeProgressListener(l: (voiceId: String, Int) -> Unit) {
         synchronized(listenersLock) { progressListeners.remove(l) }
     }
-
-    // Backward-compat setters — used nowhere internally, kept for external callers
-    var onStateChange: ((voiceId: String, DownloadState) -> Unit)?
-        get() = null
-        set(value) { if (value != null) synchronized(listenersLock) { stateListeners.clear(); stateListeners.add(value) } }
-    var onProgress: ((voiceId: String, Int) -> Unit)?
-        get() = null
-        set(value) { if (value != null) synchronized(listenersLock) { progressListeners.clear(); progressListeners.add(value) } }
 
     // ── Paths ───────────────────────────────────────────────────────────────
 
@@ -118,7 +111,7 @@ class PiperDownloadManager {
         updateState(voiceId, DownloadState.DOWNLOADING)
         voiceProgress[voiceId] = 0
 
-        Thread {
+        val thread = Thread {
             try {
                 downloadBundled(ctx, voiceId)
 
@@ -129,14 +122,26 @@ class PiperDownloadManager {
                     voiceErrors[voiceId] = "Download incomplete — missing required files"
                     updateState(voiceId, DownloadState.ERROR)
                 }
+            } catch (e: InterruptedException) {
+                Log.d(TAG, "Download cancelled for $voiceId")
+                updateState(voiceId, DownloadState.NOT_DOWNLOADED)
             } catch (e: Exception) {
                 voiceErrors[voiceId] = e.message ?: "Unknown error"
                 Log.e(TAG, "Download failed for $voiceId", e)
                 updateState(voiceId, DownloadState.ERROR)
             } finally {
                 synchronized(downloading) { downloading.remove(voiceId) }
+                downloadThreads.remove(voiceId)
             }
-        }.start()
+        }
+        downloadThreads[voiceId] = thread
+        thread.start()
+    }
+
+    /** L16: Cancel an in-progress download for a specific voice. */
+    fun cancelDownload(voiceId: String) {
+        downloadThreads[voiceId]?.interrupt()
+        downloadThreads.remove(voiceId)
     }
 
     /** Download a pre-built vits-piper bundle (tar.bz2 with everything inside) */

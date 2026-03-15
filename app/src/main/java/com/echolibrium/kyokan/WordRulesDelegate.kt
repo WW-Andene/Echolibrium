@@ -60,7 +60,7 @@ class WordRulesDelegate(
         rules.forEachIndexed { idx, (find, replace) ->
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setBackgroundColor(AppColors.inputBg(ctx)); setPadding(12, 10, 12, 10)
+                setBackgroundColor(AppColors.inputBg(context)); setPadding(12, 10, 12, 10)
                 val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 lp.setMargins(0, 0, 0, 4); layoutParams = lp
             }
@@ -68,8 +68,8 @@ class WordRulesDelegate(
             fun editText(hint: String, value: String, onChanged: (String) -> Unit) =
                 EditText(context).apply {
                     setText(value); this.hint = hint; textSize = 13f
-                    setTextColor(AppColors.textPrimary(ctx)); setHintTextColor(AppColors.textHint(ctx))
-                    setBackgroundColor(AppColors.cardBorder(ctx)); setPadding(12, 8, 12, 8)
+                    setTextColor(AppColors.textPrimary(context)); setHintTextColor(AppColors.textHint(context))
+                    setBackgroundColor(AppColors.cardBorder(context)); setPadding(12, 8, 12, 8)
                     filters = arrayOf(android.text.InputFilter.LengthFilter(200))
                     addTextChangedListener(object : TextWatcher {
                         override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
@@ -82,15 +82,15 @@ class WordRulesDelegate(
             etFind.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
 
             val arrow = TextView(context).apply {
-                text = "→"; textSize = 14f; setTextColor(AppColors.primary(ctx)); setPadding(8, 0, 8, 0)
+                text = "→"; textSize = 14f; setTextColor(AppColors.primary(context)); setPadding(8, 0, 8, 0)
             }
 
             val etReplace = editText("Replace…", replace) { rules[idx] = rules[idx].first to it }
             etReplace.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
 
             val btnDel = Button(context).apply {
-                text = "✕"; textSize = 12f; setTextColor(AppColors.accentRed(ctx))
-                setBackgroundColor(AppColors.inputBg(ctx)); setPadding(16, 8, 16, 8)
+                text = "✕"; textSize = 12f; setTextColor(AppColors.accentRed(context))
+                setBackgroundColor(AppColors.inputBg(context)); setPadding(16, 8, 16, 8)
                 setOnClickListener { rules.removeAt(idx); saveRules(); renderRules() }
             }
 

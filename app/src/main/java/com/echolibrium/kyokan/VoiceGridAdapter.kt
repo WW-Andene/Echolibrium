@@ -99,11 +99,11 @@ sealed class VoiceGridItem {
         val subtitle: String,
         val accent: Int,
         val actionLabel: String = "",
-        @Transient val onAction: (() -> Unit)? = null
+        val onAction: (() -> Unit)? = null
     ) : VoiceGridItem()
-    // Note: data class equals() includes all fields including onAction lambda.
-    // This means DiffUtil rebinds headers when lambdas change (every render).
-    // Acceptable cost: only 3 headers in the grid. Stale lambdas are worse.
+    // Note: onAction IS included in data class equals() — new lambda instances every
+    // render means DiffUtil rebinds headers each time. Acceptable cost: only 3 headers
+    // in the grid. Stale lambdas capturing old state are worse than rebinding.
 
     data class Card(
         val voiceId: String,
@@ -115,13 +115,12 @@ sealed class VoiceGridItem {
         val active: Boolean,
         val accent: Int,
         val enabled: Boolean,
-        @Transient val onClick: (() -> Unit)? = null
+        val onClick: (() -> Unit)? = null
     ) : VoiceGridItem()
-    // Note: data class equals() includes onClick lambda by reference.
-    // This means DiffUtil rebinds cards when lambdas change (every render).
-    // This matches the original working behavior. The D-05 optimization to
-    // exclude lambdas from equals caused stale onClick handlers — tapping
-    // a card would run a closure capturing old state. Rebinding ~52 cards
+    // Note: onClick IS included in data class equals() — new lambda instances every
+    // render means DiffUtil rebinds all cards each time. This is intentional: the D-05
+    // optimization to exclude lambdas from equals caused stale onClick handlers —
+    // tapping a card would run a closure capturing old state. Rebinding ~52 cards
     // is cheap; stale state is not.
 
     data class Empty(

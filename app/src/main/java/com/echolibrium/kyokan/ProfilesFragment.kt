@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import kotlin.math.roundToInt
 
 /** I-07: Uses SettingsRepository instead of direct SharedPreferences access. */
 class ProfilesFragment : Fragment(), UnsavedChangesCheck {
@@ -511,9 +512,9 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
     private fun loadProfileToUI(p: VoiceProfile) {
         viewModel.updateCurrentProfile(p)
         lastSavedProfile = p  // F-01: snapshot for unsaved changes detection
-        seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).toInt() - 50).coerceIn(0, 150)
+        seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).roundToInt() - 50).coerceIn(0, 150)
         tvPitch.text = getString(R.string.pitch_label, p.pitch)
-        seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)
+        seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).roundToInt() - 50).coerceIn(0, 250)
         tvSpeed.text = getString(R.string.speed_label, p.speed)
 
         attachSeek(seekPitch) { tvPitch.text = getString(R.string.pitch_label, (it + 50) / 100f) }

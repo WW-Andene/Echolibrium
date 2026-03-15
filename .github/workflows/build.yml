@@ -43,6 +43,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Kyokan-v3
+          name: Kyokan-v4
           path: app/build/outputs/apk/release/app-release*.apk
           retention-days: 30

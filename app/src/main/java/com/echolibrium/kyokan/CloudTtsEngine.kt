@@ -59,7 +59,7 @@ class CloudTtsEngine {
     /** K-01: Get today's character usage count, resetting if day changed. */
     fun dailyCharsUsed(): Int {
         val r = repo ?: return 0
-        val today = java.time.LocalDate.now().toString()
+        val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString()
         val storedDate = r.getString(PREF_DAILY_CHARS_DATE)
         if (storedDate != today) {
             r.putInt(PREF_DAILY_CHARS, 0)
@@ -71,7 +71,7 @@ class CloudTtsEngine {
 
     private fun addDailyChars(count: Int) {
         val r = repo ?: return
-        val today = java.time.LocalDate.now().toString()
+        val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString()
         val storedDate = r.getString(PREF_DAILY_CHARS_DATE)
         val current = if (storedDate == today) r.getInt(PREF_DAILY_CHARS, 0) else 0
         r.putInt(PREF_DAILY_CHARS, current + count)
@@ -140,6 +140,7 @@ class CloudTtsEngine {
         if (!key.isNullOrBlank()) urlsToTry.add(Pair(DIRECT_URL, true))  // direct: with auth
 
         for ((targetUrl, useAuth) in urlsToTry) {
+            var shouldBreakRetryLoop = false
             for (attempt in 0..MAX_RETRIES) {
                 val requestBuilder = Request.Builder()
                     .url(targetUrl)
@@ -164,7 +165,8 @@ class CloudTtsEngine {
                                 Thread.sleep(RETRY_DELAY_MS)
                                 return@use
                             }
-                            // Non-retryable error — try next URL
+                            // Non-retryable error (4xx) — break retry loop, try next URL
+                            shouldBreakRetryLoop = true
                             return@use
                         }
 
@@ -174,6 +176,7 @@ class CloudTtsEngine {
                         Log.d(TAG, "${trimmedText.length} chars → ${pcm.size} samples, ${elapsedMs}ms (daily: ${dailyCharsUsed()}/$DEFAULT_DAILY_CHAR_LIMIT)")
                         return Pair(pcm, SAMPLE_RATE)
                     }
+                    if (shouldBreakRetryLoop) break
                 } catch (e: IOException) {
                     Log.e(TAG, "Network error from $targetUrl: ${e.message}")
                     if (attempt < MAX_RETRIES) {

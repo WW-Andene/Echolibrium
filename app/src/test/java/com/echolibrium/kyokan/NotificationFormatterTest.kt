@@ -107,7 +107,7 @@ class NotificationFormatterTest {
     @Test
     fun `buildMessage full mode blank text omitted`() {
         val msg = NotificationFormatter.buildMessage("App", "Title", "", "full", readAppName = true)
-        assertEquals("App. Title. ", msg)
+        assertEquals("App. Title.", msg)
     }
 
     // ── Word rule application tests ─────────────────────────────────────────

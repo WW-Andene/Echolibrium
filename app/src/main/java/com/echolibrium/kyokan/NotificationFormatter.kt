@@ -24,7 +24,7 @@ object NotificationFormatter {
             if (readAppName) append("$appName. ")
             if (title.isNotBlank()) append("$title. ")
             if (text.isNotBlank()) append(text)
-        }
+        }.trimEnd()
     }
 
     /**

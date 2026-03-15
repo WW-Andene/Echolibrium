@@ -34,11 +34,13 @@ class NotificationReaderService : NotificationListenerService() {
     // Cached data — invalidated via SharedPreferences listener (QW6)
     @Volatile private var cachedRules: List<AppRule>? = null
     @Volatile private var cachedProfiles: List<VoiceProfile>? = null
+    @Volatile private var cachedWordRules: List<Pair<String, String>>? = null
 
     private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             "app_rules" -> cachedRules = null
             "voice_profiles", "active_profile_id" -> cachedProfiles = null
+            "wording_rules" -> cachedWordRules = null
         }
     }
     private val processingExecutor: ExecutorService = ThreadPoolExecutor(
@@ -85,6 +87,7 @@ class NotificationReaderService : NotificationListenerService() {
         lastNotificationTime = 0L
         cachedRules = null
         cachedProfiles = null
+        cachedWordRules = null
         c.voiceCommandListener.stop()
         c.audioPipeline.shutdown()
         TtsAliveService.stop(this)
@@ -143,6 +146,9 @@ class NotificationReaderService : NotificationListenerService() {
             val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
             var rawText = buildMessage(appName, title, text, readMode)
             if (rawText.isBlank()) return@execute
+
+            // Apply word replacement rules (H11: was dead code — now wired in)
+            rawText = applyWordRules(rawText)
 
             // Language detection — L26: generic routing for all supported languages
             val appLang = getAppLanguage(pkgName)
@@ -208,6 +214,39 @@ class NotificationReaderService : NotificationListenerService() {
                 if (text.isNotBlank()) append(text)
             }
         }
+
+    /**
+     * Apply word replacement rules to text before speaking (H11).
+     * Rules are find→replace pairs configured in the Rules tab.
+     * Case-insensitive matching (handles "lol", "LOL", "Lol" etc).
+     */
+    private fun applyWordRules(text: String): String {
+        val rules = cachedWordRules ?: loadWordRules().also { cachedWordRules = it }
+        if (rules.isEmpty()) return text
+        var result = text
+        for ((find, replace) in rules) {
+            if (find.isNotBlank()) {
+                result = result.replace(find, replace, ignoreCase = true)
+            }
+        }
+        return result
+    }
+
+    private fun loadWordRules(): List<Pair<String, String>> {
+        val json = prefs.getString("wording_rules", null) ?: return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).mapNotNull { i ->
+                val obj = arr.getJSONObject(i)
+                val find = obj.optString("find", "")
+                val replace = obj.optString("replace", "")
+                if (find.isNotBlank()) find to replace else null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse wording_rules", e)
+            emptyList()
+        }
+    }
 
     private fun isDndActive(): Boolean {
         if (!prefs.getBoolean("dnd_enabled", false)) return false

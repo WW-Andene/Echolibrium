@@ -342,7 +342,12 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             }
         }
 
-        voiceGridAdapter.submitList(items)
+        // Force the parent ScrollView to re-measure after DiffUtil async diff completes.
+        // Without this, the ScrollView measures the RecyclerView's height BEFORE items
+        // arrive (height=0 or stale), then never re-measures — clipping Piper cards.
+        voiceGridAdapter.submitList(items) {
+            voiceGrid.post { voiceGrid.requestLayout() }
+        }
     }
 
     // ── Voice grid helpers ──────────────────────────────────────────────────

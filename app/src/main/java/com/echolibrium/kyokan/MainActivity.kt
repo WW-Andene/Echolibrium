@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -48,6 +49,26 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         for (id in tabIds) {
             findViewById<View>(id).setOnClickListener { selectTab(id) }
+        }
+
+        // G-03: Announce selected state to screen readers for custom bottom nav tabs
+        val tabLabels = mapOf(
+            R.id.nav_home to getString(R.string.nav_home),
+            R.id.nav_profiles to getString(R.string.nav_voices),
+            R.id.nav_apps to getString(R.string.nav_apps),
+            R.id.nav_rules to getString(R.string.nav_rules),
+            R.id.nav_logcat to getString(R.string.nav_log)
+        )
+        for (id in tabIds) {
+            val tab = findViewById<View>(id)
+            val label = tabLabels[id] ?: ""
+            tab.accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.isSelected = (id == selectedTabId)
+                    info.contentDescription = if (id == selectedTabId) "$label tab, selected" else "$label tab"
+                }
+            }
         }
 
         // B-02: Restore selected tab after rotation; B-03: re-select to sync nav + fragment

@@ -18,7 +18,7 @@
     <color name="text_dimmed">#9070b4</color>
     <color name="text_section">#7844a0</color>
     <color name="text_section_label">#7844a0</color>
-    <color name="text_disabled">#b0a4c0</color>
+    <color name="text_disabled">#756590</color><!-- G-01: was #b0a4c0 (2.08:1 FAIL) → now 4.61:1 PASS -->
     <color name="text_on_accent">#ffffff</color>
     <color name="text_subtitle">#7a6a8e</color>
     <color name="text_card_subtitle">#5e3080</color>

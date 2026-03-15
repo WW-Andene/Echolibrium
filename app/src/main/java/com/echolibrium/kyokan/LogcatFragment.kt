@@ -9,6 +9,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -159,6 +160,24 @@ class LogcatFragment : Fragment() {
                 chipAppOnly.setTextColor(inactiveColor)
             }
             refreshDisplay()
+        }
+
+        // G-02: Announce toggle state to screen readers
+        chipAppOnly.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = "android.widget.ToggleButton"
+                info.isCheckable = true
+                info.isChecked = appOnlyMode
+            }
+        }
+        chipPipeline.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = "android.widget.ToggleButton"
+                info.isCheckable = true
+                info.isChecked = pipelineMode
+            }
         }
 
         // Clear button

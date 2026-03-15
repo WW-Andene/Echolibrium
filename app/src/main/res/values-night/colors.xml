@@ -6,7 +6,7 @@
     <color name="bg">#140f1e</color>
     <color name="surface">#1a1428</color>
     <color name="surface_elevated">#221a32</color>
-    <color name="nav_inactive">#7e6e98</color>
+    <color name="nav_inactive">#9a8ab0</color><!-- G-01: was #7e6e98 (3.89:1 FAIL) → now 5.65:1 PASS -->
 
     <!-- ═══ Text colors ═══ -->
     <color name="text_primary">#d4cce0</color>
@@ -14,19 +14,19 @@
     <color name="text_secondary">#b0a4c0</color>
     <color name="text_hint">#8a7aa0</color>
     <color name="text_muted">#8a7a9e</color>
-    <color name="text_dimmed">#7e6e98</color>
+    <color name="text_dimmed">#9a8ab0</color><!-- G-01: was #7e6e98 (4.09:1 FAIL) → now 5.94:1 PASS -->
     <color name="text_section">#9b7eb8</color>
     <color name="text_section_label">#9070b4</color>
     <color name="text_disabled">#8a7aa0</color>
     <color name="text_on_accent">#0a0710</color>
     <color name="text_subtitle">#7a6a8e</color>
-    <color name="text_card_subtitle">#5c3d7a</color>
+    <color name="text_card_subtitle">#9575b0</color><!-- G-01: was #5c3d7a (2.05:1 FAIL) → now 4.64:1 PASS -->
 
     <!-- ═══ Engine accent colors — brighter for dark backgrounds ═══ -->
     <color name="engine_orpheus">#ffaa44</color>
     <color name="engine_kokoro">#00ccff</color>
     <color name="engine_piper">#88ccff</color>
-    <color name="cloud_status">#886633</color>
+    <color name="cloud_status">#aa8844</color><!-- G-01: was #886633 (3.40:1 FAIL) → now 5.38:1 PASS -->
 
     <!-- ═══ Functional accent colors — brighter for dark backgrounds ═══ -->
     <color name="accent_red">#ff4444</color>

@@ -126,6 +126,32 @@
     <string name="elapsed_second">%1$d second</string>
     <string name="elapsed_less_than_second">less than a second</string>
 
+    <!-- Voice card strings (M30: extracted from programmatic UI) -->
+    <string name="preview_btn">▶ preview</string>
+    <string name="preview_default">Hello! This is %s.</string>
+    <string name="engine_orpheus">ORPHEUS</string>
+    <string name="engine_kokoro">KOKORO</string>
+    <string name="engine_piper">PIPER</string>
+    <string name="orpheus_subtitle_enabled">Cloud  ·  DeepInfra API  ·  %d voices</string>
+    <string name="orpheus_subtitle_disabled">Cloud  ·  Tap 🔑 to enter API key</string>
+    <string name="kokoro_subtitle_ready">Offline  ·  %1$d voices  ·  Ready</string>
+    <string name="kokoro_subtitle_downloading">Offline  ·  %1$d voices  ·  Downloading…</string>
+    <string name="kokoro_subtitle_size">Offline  ·  %1$d voices  ·  ~%2$dMB shared model</string>
+    <string name="piper_subtitle">Offline  ·  %1$d/%2$d voices downloaded  ·  Per-voice download</string>
+    <string name="download_all_piper_title">Download all Piper voices?</string>
+    <string name="download_all_piper_msg">This will download %1$d voices (~%2$dMB total). A Wi-Fi connection is recommended.</string>
+    <string name="download_btn">Download</string>
+    <string name="download_all_btn">⬇ ALL</string>
+    <string name="key_btn">🔑</string>
+    <string name="lines_count">%d lines</string>
+    <string name="profile_name_hint">Profile name</string>
+    <string name="download_failed">Download failed for %s</string>
+    <string name="kokoro_download_failed">Kokoro download failed</string>
+
+    <!-- Privacy disclosure (M4) -->
+    <string name="privacy_disclosure">Privacy note: When using cloud voices, notification text is sent to DeepInfra servers for speech synthesis. This may include private message content. Local voices (Kokoro, Piper) keep all data on-device.</string>
+    <string name="deepinfra_key_full_message">Enter your DeepInfra API key to enable cloud voices (Orpheus).\n\n%s</string>
+
     <!-- TTS alive notification -->
     <string name="notif_channel_name">Notification Reader Active</string>
     <string name="notif_channel_description">Keeps notification reading active in the background</string>

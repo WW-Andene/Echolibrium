@@ -22,6 +22,31 @@ import androidx.transition.TransitionManager
 
 class ProfilesFragment : Fragment() {
 
+    companion object {
+        // Shared UI colors (M14)
+        private const val COLOR_ORPHEUS      = 0xFFffaa44.toInt()
+        private const val COLOR_KOKORO       = 0xFF00ccff.toInt()
+        private const val COLOR_PIPER        = 0xFF88ccff.toInt()
+        private const val COLOR_READY        = 0xFF00cc66.toInt()
+        private const val COLOR_DIMMED       = 0xFF6e5f82.toInt()
+        private const val COLOR_BG_DARK      = 0xFF181222.toInt()
+        private const val COLOR_BG_ACTIVE    = 0xFF251840.toInt()
+        private const val COLOR_TEXT_LIGHT    = 0xFFddd6e8.toInt()
+        private const val COLOR_TEXT_MUTED    = 0xFFb0a4c0.toInt()
+        private const val COLOR_LAVENDER      = 0xFF9b7eb8.toInt()
+        private const val COLOR_ROSE          = 0xFFc48da0.toInt()
+        private const val COLOR_FILTER_ACTIVE = 0xFFb898d4.toInt()
+        private const val COLOR_FEMALE_ACTIVE = 0xFFd4a0b8.toInt()
+        private const val COLOR_MALE_ACTIVE   = 0xFF88aad4.toInt()
+        private const val COLOR_FEMALE_DIM    = 0xFF4a2a3e.toInt()
+        private const val COLOR_MALE_DIM      = 0xFF3a4058.toInt()
+        private const val COLOR_CARD_ACTIVE_BG = 0xFF2a1828.toInt()
+        private const val COLOR_CARD_BORDER    = 0xFF2a2040.toInt()
+        private const val COLOR_INPUT_BG       = 0xFF201830.toInt()
+        private const val COLOR_ERROR          = 0xFFff4444.toInt()
+        private const val COLOR_CLOUD_STATUS   = 0xFF886633.toInt()
+    }
+
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private var profiles = mutableListOf<VoiceProfile>()
     private var activeProfileId = ""
@@ -143,13 +168,15 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun filterBtn(label: String, active: Boolean, onClick: () -> Unit): Button {
+        val dp = requireContext().resources.displayMetrics.density
         return Button(requireContext()).apply {
             text = label; textSize = 11f
-            setBackgroundColor(if (active) 0xFF251840.toInt() else 0xFF181222.toInt())
-            setTextColor(if (active) 0xFFb898d4.toInt() else 0xFF6e5f82.toInt())
-            setPadding(20, 8, 20, 8)
+            setBackgroundColor(if (active) COLOR_BG_ACTIVE else COLOR_BG_DARK)
+            setTextColor(if (active) COLOR_FILTER_ACTIVE else COLOR_DIMMED)
+            setPadding((16 * dp).toInt(), (12 * dp).toInt(), (16 * dp).toInt(), (12 * dp).toInt())
+            minHeight = (48 * dp).toInt(); minimumHeight = (48 * dp).toInt()
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 8, 0); layoutParams = lp
+            lp.setMargins(0, 0, (6 * dp).toInt(), 0); layoutParams = lp
             contentDescription = "Filter: $label${if (active) ", selected" else ""}"
             setOnClickListener { onClick() }
         }
@@ -179,41 +206,29 @@ class ProfilesFragment : Fragment() {
         // ── Orpheus ──────────────────────────────────────────────────────
         val cloudEnabled = CloudTtsEngine.isEnabled()
         val orpheusSubtitle = if (cloudEnabled)
-            "Cloud  ·  DeepInfra API  ·  ${VoiceRegistry.CLOUD_VOICES.size} voices"
+            getString(R.string.orpheus_subtitle_enabled, VoiceRegistry.CLOUD_VOICES.size)
         else
-            "Cloud  ·  Tap 🔑 to enter API key"
+            getString(R.string.orpheus_subtitle_disabled)
         val cloudKeyAction: (() -> Unit) = { showDeepInfraKeyDialog() }
-        voiceGrid.addView(buildSectionHeader("ORPHEUS", orpheusSubtitle, 0xFFffaa44.toInt(), cloudKeyAction, "🔑"))
+        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_orpheus), orpheusSubtitle, COLOR_ORPHEUS, cloudKeyAction, getString(R.string.key_btn)))
 
-        val cloudFiltered = VoiceRegistry.CLOUD_VOICES.filter { v ->
-            (genderFilter == "All" || v.gender == genderFilter) &&
-            (languageFilter == "All" || v.language == languageFilter)
-        }
-        if (cloudFiltered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No voices match filter."))
-        } else {
-            addVoiceRows(cloudFiltered.map { v ->
-                buildVoiceCard(
-                    name = v.displayName,
-                    icon = if (v.gender == "Female") "♀" else "♂",
-                    iconColor = if (cloudEnabled) {
-                        if (v.gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
-                    } else {
-                        if (v.gender == "Female") 0xFF4a2a3e.toInt() else 0xFF3a4058.toInt()
-                    },
-                    status = if (cloudEnabled) "cloud" else "no API key",
-                    statusColor = if (cloudEnabled) 0xFF886633.toInt() else 0xFFff4444.toInt(),
-                    voiceId = v.id,
-                    active = currentProfile.voiceName == v.id,
-                    accent = 0xFFffaa44.toInt(),
-                    enabled = cloudEnabled,
-                    onClick = if (cloudEnabled) {
-                        { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
-                    } else {
-                        { showDeepInfraKeyDialog() }
-                    }
-                )
-            })
+        addFilteredVoiceCards(VoiceRegistry.CLOUD_VOICES) { v ->
+            buildVoiceCard(
+                name = v.displayName,
+                icon = genderIcon(v.gender),
+                iconColor = genderColor(v.gender, cloudEnabled),
+                status = if (cloudEnabled) getString(R.string.cloud_status) else getString(R.string.no_api_key),
+                statusColor = if (cloudEnabled) COLOR_CLOUD_STATUS else COLOR_ERROR,
+                voiceId = v.id,
+                active = currentProfile.voiceName == v.id,
+                accent = COLOR_ORPHEUS,
+                enabled = cloudEnabled,
+                onClick = if (cloudEnabled) {
+                    { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+                } else {
+                    { showDeepInfraKeyDialog() }
+                }
+            )
         }
 
         // ── Kokoro ───────────────────────────────────────────────────────
@@ -221,129 +236,108 @@ class ProfilesFragment : Fragment() {
         val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
         val kokoroCount = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).size
         val kokoroSubtitle = when {
-            kokoroReady -> "Offline  ·  $kokoroCount voices  ·  Ready"
-            kokoroDownloading -> "Offline  ·  $kokoroCount voices  ·  Downloading..."
-            else -> "Offline  ·  $kokoroCount voices  ·  ~${VoiceDownloadManager.MODEL_SIZE_MB}MB shared model"
+            kokoroReady -> getString(R.string.kokoro_subtitle_ready, kokoroCount)
+            kokoroDownloading -> getString(R.string.kokoro_subtitle_downloading, kokoroCount)
+            else -> getString(R.string.kokoro_subtitle_size, kokoroCount, VoiceDownloadManager.MODEL_SIZE_MB)
         }
         val kokoroDownloadAll: (() -> Unit)? = if (!kokoroReady && !kokoroDownloading) {
             { startKokoroDownload() }
         } else null
-        voiceGrid.addView(buildSectionHeader("KOKORO", kokoroSubtitle, 0xFF00ccff.toInt(), kokoroDownloadAll))
+        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_kokoro), kokoroSubtitle, COLOR_KOKORO, kokoroDownloadAll, getString(R.string.download_all_btn)))
 
-        val kokoroFiltered = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).filter { v ->
-            (genderFilter == "All" || v.gender == genderFilter) &&
-            (languageFilter == "All" || v.language == languageFilter)
-        }
-        if (kokoroFiltered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No voices match filter."))
-        } else {
-            addVoiceRows(kokoroFiltered.map { v ->
-                val status: String
-                val statusColor: Int
-                when {
-                    kokoroReady -> {
-                        status = "ready"
-                        statusColor = 0xFF00cc66.toInt()
-                    }
-                    kokoroDownloading -> {
-                        val pct = VoiceDownloadManager.progressPercent
-                        status = if (pct < 0) "extracting..." else "$pct%"
-                        statusColor = 0xFF00ccff.toInt()
-                    }
-                    else -> {
-                        status = "tap to download"
-                        statusColor = 0xFF6e5f82.toInt()
-                    }
+        addFilteredVoiceCards(VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO)) { v ->
+            val status: String
+            val statusColor: Int
+            when {
+                kokoroReady -> { status = getString(R.string.ready_status); statusColor = COLOR_READY }
+                kokoroDownloading -> {
+                    val pct = VoiceDownloadManager.progressPercent
+                    status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
+                    statusColor = COLOR_KOKORO
                 }
-                buildVoiceCard(
-                    name = v.displayName,
-                    icon = if (v.gender == "Female") "♀" else "♂",
-                    iconColor = if (kokoroReady) {
-                        if (v.gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
-                    } else {
-                        if (v.gender == "Female") 0xFF4a2a3e.toInt() else 0xFF3a4058.toInt()
-                    },
-                    status = status,
-                    statusColor = statusColor,
-                    voiceId = v.id,
-                    active = currentProfile.voiceName == v.id,
-                    accent = 0xFF00ccff.toInt(),
-                    enabled = kokoroReady,
-                    onClick = when {
-                        kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
-                        !kokoroDownloading -> {{ startKokoroDownload() }}
-                        else -> null
-                    }
-                )
-            })
+                else -> { status = getString(R.string.tap_to_download); statusColor = COLOR_DIMMED }
+            }
+            buildVoiceCard(
+                name = v.displayName,
+                icon = genderIcon(v.gender),
+                iconColor = genderColor(v.gender, kokoroReady),
+                status = status, statusColor = statusColor,
+                voiceId = v.id, active = currentProfile.voiceName == v.id,
+                accent = COLOR_KOKORO, enabled = kokoroReady,
+                onClick = when {
+                    kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                    !kokoroDownloading -> {{ startKokoroDownload() }}
+                    else -> null
+                }
+            )
         }
 
         // ── Piper ────────────────────────────────────────────────────────
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
         val piperReadyCount = piperEntries.count { VoiceRegistry.isReady(ctx, it.id) }
-        val piperSubtitle = "Offline  ·  $piperReadyCount/${piperEntries.size} voices downloaded  ·  Per-voice download"
+        val piperSubtitle = getString(R.string.piper_subtitle, piperReadyCount, piperEntries.size)
         val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !PiperDownloadManager.isDownloading(it.id) }
         val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
             { confirmDownloadAllPiper() }
         } else null
-        voiceGrid.addView(buildSectionHeader("PIPER", piperSubtitle, 0xFF88ccff.toInt(), piperDownloadAll))
+        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_piper), piperSubtitle, COLOR_PIPER, piperDownloadAll, getString(R.string.download_all_btn)))
 
-        val piperFiltered = piperEntries.filter { v ->
-            (genderFilter == "All" || v.gender == genderFilter) &&
-            (languageFilter == "All" || v.language == languageFilter)
-        }
-        if (piperFiltered.isEmpty()) {
-            voiceGrid.addView(emptyLabel("No voices match filter."))
-        } else {
-            addVoiceRows(piperFiltered.map { v ->
-                val ready = VoiceRegistry.isReady(ctx, v.id)
-                val downloading = PiperDownloadManager.isDownloading(v.id)
-                val status: String
-                val statusColor: Int
-                when {
-                    ready -> {
-                        status = "ready"
-                        statusColor = 0xFF00cc66.toInt()
-                    }
-                    downloading -> {
-                        val pct = PiperDownloadManager.getProgress(v.id)
-                        status = if (pct < 0) "extracting..." else "$pct%"
-                        statusColor = 0xFF88ccff.toInt()
-                    }
-                    else -> {
-                        status = "tap to download"
-                        statusColor = 0xFF6e5f82.toInt()
-                    }
+        addFilteredVoiceCards(piperEntries) { v ->
+            val ready = VoiceRegistry.isReady(ctx, v.id)
+            val downloading = PiperDownloadManager.isDownloading(v.id)
+            val status: String
+            val statusColor: Int
+            when {
+                ready -> { status = getString(R.string.ready_status); statusColor = COLOR_READY }
+                downloading -> {
+                    val pct = PiperDownloadManager.getProgress(v.id)
+                    status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
+                    statusColor = COLOR_PIPER
                 }
-                buildVoiceCard(
-                    name = v.displayName,
-                    icon = if (v.gender == "Female") "♀" else if (v.gender == "Male") "♂" else "◆",
-                    iconColor = if (ready) {
-                        when (v.gender) {
-                            "Female" -> 0xFFd4a0b8.toInt()
-                            "Male" -> 0xFF88aad4.toInt()
-                            else -> 0xFFb0a4c0.toInt()
-                        }
-                    } else {
-                        when (v.gender) {
-                            "Female" -> 0xFF4a2a3e.toInt()
-                            "Male" -> 0xFF3a4058.toInt()
-                            else -> 0xFF7e6e98.toInt()
-                        }
-                    },
-                    status = status,
-                    statusColor = statusColor,
-                    voiceId = v.id,
-                    active = currentProfile.voiceName == v.id,
-                    accent = 0xFF88ccff.toInt(),
-                    enabled = ready,
-                    onClick = when {
-                        ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
-                        !downloading -> {{ startPiperDownload(v.id) }}
-                        else -> null
-                    }
-                )
-            })
+                else -> { status = getString(R.string.tap_to_download); statusColor = COLOR_DIMMED }
+            }
+            buildVoiceCard(
+                name = v.displayName,
+                icon = genderIcon(v.gender),
+                iconColor = genderColor(v.gender, ready),
+                status = status, statusColor = statusColor,
+                voiceId = v.id, active = currentProfile.voiceName == v.id,
+                accent = COLOR_PIPER, enabled = ready,
+                onClick = when {
+                    ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                    !downloading -> {{ startPiperDownload(v.id) }}
+                    else -> null
+                }
+            )
+        }
+    }
+
+    // ── Voice grid helpers (M27: reduce repeated patterns) ──────────────────
+
+    private fun genderIcon(gender: String) = when (gender) {
+        "Female" -> "♀"; "Male" -> "♂"; else -> "◆"
+    }
+
+    private fun genderColor(gender: String, active: Boolean) = if (active) {
+        when (gender) { "Female" -> COLOR_FEMALE_ACTIVE; "Male" -> COLOR_MALE_ACTIVE; else -> COLOR_TEXT_MUTED }
+    } else {
+        when (gender) { "Female" -> COLOR_FEMALE_DIM; "Male" -> COLOR_MALE_DIM; else -> COLOR_DIMMED }
+    }
+
+    private fun filterVoices(voices: List<VoiceRegistry.VoiceEntry>) = voices.filter { v ->
+        (genderFilter == "All" || v.gender == genderFilter) &&
+        (languageFilter == "All" || v.language == languageFilter)
+    }
+
+    private fun addFilteredVoiceCards(
+        voices: List<VoiceRegistry.VoiceEntry>,
+        cardBuilder: (VoiceRegistry.VoiceEntry) -> android.view.View
+    ) {
+        val filtered = filterVoices(voices)
+        if (filtered.isEmpty()) {
+            voiceGrid.addView(emptyLabel(getString(R.string.no_voices_match)))
+        } else {
+            addVoiceRows(filtered.map(cardBuilder))
         }
     }
 
@@ -365,7 +359,7 @@ class ProfilesFragment : Fragment() {
 
     private fun previewVoice(voiceId: String, name: String) {
         val ctx = requireContext()
-        val previewText = txtPreview.text.toString().ifBlank { "Hello! This is $name." }
+        val previewText = txtPreview.text.toString().ifBlank { getString(R.string.preview_default, name) }
         val tempProfile = currentProfile.copy(voiceName = voiceId)
         val service = NotificationReaderService.instance
         if (service != null) {
@@ -394,26 +388,26 @@ class ProfilesFragment : Fragment() {
         val currentKey = try { SecureKeyStore.getDeepInfraKey(ctx) } catch (_: Exception) { null }
 
         val input = EditText(ctx).apply {
-            hint = "DeepInfra API key"
+            hint = getString(R.string.deepinfra_key_hint)
             setText(currentKey ?: "")
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setPadding(48, 32, 48, 32)
-            setTextColor(0xFFddd6e8.toInt())
-            setHintTextColor(0xFF6e5f82.toInt())
-            setBackgroundColor(0xFF201830.toInt())
+            setTextColor(COLOR_TEXT_LIGHT)
+            setHintTextColor(COLOR_DIMMED)
+            setBackgroundColor(COLOR_INPUT_BG)
         }
 
         AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
-            .setTitle("DeepInfra API Key")
-            .setMessage("Enter your DeepInfra API key to enable cloud voices (Orpheus).\n\nPrivacy note: When using cloud voices, notification text is sent to DeepInfra servers for speech synthesis. This may include private message content. Local voices (Kokoro, Piper) keep all data on-device.")
+            .setTitle(getString(R.string.deepinfra_key_title))
+            .setMessage(getString(R.string.deepinfra_key_full_message, getString(R.string.privacy_disclosure)))
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val key = input.text.toString().trim()
                 SecureKeyStore.setDeepInfraKey(ctx, key)
                 CloudTtsEngine.updateApiKey(key)
                 renderVoiceGrid()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -438,10 +432,10 @@ class ProfilesFragment : Fragment() {
         val estimatedMb = piperEntries.filter { !VoiceRegistry.isReady(ctx, it.id) }
             .sumOf { PiperVoices.byId(it.id)?.sizeMb ?: 40 }
         AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
-            .setTitle("Download all Piper voices?")
-            .setMessage("This will download $remaining voices (~${estimatedMb}MB total). A Wi-Fi connection is recommended.")
-            .setPositiveButton("Download") { _, _ -> downloadAllPiper() }
-            .setNegativeButton("Cancel", null)
+            .setTitle(getString(R.string.download_all_piper_title))
+            .setMessage(getString(R.string.download_all_piper_msg, remaining, estimatedMb))
+            .setPositiveButton(getString(R.string.download_btn)) { _, _ -> downloadAllPiper() }
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -502,11 +496,11 @@ class ProfilesFragment : Fragment() {
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 8 * dp
                 if (isActive) {
-                    setColor(0xFF2a1828.toInt())
-                    setStroke((2 * dp).toInt(), 0xFFc48da0.toInt())
+                    setColor(COLOR_CARD_ACTIVE_BG)
+                    setStroke((2 * dp).toInt(), COLOR_ROSE)
                 } else {
                     setColor(0xFF1a1428.toInt())
-                    setStroke(1, 0xFF2a2040.toInt())
+                    setStroke(1, COLOR_CARD_BORDER)
                 }
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
@@ -539,7 +533,7 @@ class ProfilesFragment : Fragment() {
         card.addView(TextView(ctx).apply {
             text = p.name
             textSize = 11f
-            setTextColor(if (isActive) 0xFFc48da0.toInt() else 0xFFb0a4c0.toInt())
+            setTextColor(if (isActive) COLOR_ROSE else COLOR_TEXT_MUTED)
             gravity = android.view.Gravity.CENTER
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -550,15 +544,28 @@ class ProfilesFragment : Fragment() {
             card.addView(TextView(ctx).apply {
                 text = voiceEntry.displayName
                 textSize = 9f
-                setTextColor(if (isActive) 0xFF9b7eb8.toInt() else 0xFF7e6e98.toInt())
+                setTextColor(if (isActive) COLOR_LAVENDER else COLOR_DIMMED)
                 gravity = android.view.Gravity.CENTER
                 maxLines = 1
             })
         }
 
+        // Personality hint based on pitch/speed (M13)
+        val hint = personalityHint(p.pitch, p.speed)
+        if (hint.isNotEmpty()) {
+            card.addView(TextView(ctx).apply {
+                text = hint
+                textSize = 8f
+                setTextColor(if (isActive) 0xFF7e6e98.toInt() else 0xFF5c3d7a.toInt())
+                gravity = android.view.Gravity.CENTER
+                maxLines = 1
+                setPadding(0, (2 * dp).toInt(), 0, 0)
+            })
+        }
+
         if (isActive) {
             card.addView(android.view.View(ctx).apply {
-                setBackgroundColor(0xFFc48da0.toInt())
+                setBackgroundColor(COLOR_ROSE)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
                 ).also { it.setMargins((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), 0) }
@@ -568,17 +575,31 @@ class ProfilesFragment : Fragment() {
         return card
     }
 
+    private fun personalityHint(pitch: Float, speed: Float): String {
+        val pitchDesc = when {
+            pitch >= 1.5f -> "high"
+            pitch <= 0.7f -> "deep"
+            else -> null
+        }
+        val speedDesc = when {
+            speed >= 1.8f -> "fast"
+            speed <= 0.7f -> "slow"
+            else -> null
+        }
+        return listOfNotNull(pitchDesc, speedDesc).joinToString(" · ")
+    }
+
     private fun showRenameDialog(p: VoiceProfile) {
         val ctx = context ?: return
         val et = EditText(ctx).apply {
             setText(p.name)
-            hint = "Profile name"
+            hint = getString(R.string.profile_name_hint)
             selectAll()
         }
         AlertDialog.Builder(ctx)
-            .setTitle("Rename Profile")
+            .setTitle(getString(R.string.rename_profile))
             .setView(et)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val newName = et.text.toString().trim().ifBlank { p.name }
                 val updated = p.copy(name = newName)
                 val idx = profiles.indexOfFirst { it.id == p.id }
@@ -588,7 +609,7 @@ class ProfilesFragment : Fragment() {
                 setupProfileSpinner()
                 renderProfileGrid()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -625,7 +646,7 @@ class ProfilesFragment : Fragment() {
             if (isAdded) {
                 renderVoiceGridThrottled()
                 if (state == DownloadState.ERROR) {
-                    Toast.makeText(context, "Kokoro download failed: ${VoiceDownloadManager.errorMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, getString(R.string.kokoro_download_failed), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -638,7 +659,7 @@ class ProfilesFragment : Fragment() {
             if (isAdded) {
                 renderVoiceGridThrottled()
                 if (state == DownloadState.ERROR) {
-                    Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, getString(R.string.download_failed, vid), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -653,7 +674,7 @@ class ProfilesFragment : Fragment() {
 
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
-            val text = txtPreview.text.toString().ifBlank { "Hello! This is how I sound." }
+            val text = txtPreview.text.toString().ifBlank { getString(R.string.preview_text) }
             val ctx = requireContext()
 
             // Use the service if running, otherwise start AudioPipeline directly
@@ -676,12 +697,12 @@ class ProfilesFragment : Fragment() {
             if (idx >= 0) profiles[idx] = p else profiles.add(p)
             VoiceProfile.saveAll(profiles, prefs)
             renderProfileGrid()
-            Toast.makeText(context, "Saved: ${p.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(R.string.saved_profile, p.name), Toast.LENGTH_SHORT).show()
         }
         btnNew.setOnClickListener {
-            val et = EditText(requireContext()).apply { hint = "Profile name" }
-            AlertDialog.Builder(requireContext()).setTitle("New Profile").setView(et)
-                .setPositiveButton("Create") { _, _ ->
+            val et = EditText(requireContext()).apply { hint = getString(R.string.profile_name_hint) }
+            AlertDialog.Builder(requireContext()).setTitle(getString(R.string.new_profile)).setView(et)
+                .setPositiveButton(getString(R.string.create)) { _, _ ->
                     val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
                     val p = VoiceProfile(name = name)
                     profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
@@ -690,12 +711,12 @@ class ProfilesFragment : Fragment() {
                     loadProfileToUI(p)
                     setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
                     renderProfileGrid()
-                }.setNegativeButton("Cancel", null).show()
+                }.setNegativeButton(getString(R.string.cancel), null).show()
         }
         btnDelete.setOnClickListener {
-            if (profiles.size <= 1) { Toast.makeText(context, "Can't delete last profile", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            AlertDialog.Builder(requireContext()).setTitle("Delete ${currentProfile.name}?")
-                .setPositiveButton("Delete") { _, _ ->
+            if (profiles.size <= 1) { Toast.makeText(context, getString(R.string.cant_delete_last), Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            AlertDialog.Builder(requireContext()).setTitle("${getString(R.string.delete)} ${currentProfile.name}?")
+                .setPositiveButton(getString(R.string.delete)) { _, _ ->
                     profiles.removeAll { it.id == currentProfile.id }
                     VoiceProfile.saveAll(profiles, prefs)
                     activeProfileId = profiles[0].id
@@ -703,7 +724,7 @@ class ProfilesFragment : Fragment() {
                     loadProfileToUI(profiles[0])
                     setupProfileSpinner()
                     renderProfileGrid()
-                }.setNegativeButton("Cancel", null).show()
+                }.setNegativeButton(getString(R.string.cancel), null).show()
         }
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
             NotificationReaderService.instance?.stopSpeaking()
@@ -714,12 +735,12 @@ class ProfilesFragment : Fragment() {
     private fun loadProfileToUI(p: VoiceProfile) {
         currentProfile = p
         seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).toInt() - 50).coerceIn(0, 150)
-        tvPitch.text = "Pitch: %.2f".format(p.pitch)
+        tvPitch.text = getString(R.string.pitch_label, p.pitch)
         seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)
-        tvSpeed.text = "Speed: %.2f".format(p.speed)
+        tvSpeed.text = getString(R.string.speed_label, p.speed)
 
-        attachSeek(seekPitch) { tvPitch.text = "Pitch: %.2f".format((it + 50) / 100f) }
-        attachSeek(seekSpeed) { tvSpeed.text = "Speed: %.2f".format((it + 50) / 100f) }
+        attachSeek(seekPitch) { tvPitch.text = getString(R.string.pitch_label, (it + 50) / 100f) }
+        attachSeek(seekSpeed) { tvSpeed.text = getString(R.string.speed_label, (it + 50) / 100f) }
 
         renderVoiceGrid()
     }

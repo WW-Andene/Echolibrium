@@ -85,18 +85,18 @@ class HomeFragment : Fragment() {
 
         val dndStart = prefs.getInt("dnd_start", 22)
         seekDndStart.max = 23; seekDndStart.progress = dndStart
-        txtDndStart.text = "Silence from: %02d:00".format(dndStart)
+        txtDndStart.text = getString(R.string.silence_from, dndStart)
         seekDndStart.setOnSeekBarChangeListener(onSeekBarChange { h ->
             prefs.edit().putInt("dnd_start", h).apply()
-            txtDndStart.text = "Silence from: %02d:00".format(h)
+            txtDndStart.text = getString(R.string.silence_from, h)
         })
 
         val dndEnd = prefs.getInt("dnd_end", 8)
         seekDndEnd.max = 23; seekDndEnd.progress = dndEnd
-        txtDndEnd.text = "Until: %02d:00".format(dndEnd)
+        txtDndEnd.text = getString(R.string.until_time, dndEnd)
         seekDndEnd.setOnSeekBarChangeListener(onSeekBarChange { h ->
             prefs.edit().putInt("dnd_end", h).apply()
-            txtDndEnd.text = "Until: %02d:00".format(h)
+            txtDndEnd.text = getString(R.string.until_time, h)
         })
 
         // Listening toggle — starts/stops VoiceCommandListener with mic permission
@@ -146,7 +146,7 @@ class HomeFragment : Fragment() {
             } else {
                 prefs.edit().putBoolean("listening_enabled", false).apply()
                 view?.findViewById<SwitchCompat>(R.id.switch_listening)?.isChecked = false
-                Toast.makeText(ctx, "Microphone permission required for listening", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, getString(R.string.mic_permission_required), Toast.LENGTH_SHORT).show()
             }
             view?.let { updateListeningStatus(it.findViewById(R.id.listening_status)) }
         }
@@ -181,11 +181,13 @@ class HomeFragment : Fragment() {
         if (!notif) steps.add("Grant notification access")
 
         if (steps.isEmpty()) {
-            btn.text = "✓ All permissions granted"
+            btn.text = "✓ ${getString(R.string.all_permissions_granted)}"
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1e1530.toInt())
             btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
             txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
             txt.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
+            // Post-setup guidance (M22)
+            showGuidance()
         } else {
             btn.text = "Setup: ${steps.first()}"
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFb898d4.toInt())
@@ -213,7 +215,7 @@ class HomeFragment : Fragment() {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.parse("package:${ctx.packageName}")
                 })
-                Toast.makeText(ctx, "Tap \"Allow restricted settings\" at the top", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, getString(R.string.allow_restricted_settings), Toast.LENGTH_LONG).show()
             }
             // Step 2: Battery optimization — system dialog, one tap
             !isBatteryExempt() -> {
@@ -224,11 +226,31 @@ class HomeFragment : Fragment() {
             // Step 3: Notification listener access
             !isNotifGranted() -> {
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                Toast.makeText(ctx, "Enable Kyōkan", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, getString(R.string.enable_kyokan), Toast.LENGTH_LONG).show()
             }
             else -> {
-                Toast.makeText(ctx, "All set!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, getString(R.string.all_set), Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    private fun showGuidance() {
+        val guidance = view?.findViewById<TextView>(R.id.txt_guidance) ?: return
+        val hasVoice = VoiceDownloadManager.isModelReady(requireContext()) ||
+            VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER).any { VoiceRegistry.isReady(requireContext(), it.id) } ||
+            CloudTtsEngine.isEnabled()
+        val hasProfile = VoiceProfile.loadAll(prefs).any { it.voiceName.isNotBlank() }
+
+        val tips = mutableListOf<String>()
+        if (!hasVoice) tips.add("→ Head to Voices to download a voice model")
+        if (!hasProfile) tips.add("→ Set up a voice profile in the Voices tab")
+        if (AppRule.loadAll(prefs).isEmpty()) tips.add("→ Configure per-app rules in the Apps tab")
+
+        if (tips.isNotEmpty()) {
+            guidance.text = "What's next?\n${tips.joinToString("\n")}"
+            guidance.visibility = View.VISIBLE
+        } else {
+            guidance.visibility = View.GONE
         }
     }
 
@@ -241,12 +263,12 @@ class HomeFragment : Fragment() {
         val wake = VoiceCommandListener.wakeWord
 
         tv.text = when {
-            !enabled -> "Listening: off"
-            !hasPerm -> "Listening: microphone permission needed"
+            !enabled -> getString(R.string.listening_off)
+            !hasPerm -> getString(R.string.listening_mic_needed)
             listening && wake.isNotBlank() ->
                 "Listening: say \"$wake\" + command: repeat / how long ago? / stop / what time?"
             listening -> "Listening for: repeat / how long ago? / stop / what time?"
-            else -> "Listening: starting…"
+            else -> getString(R.string.listening_starting)
         }
         tv.setTextColor(ctx.getColor(when {
             listening -> android.R.color.holo_green_dark

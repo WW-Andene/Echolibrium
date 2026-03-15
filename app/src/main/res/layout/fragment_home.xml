@@ -111,6 +111,12 @@
             android:layout_marginBottom="20dp"
             android:text="@string/listening_off"/>
 
+        <!-- Post-setup guidance (M22) -->
+        <TextView android:id="@+id/txt_guidance" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:padding="16dp" android:background="#181222"
+            android:fontFamily="sans-serif" android:textSize="12sp" android:textColor="#9b7eb8"
+            android:visibility="gone"
+            android:lineSpacingExtra="4dp"/>
 
     </LinearLayout>
 </ScrollView>

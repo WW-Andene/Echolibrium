@@ -12,17 +12,20 @@ data class AppRule(
     val profileId: String = ""
 ) {
     fun toJson() = JSONObject().apply {
+        put("_v", SCHEMA_VERSION)
         put("packageName", packageName); put("appLabel", appLabel)
         put("enabled", enabled); put("readMode", readMode); put("profileId", profileId)
     }
     companion object {
+        private const val SCHEMA_VERSION = 1
+
         fun fromJson(j: JSONObject) = AppRule(
             j.optString("packageName"), j.optString("appLabel"),
             j.optBoolean("enabled", true), j.optString("readMode", "full"), j.optString("profileId", "")
         )
         fun saveAll(rules: List<AppRule>, prefs: android.content.SharedPreferences) {
             val arr = JSONArray(); rules.forEach { arr.put(it.toJson()) }
-            prefs.edit().putString("app_rules", arr.toString()).apply()
+            prefs.edit().putString("app_rules", arr.toString()).commit()
         }
         fun loadAll(prefs: android.content.SharedPreferences): MutableList<AppRule> {
             val json = prefs.getString("app_rules", null) ?: return mutableListOf()

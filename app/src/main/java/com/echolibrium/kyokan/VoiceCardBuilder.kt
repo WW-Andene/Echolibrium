@@ -20,6 +20,7 @@ object VoiceCardBuilder {
         val dp = ctx.resources.displayMetrics.density
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
+            contentDescription = "$title engine section: $subtitle"
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -48,6 +49,7 @@ object VoiceCardBuilder {
                 setBackgroundColor(0xFF181222.toInt())
                 setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
                 minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+                contentDescription = "Download all $title voices"
                 setOnClickListener { onDownloadAll() }
             })
         }
@@ -156,7 +158,7 @@ object VoiceCardBuilder {
             // Inline preview button
             if (enabled && onPreview != null) {
                 addView(TextView(ctx).apply {
-                    text = "▶ preview"
+                    text = ctx.getString(R.string.preview_btn)
                     textSize = 9f
                     gravity = Gravity.CENTER
                     setTextColor(accent.and(0x00FFFFFF.toInt()).or(0x99000000.toInt()))

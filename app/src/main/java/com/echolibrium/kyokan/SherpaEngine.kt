@@ -24,7 +24,7 @@ import java.io.File
 object SherpaEngine {
 
     private const val TAG = "SherpaEngine"
-    private const val MAX_PIPER_CACHE = 2 // keep at most 2 Piper models in memory
+    private const val MAX_PIPER_CACHE = 1 // keep at most 1 Piper model (~80MB) to reduce memory pressure
 
     // Separate locks for Kokoro and Piper to avoid cross-engine blocking (E2)
     private val kokoroLock = Object()

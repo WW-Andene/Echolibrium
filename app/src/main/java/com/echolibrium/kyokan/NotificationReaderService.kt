@@ -13,12 +13,22 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
+/**
+ * Thread safety (M2): readKeys, swipedKeys, appLastRead are accessed from both the
+ * binder thread (onNotificationPosted/Removed) and the single-threaded processingExecutor.
+ * All accesses are protected by synchronized(readKeys/swipedKeys/appLastRead) blocks.
+ * The cachedRules/cachedProfiles volatiles are read from the executor and invalidated
+ * from the main thread via SharedPreferences listener — safe due to @Volatile.
+ */
 class NotificationReaderService : NotificationListenerService() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
+    // Guarded by synchronized(readKeys) — accessed from binder + executor threads
     private val readKeys = LinkedHashMap<String, Long>(128, 0.75f, true)
+    // Guarded by synchronized(swipedKeys)
     private val swipedKeys = mutableSetOf<String>()
+    // Guarded by synchronized(appLastRead)
     private val appLastRead = mutableMapOf<String, Long>()
 
     // Cached data — invalidated via SharedPreferences listener (QW6)

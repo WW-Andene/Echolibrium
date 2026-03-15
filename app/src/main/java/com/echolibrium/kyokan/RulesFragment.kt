@@ -179,6 +179,7 @@ class RulesFragment : Fragment() {
                     setText(value); this.hint = hint; textSize = 13f
                     setTextColor(0xFFd4cce0.toInt()); setHintTextColor(0xFF6e5f82.toInt())
                     setBackgroundColor(0xFF2a2040.toInt()); setPadding(12, 8, 12, 8)
+                    filters = arrayOf(android.text.InputFilter.LengthFilter(200))
                     addTextChangedListener(object : TextWatcher {
                         override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}

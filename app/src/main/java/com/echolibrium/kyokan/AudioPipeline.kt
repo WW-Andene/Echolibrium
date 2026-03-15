@@ -54,8 +54,11 @@ object AudioPipeline {
         synchronized(listenersLock) { synthesisErrorListeners.remove(listener) }
     }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     private fun notifySynthesisError(voiceId: String, reason: String) {
-        synchronized(listenersLock) { synthesisErrorListeners.toList() }.forEach { it(voiceId, reason) }
+        val snapshot = synchronized(listenersLock) { synthesisErrorListeners.toList() }
+        mainHandler.post { snapshot.forEach { it(voiceId, reason) } }
     }
 
     // Crossfade state

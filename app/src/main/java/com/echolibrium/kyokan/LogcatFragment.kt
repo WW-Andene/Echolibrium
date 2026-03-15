@@ -54,8 +54,11 @@ class LogcatFragment : Fragment() {
     private var minLevel = 'V'
     private var filterText = ""
     private var lineCount = 0
+    private var lastRefresh = 0L
+    private var pendingRefresh = false
 
     companion object {
+        private const val REFRESH_THROTTLE_MS = 200
         private const val MAX_LINES = 5000
         private const val TRIM_TO = 4000
         private val APP_PACKAGE = "com.echolibrium.kyokan"
@@ -187,7 +190,7 @@ class LogcatFragment : Fragment() {
                             }
                         }
                         batch.clear()
-                        handler.post { refreshDisplay() }
+                        handler.post { refreshDisplayThrottled() }
                     }
                 }
             } catch (e: Exception) {
@@ -233,17 +236,32 @@ class LogcatFragment : Fragment() {
         return LogLine(line, level, tag, message, pid)
     }
 
+    private fun refreshDisplayThrottled() {
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastRefresh
+        if (elapsed >= REFRESH_THROTTLE_MS) {
+            refreshDisplay()
+        } else if (!pendingRefresh) {
+            pendingRefresh = true
+            handler.postDelayed({
+                pendingRefresh = false
+                if (isAdded) refreshDisplay()
+            }, REFRESH_THROTTLE_MS - elapsed)
+        }
+    }
+
     private fun refreshDisplay() {
+        lastRefresh = System.currentTimeMillis()
         val filtered: List<LogLine>
         synchronized(logBuffer) {
             filtered = logBuffer.filter { passesFilter(it) }
         }
 
         lineCount = filtered.size
-        tvLineCount.text = "$lineCount lines"
+        tvLineCount.text = getString(R.string.lines_count, lineCount)
 
         val ssb = SpannableStringBuilder()
-        val displayLines = if (filtered.size > 1000) filtered.takeLast(1000) else filtered
+        val displayLines = if (filtered.size > 500) filtered.takeLast(500) else filtered
 
         for (logLine in displayLines) {
             val start = ssb.length

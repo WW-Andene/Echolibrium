@@ -21,6 +21,12 @@ import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 
+/**
+ * Thread safety (M9): `rules` MutableList is populated from a background thread via
+ * `loadInstalledApps()`, but all mutations post results to `runOnUiThread` before
+ * updating `rules`, ensuring single-thread access. The `profiles` list is read-only
+ * after loading and refreshed via SharedPreferences listener on the main thread.
+ */
 class AppsFragment : Fragment() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private var rules = mutableListOf<AppRule>()

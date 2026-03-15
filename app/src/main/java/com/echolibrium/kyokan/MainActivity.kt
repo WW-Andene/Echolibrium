@@ -9,6 +9,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 
 class MainActivity : AppCompatActivity() {
@@ -27,6 +29,14 @@ class MainActivity : AppCompatActivity() {
             findViewById<View>(id).setOnClickListener { selectTab(id) }
         }
         if (savedInstanceState == null) selectTab(R.id.nav_home)
+
+        // Edge-to-edge: apply system bar insets to bottom nav (M25)
+        val bottomNav = findViewById<LinearLayout>(R.id.bottom_nav)
+        ViewCompat.setOnApplyWindowInsetsListener(bottomNav) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, bars.bottom)
+            insets
+        }
     }
 
     private fun selectTab(id: Int) {

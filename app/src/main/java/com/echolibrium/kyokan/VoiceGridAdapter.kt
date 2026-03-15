@@ -100,15 +100,10 @@ sealed class VoiceGridItem {
         val accent: Int,
         val actionLabel: String = "",
         @Transient val onAction: (() -> Unit)? = null
-    ) : VoiceGridItem() {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (other !is Header) return false
-            return title == other.title && subtitle == other.subtitle
-                && accent == other.accent && actionLabel == other.actionLabel
-        }
-        override fun hashCode(): Int = title.hashCode()
-    }
+    ) : VoiceGridItem()
+    // Note: data class equals() includes all fields including onAction lambda.
+    // This means DiffUtil rebinds headers when lambdas change (every render).
+    // Acceptable cost: only 3 headers in the grid. Stale lambdas are worse.
 
     data class Card(
         val voiceId: String,
@@ -121,17 +116,13 @@ sealed class VoiceGridItem {
         val accent: Int,
         val enabled: Boolean,
         @Transient val onClick: (() -> Unit)? = null
-    ) : VoiceGridItem() {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (other !is Card) return false
-            return voiceId == other.voiceId && name == other.name && icon == other.icon
-                && iconColor == other.iconColor && status == other.status
-                && statusColor == other.statusColor && active == other.active
-                && accent == other.accent && enabled == other.enabled
-        }
-        override fun hashCode(): Int = voiceId.hashCode()
-    }
+    ) : VoiceGridItem()
+    // Note: data class equals() includes onClick lambda by reference.
+    // This means DiffUtil rebinds cards when lambdas change (every render).
+    // This matches the original working behavior. The D-05 optimization to
+    // exclude lambdas from equals caused stale onClick handlers — tapping
+    // a card would run a closure capturing old state. Rebinding ~52 cards
+    // is cheap; stale state is not.
 
     data class Empty(
         val engine: String,

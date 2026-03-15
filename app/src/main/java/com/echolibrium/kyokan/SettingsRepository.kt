@@ -64,8 +64,10 @@ class SettingsRepository(
     }
 
     fun saveProfiles(profiles: List<VoiceProfile>) {
-        profileDao.deleteAll()
-        profileDao.insertAll(profiles)
+        db.runInTransaction {
+            profileDao.deleteAll()
+            profileDao.insertAll(profiles)
+        }
         notifyChanged("voice_profiles")
     }
 
@@ -84,8 +86,10 @@ class SettingsRepository(
     }
 
     fun saveAppRules(rules: List<AppRule>) {
-        appRuleDao.deleteAll()
-        appRuleDao.insertAll(rules)
+        db.runInTransaction {
+            appRuleDao.deleteAll()
+            appRuleDao.insertAll(rules)
+        }
         notifyChanged("app_rules")
     }
 
@@ -94,8 +98,10 @@ class SettingsRepository(
     fun getWordRules(): List<WordRule> = wordRuleDao.getAll()
 
     fun saveWordRules(rules: List<WordRule>) {
-        wordRuleDao.deleteAll()
-        wordRuleDao.insertAll(rules)
+        db.runInTransaction {
+            wordRuleDao.deleteAll()
+            wordRuleDao.insertAll(rules)
+        }
         notifyChanged("wording_rules")
     }
 
@@ -164,25 +170,39 @@ class SettingsRepository(
             val version = json.optInt("_version", 0)
             if (version < 1) return false
 
-            // Import structured data
-            json.optString("voice_profiles", "").takeIf { it.isNotBlank() }?.let { raw ->
-                val profiles = VoiceProfile.parseJsonArray(raw)
-                if (profiles.isNotEmpty()) saveProfiles(profiles)
-            }
-            json.optString("app_rules", "").takeIf { it.isNotBlank() }?.let { raw ->
-                val rules = AppRule.parseJsonArray(raw)
-                if (rules.isNotEmpty()) saveAppRules(rules)
-            }
-            json.optString("wording_rules", "").takeIf { it.isNotBlank() }?.let { raw ->
-                val arr = JSONArray(raw)
-                val rules = (0 until arr.length()).mapNotNull { i ->
-                    try {
-                        val obj = arr.getJSONObject(i)
-                        WordRule(find = obj.optString("find", ""), replace = obj.optString("replace", ""))
-                    } catch (_: Exception) { null }
+            // Import structured data — all-or-nothing within a transaction
+            db.runInTransaction {
+                json.optString("voice_profiles", "").takeIf { it.isNotBlank() }?.let { raw ->
+                    val profiles = VoiceProfile.parseJsonArray(raw)
+                    if (profiles.isNotEmpty()) {
+                        profileDao.deleteAll()
+                        profileDao.insertAll(profiles)
+                    }
                 }
-                if (rules.isNotEmpty()) saveWordRules(rules)
+                json.optString("app_rules", "").takeIf { it.isNotBlank() }?.let { raw ->
+                    val rules = AppRule.parseJsonArray(raw)
+                    if (rules.isNotEmpty()) {
+                        appRuleDao.deleteAll()
+                        appRuleDao.insertAll(rules)
+                    }
+                }
+                json.optString("wording_rules", "").takeIf { it.isNotBlank() }?.let { raw ->
+                    val arr = JSONArray(raw)
+                    val rules = (0 until arr.length()).mapNotNull { i ->
+                        try {
+                            val obj = arr.getJSONObject(i)
+                            WordRule(find = obj.optString("find", ""), replace = obj.optString("replace", ""))
+                        } catch (_: Exception) { null }
+                    }
+                    if (rules.isNotEmpty()) {
+                        wordRuleDao.deleteAll()
+                        wordRuleDao.insertAll(rules)
+                    }
+                }
             }
+            notifyChanged("voice_profiles")
+            notifyChanged("app_rules")
+            notifyChanged("wording_rules")
 
             // Import simple settings
             val editor = prefs.edit()
@@ -211,57 +231,59 @@ class SettingsRepository(
 
         var migrated = false
 
-        // Migrate voice profiles
-        prefs.getString("voice_profiles", null)?.let { json ->
-            try {
-                val profiles = VoiceProfile.parseJsonArray(json)
-                if (profiles.isNotEmpty() && profileDao.count() == 0) {
-                    profileDao.insertAll(profiles)
-                    Log.i(TAG, "Migrated ${profiles.size} voice profiles to Room")
-                    migrated = true
+        db.runInTransaction {
+            // Migrate voice profiles
+            prefs.getString("voice_profiles", null)?.let { json ->
+                try {
+                    val profiles = VoiceProfile.parseJsonArray(json)
+                    if (profiles.isNotEmpty() && profileDao.count() == 0) {
+                        profileDao.insertAll(profiles)
+                        Log.i(TAG, "Migrated ${profiles.size} voice profiles to Room")
+                        migrated = true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to migrate voice profiles", e)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to migrate voice profiles", e)
+                Unit
             }
-            Unit
-        }
 
-        // Migrate app rules
-        prefs.getString("app_rules", null)?.let { json ->
-            try {
-                val rules = AppRule.parseJsonArray(json)
-                if (rules.isNotEmpty() && appRuleDao.count() == 0) {
-                    appRuleDao.insertAll(rules)
-                    Log.i(TAG, "Migrated ${rules.size} app rules to Room")
-                    migrated = true
+            // Migrate app rules
+            prefs.getString("app_rules", null)?.let { json ->
+                try {
+                    val rules = AppRule.parseJsonArray(json)
+                    if (rules.isNotEmpty() && appRuleDao.count() == 0) {
+                        appRuleDao.insertAll(rules)
+                        Log.i(TAG, "Migrated ${rules.size} app rules to Room")
+                        migrated = true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to migrate app rules", e)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to migrate app rules", e)
+                Unit
             }
-            Unit
-        }
 
-        // Migrate word rules
-        prefs.getString("wording_rules", null)?.let { json ->
-            try {
-                val arr = JSONArray(json)
-                val rules = (0 until arr.length()).mapNotNull { i ->
-                    try {
-                        val obj = arr.getJSONObject(i)
-                        val find = obj.optString("find", "")
-                        val replace = obj.optString("replace", "")
-                        if (find.isNotBlank()) WordRule(find = find, replace = replace) else null
-                    } catch (_: Exception) { null }
+            // Migrate word rules
+            prefs.getString("wording_rules", null)?.let { json ->
+                try {
+                    val arr = JSONArray(json)
+                    val rules = (0 until arr.length()).mapNotNull { i ->
+                        try {
+                            val obj = arr.getJSONObject(i)
+                            val find = obj.optString("find", "")
+                            val replace = obj.optString("replace", "")
+                            if (find.isNotBlank()) WordRule(find = find, replace = replace) else null
+                        } catch (_: Exception) { null }
+                    }
+                    if (rules.isNotEmpty() && wordRuleDao.count() == 0) {
+                        wordRuleDao.insertAll(rules)
+                        Log.i(TAG, "Migrated ${rules.size} word rules to Room")
+                        migrated = true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to migrate word rules", e)
                 }
-                if (rules.isNotEmpty() && wordRuleDao.count() == 0) {
-                    wordRuleDao.insertAll(rules)
-                    Log.i(TAG, "Migrated ${rules.size} word rules to Room")
-                    migrated = true
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to migrate word rules", e)
+                Unit
             }
-            Unit
         }
 
         // Mark migration done — old SP keys kept for backup safety

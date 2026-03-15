@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
@@ -78,6 +79,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTab(id: Int) {
+        // F-01: Check for unsaved changes before switching away from ProfilesFragment
+        val currentFragment = supportFragmentManager.findFragmentById(R.id.fragment_container)
+        if (currentFragment is UnsavedChangesCheck && currentFragment.hasUnsavedChanges() && id != selectedTabId) {
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.unsaved_changes_title))
+                .setMessage(getString(R.string.unsaved_changes_message))
+                .setPositiveButton(getString(R.string.discard)) { _, _ -> doSelectTab(id) }
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show()
+            return
+        }
+        doSelectTab(id)
+    }
+
+    private fun doSelectTab(id: Int) {
         val previousTabId = selectedTabId
         selectedTabId = id
         val activeColor = AppColors.primary(this)

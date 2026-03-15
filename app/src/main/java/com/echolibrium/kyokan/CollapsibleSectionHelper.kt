@@ -18,7 +18,7 @@ object CollapsibleSectionHelper {
         label.setOnClickListener {
             val expanded = section.visibility == View.VISIBLE
             val parent = section.parent as? ViewGroup
-            if (parent != null) {
+            if (parent != null && AnimationUtil.areAnimationsEnabled(root.context)) {
                 TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
             }
             section.visibility = if (expanded) View.GONE else View.VISIBLE

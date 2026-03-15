@@ -31,9 +31,18 @@ data class AppRule(
             val json = prefs.getString("app_rules", null) ?: return mutableListOf()
             return try {
                 val arr = JSONArray(json)
-                (0 until arr.length()).map { fromJson(arr.getJSONObject(it)) }.toMutableList()
+                // B-06: Per-entry try/catch — salvage valid rules when one is corrupted
+                (0 until arr.length()).mapNotNull { i ->
+                    try {
+                        fromJson(arr.getJSONObject(i))
+                    } catch (e: Exception) {
+                        Log.w("AppRule", "Skipping corrupted rule at index $i", e)
+                        null
+                    }
+                }.toMutableList()
             } catch (e: Exception) {
-                Log.e("AppRule", "Failed to parse app_rules JSON, returning empty list. Data may be corrupted.", e)
+                Log.e("AppRule", "Failed to parse app_rules JSON array — backing up corrupted data", e)
+                prefs.edit().putString("app_rules_backup_corrupted", json).apply()
                 mutableListOf()
             }
         }

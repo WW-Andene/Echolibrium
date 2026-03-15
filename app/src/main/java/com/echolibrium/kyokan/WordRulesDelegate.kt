@@ -1,6 +1,8 @@
 package com.echolibrium.kyokan
 
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -21,17 +23,17 @@ class WordRulesDelegate(
     private val container: LinearLayout
 ) {
     private val rules = mutableListOf<Pair<String, String>>()
+    /** B-09: Debounce handler — saves at most once per 500ms instead of every keystroke. */
+    private val saveHandler = Handler(Looper.getMainLooper())
+    private var saveRunnable: Runnable? = null
 
     fun setup(rootView: View) {
         loadRules()
         if (rules.isEmpty()) {
-            rules.addAll(listOf(
-                "WhatsApp" to "Message", "Gmail" to "Email",
-                "lol" to "laugh out loud", "tbh" to "to be honest",
-                "idk" to "I don't know", "omg" to "oh my god",
-                "brb" to "be right back", "ngl" to "not gonna lie",
-                "https://" to "link", "http://" to "link"
-            ))
+            // L-03: Load default rules from string-array resources (localizable)
+            val finds = context.resources.getStringArray(R.array.default_word_rules_find)
+            val replaces = context.resources.getStringArray(R.array.default_word_rules_replace)
+            finds.zip(replaces).forEach { (f, r) -> rules.add(f to r) }
             saveRules()
         }
         renderRules()
@@ -55,6 +57,13 @@ class WordRulesDelegate(
         prefs.edit().putString("wording_rules", arr.toString()).apply()
     }
 
+    /** B-09: Debounced save — cancels pending save and posts new one after 500ms. */
+    private fun debounceSave() {
+        saveRunnable?.let { saveHandler.removeCallbacks(it) }
+        saveRunnable = Runnable { saveRules() }
+        saveHandler.postDelayed(saveRunnable!!, 500)
+    }
+
     private fun renderRules() {
         container.removeAllViews()
         rules.forEachIndexed { idx, (find, replace) ->
@@ -72,7 +81,7 @@ class WordRulesDelegate(
                     setBackgroundColor(AppColors.cardBorder(context)); setPadding(12, 8, 12, 8)
                     filters = arrayOf(android.text.InputFilter.LengthFilter(200))
                     addTextChangedListener(object : TextWatcher {
-                        override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); saveRules() }
+                        override fun afterTextChanged(s: Editable?) { onChanged(s.toString()); debounceSave() }
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     })

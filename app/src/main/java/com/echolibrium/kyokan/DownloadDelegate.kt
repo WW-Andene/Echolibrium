@@ -1,11 +1,11 @@
 package com.echolibrium.kyokan
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import java.lang.ref.WeakReference
 
 /**
  * Manages TTS voice downloads — Kokoro model + Piper individual voices.
@@ -13,13 +13,17 @@ import androidx.fragment.app.Fragment
  * Extracted from ProfilesFragment (Phase 3.3) to reduce God Fragment size.
  * Handles: download triggers, progress listeners, periodic polling refresh,
  * confirmation dialogs, and error toasts.
+ *
+ * L-06: Uses WeakReference<Fragment> to prevent fragment leak if callbacks outlive lifecycle.
  */
 class DownloadDelegate(
-    private val fragment: Fragment,
+    fragment: Fragment,
     private val container: AppContainer,
     private val viewModel: ProfilesViewModel,
     private val onVoiceGridChanged: () -> Unit
 ) {
+    private val fragmentRef = WeakReference(fragment)
+    private val fragment: Fragment? get() = fragmentRef.get()
     private val refreshHandler = Handler(Looper.getMainLooper())
     private var refreshRunnable: Runnable? = null
 
@@ -38,7 +42,8 @@ class DownloadDelegate(
     }
 
     fun confirmDownloadAllPiper() {
-        val ctx = fragment.requireContext()
+        val f = fragment ?: return
+        val ctx = f.requireContext()
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
         val remaining = piperEntries.count {
             !VoiceRegistry.isReady(ctx, it.id) && !container.piperDownloadManager.isDownloading(it.id)
@@ -55,7 +60,8 @@ class DownloadDelegate(
     }
 
     private fun downloadAllPiper() {
-        val ctx = fragment.requireContext()
+        val f = fragment ?: return
+        val ctx = f.requireContext()
         VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER).forEach { v ->
             if (!VoiceRegistry.isReady(ctx, v.id) && !container.piperDownloadManager.isDownloading(v.id)) {
                 container.piperDownloadManager.downloadVoice(ctx, v.id)
@@ -68,44 +74,40 @@ class DownloadDelegate(
     // ── Download listeners (register once, clean up in release) ─────────────
 
     val kokoroStateListener: (DownloadState) -> Unit = { state ->
-        fragment.activity?.runOnUiThread {
-            if (fragment.isAdded) {
+        val f = fragment ?: return@kokoroStateListener
+        f.activity?.runOnUiThread {
+            if (f.isAdded) {
                 onVoiceGridChanged()
                 if (state == DownloadState.ERROR) {
-                    Toast.makeText(
-                        fragment.context,
-                        fragment.getString(R.string.kokoro_download_failed),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(f.context, f.getString(R.string.kokoro_download_failed), Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
     val kokoroProgressListener: (Int) -> Unit = { _ ->
-        fragment.activity?.runOnUiThread {
-            if (fragment.isAdded) onVoiceGridChanged()
+        val f = fragment ?: return@kokoroProgressListener
+        f.activity?.runOnUiThread {
+            if (f.isAdded) onVoiceGridChanged()
         }
     }
 
     val piperStateListener: (String, DownloadState) -> Unit = { vid, state ->
-        fragment.activity?.runOnUiThread {
-            if (fragment.isAdded) {
+        val f = fragment ?: return@piperStateListener
+        f.activity?.runOnUiThread {
+            if (f.isAdded) {
                 onVoiceGridChanged()
                 if (state == DownloadState.ERROR) {
-                    Toast.makeText(
-                        fragment.context,
-                        fragment.getString(R.string.download_failed, vid),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(f.context, f.getString(R.string.download_failed, vid), Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
     val piperProgressListener: (String, Int) -> Unit = { _, _ ->
-        fragment.activity?.runOnUiThread {
-            if (fragment.isAdded) onVoiceGridChanged()
+        val f = fragment ?: return@piperProgressListener
+        f.activity?.runOnUiThread {
+            if (f.isAdded) onVoiceGridChanged()
         }
     }
 
@@ -115,7 +117,8 @@ class DownloadDelegate(
         stopRefresh()
         refreshRunnable = object : Runnable {
             override fun run() {
-                if (!fragment.isAdded) return
+                val f = fragment ?: return
+                if (!f.isAdded) return
                 val kokoroDownloading = container.voiceDownloadManager.state == DownloadState.DOWNLOADING
                 val piperDownloading = container.piperDownloadManager.isAnyDownloading()
                 onVoiceGridChanged()

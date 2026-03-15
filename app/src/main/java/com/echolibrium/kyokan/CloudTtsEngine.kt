@@ -1,5 +1,6 @@
 package com.echolibrium.kyokan
 
+import android.content.SharedPreferences
 import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -26,6 +27,12 @@ class CloudTtsEngine {
         private const val DEFAULT_VOICE = "tara"
         private const val MAX_RETRIES = 1
         private const val RETRY_DELAY_MS = 1500L
+        /** C-01: Maximum input characters sent to DeepInfra — prevents uncapped API costs. */
+        private const val MAX_INPUT_LENGTH = 2000
+        /** K-01: Default daily character limit (~$0.35/day at DeepInfra pricing). */
+        private const val DEFAULT_DAILY_CHAR_LIMIT = 50_000
+        private const val PREF_DAILY_CHARS = "cloud_tts_daily_chars"
+        private const val PREF_DAILY_CHARS_DATE = "cloud_tts_daily_date"
     }
 
     val VOICES = setOf("tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe")
@@ -46,14 +53,39 @@ class CloudTtsEngine {
     @Volatile
     private var enabled = false
 
+    /** K-01: SharedPreferences for daily usage tracking. Set via configure(). */
+    @Volatile
+    private var prefs: SharedPreferences? = null
+
+    /** K-01: Get today's character usage count, resetting if day changed. */
+    fun dailyCharsUsed(): Int {
+        val p = prefs ?: return 0
+        val today = java.time.LocalDate.now().toString()
+        val storedDate = p.getString(PREF_DAILY_CHARS_DATE, "") ?: ""
+        if (storedDate != today) {
+            p.edit().putInt(PREF_DAILY_CHARS, 0).putString(PREF_DAILY_CHARS_DATE, today).apply()
+            return 0
+        }
+        return p.getInt(PREF_DAILY_CHARS, 0)
+    }
+
+    private fun addDailyChars(count: Int) {
+        val p = prefs ?: return
+        val today = java.time.LocalDate.now().toString()
+        val storedDate = p.getString(PREF_DAILY_CHARS_DATE, "") ?: ""
+        val current = if (storedDate == today) p.getInt(PREF_DAILY_CHARS, 0) else 0
+        p.edit().putInt(PREF_DAILY_CHARS, current + count).putString(PREF_DAILY_CHARS_DATE, today).apply()
+    }
+
     /**
      * Configure with optional proxy URL and/or direct API key.
      * Proxy takes priority: if set, cloud TTS is enabled without a local key.
      */
-    fun configure(key: String, proxy: String = "") {
+    fun configure(key: String, proxy: String = "", sharedPrefs: SharedPreferences? = null) {
         apiKey = key
         proxyUrl = proxy.ifBlank { null }
         enabled = proxyUrl != null || key.isNotBlank()
+        if (sharedPrefs != null) prefs = sharedPrefs
         Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}" +
                 if (proxyUrl != null) " (via proxy)" else "")
     }
@@ -84,11 +116,19 @@ class CloudTtsEngine {
             return null
         }
 
+        // K-01: Check daily character limit
+        val dailyUsed = dailyCharsUsed()
+        if (dailyUsed >= DEFAULT_DAILY_CHAR_LIMIT) {
+            Log.w(TAG, "Daily character limit reached ($dailyUsed/$DEFAULT_DAILY_CHAR_LIMIT)")
+            return null
+        }
+
         val v = if (voice in VOICES) voice else DEFAULT_VOICE
+        val trimmedText = text.take(MAX_INPUT_LENGTH)
 
         val payload = JSONObject().apply {
             put("model", MODEL_ID)
-            put("input", text)
+            put("input", trimmedText)
             put("response_format", "pcm")
             put("voice", v)
         }
@@ -129,7 +169,8 @@ class CloudTtsEngine {
 
                         val audioBytes = response.body?.bytes() ?: return@use
                         val pcm = pcmBytesToFloat(audioBytes)
-                        Log.d(TAG, "${text.length} chars → ${pcm.size} samples, ${elapsedMs}ms")
+                        addDailyChars(trimmedText.length)  // K-01: track usage
+                        Log.d(TAG, "${trimmedText.length} chars → ${pcm.size} samples, ${elapsedMs}ms (daily: ${dailyCharsUsed()}/$DEFAULT_DAILY_CHAR_LIMIT)")
                         return Pair(pcm, SAMPLE_RATE)
                     }
                 } catch (e: IOException) {

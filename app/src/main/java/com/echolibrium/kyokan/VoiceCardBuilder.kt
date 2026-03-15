@@ -103,20 +103,22 @@ object VoiceCardBuilder {
             foreground = ctx.getDrawable(rippleAttr.resourceId)
 
             if (onClick != null) setOnClickListener { v ->
-                // Brief scale pulse on selection
-                AnimatorSet().apply {
-                    playSequentially(
-                        ObjectAnimator.ofFloat(v, "scaleX", 1f, 0.95f).apply { duration = 80 },
-                        ObjectAnimator.ofFloat(v, "scaleX", 0.95f, 1f).apply { duration = 120 }
-                    )
-                    start()
-                }
-                AnimatorSet().apply {
-                    playSequentially(
-                        ObjectAnimator.ofFloat(v, "scaleY", 1f, 0.95f).apply { duration = 80 },
-                        ObjectAnimator.ofFloat(v, "scaleY", 0.95f, 1f).apply { duration = 120 }
-                    )
-                    start()
+                // Brief scale pulse on selection (G-01: skip if animations disabled)
+                if (AnimationUtil.areAnimationsEnabled(ctx)) {
+                    AnimatorSet().apply {
+                        playSequentially(
+                            ObjectAnimator.ofFloat(v, "scaleX", 1f, 0.95f).apply { duration = 80 },
+                            ObjectAnimator.ofFloat(v, "scaleX", 0.95f, 1f).apply { duration = 120 }
+                        )
+                        start()
+                    }
+                    AnimatorSet().apply {
+                        playSequentially(
+                            ObjectAnimator.ofFloat(v, "scaleY", 1f, 0.95f).apply { duration = 80 },
+                            ObjectAnimator.ofFloat(v, "scaleY", 0.95f, 1f).apply { duration = 120 }
+                        )
+                        start()
+                    }
                 }
                 onClick()
             }
@@ -210,7 +212,7 @@ object VoiceCardBuilder {
                         text = "⏳ synthesizing…"
                         isEnabled = false
                         onPreview(voiceId, name)
-                        postDelayed({ text = originalText; isEnabled = true }, 2000)
+                        postDelayed({ text = originalText; isEnabled = true }, 10_000)
                     }
                 })
             }

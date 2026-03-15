@@ -2,6 +2,7 @@ package com.echolibrium.kyokan
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
@@ -51,6 +52,10 @@ class AudioPipeline(
     @Volatile private var currentTrack: AudioTrack? = null
     private val trackLock = Object()
 
+    // D-01: Audio focus — prevents speech from overlapping calls, music, navigation
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
+
     /** Called on the pipeline thread when synthesis fails — use Handler to post to UI. */
     private val synthesisErrorListeners = mutableListOf<(voiceId: String, reason: String) -> Unit>()
     private val listenersLock = Object()
@@ -79,6 +84,7 @@ class AudioPipeline(
     fun start(ctx: Context) {
         if (running && pipelineThread?.isAlive == true) return
         running = true
+        audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         initCloudTts(ctx)
 
         pipelineThread = Thread({ loop(ctx) }, "AudioPipelineLoop").apply {
@@ -102,7 +108,8 @@ class AudioPipeline(
             ""
         }
         val key = userKey.ifBlank { BuildConfig.DEEPINFRA_API_KEY }
-        cloudTtsEngine.configure(key, proxyUrl)
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        cloudTtsEngine.configure(key, proxyUrl, prefs)
     }
 
     fun stop() {
@@ -156,11 +163,15 @@ class AudioPipeline(
 
         // ── Synthesize ──────────────────────────────────────────────────
         val result: Pair<FloatArray, Int> = if (VoiceRegistry.isCloud(voiceId)) {
-            // Try Orpheus cloud
+            // Try Orpheus cloud, fall back to Kokoro default if connectivity lost (K-02)
             synthesizeWithCloud(item.text, item)
                 ?: run {
-                    Log.w(TAG, "Cloud voice $voiceId unavailable, no fallback for cloud voices")
-                    notifySynthesisError(voiceId, "Cloud voice failed — check internet or proxy setup")
+                    Log.w(TAG, "Cloud voice $voiceId failed, attempting local Kokoro fallback")
+                    notifySynthesisError(voiceId, "Cloud failed — falling back to local voice")
+                    synthesizeWithKokoro(ctx, KokoroVoices.default().id, item.text, item.speed)
+                }
+                ?: run {
+                    notifySynthesisError(voiceId, "Cloud and local fallback both failed")
                     return
                 }
         } else if (VoiceRegistry.isPiper(voiceId)) {
@@ -221,9 +232,38 @@ class AudioPipeline(
 
     // ── Playback ────────────────────────────────────────────────────────────
 
+    /** D-01: Request transient audio focus — returns true if granted. */
+    private fun requestAudioFocus(): Boolean {
+        val am = audioManager ?: return true // proceed without focus if no manager
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANT)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(attrs)
+            .setOnAudioFocusChangeListener { /* no-op for transient */ }
+            .build()
+        focusRequest = request
+        return am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    /** D-01: Release audio focus after playback. */
+    private fun abandonAudioFocus() {
+        val am = audioManager ?: return
+        val request = focusRequest ?: return
+        am.abandonAudioFocusRequest(request)
+        focusRequest = null
+    }
+
     private fun playPcm(samples: FloatArray, sampleRate: Int) {
         val pcm = applyCrossfade(samples, sampleRate)
         if (pcm.isEmpty()) return
+
+        // D-01: Request audio focus before playback — skip if denied (e.g. during phone call)
+        if (!requestAudioFocus()) {
+            Log.w(TAG, "Audio focus denied — skipping playback")
+            return
+        }
 
         val safeRate = sampleRate.coerceIn(
             AUDIO_TRACK_MIN_SAMPLE_RATE_HZ, AUDIO_TRACK_MAX_SAMPLE_RATE_HZ
@@ -289,6 +329,7 @@ class AudioPipeline(
             try { track.stop() } catch (_: Exception) {}
             try { track.release() } catch (_: Exception) {}
             synchronized(trackLock) { if (currentTrack === track) currentTrack = null }
+            abandonAudioFocus()
         }
     }
 
@@ -298,13 +339,8 @@ class AudioPipeline(
         val result = samples.copyOf()
 
         val fadeSamples = (sampleRate * CROSSFADE_MS / 1000).coerceAtMost(samples.size / 4)
-        if (fadeSamples > 0) {
-            val start = (samples.size - fadeSamples).coerceAtLeast(0)
-            val tailSize = (samples.size - start).coerceAtMost(MAX_PREV_TAIL_SAMPLES)
-            prevTail = samples.sliceArray((samples.size - tailSize) until samples.size)
-            prevSampleRate = sampleRate
-        }
 
+        // A-03: Apply previous crossfade BEFORE saving new tail to avoid compounding artifacts
         if (tail != null && tailRate == sampleRate && tail.isNotEmpty()) {
             val crossLen = minOf(tail.size, fadeSamples, result.size)
             for (i in 0 until crossLen) {
@@ -316,6 +352,14 @@ class AudioPipeline(
             for (i in 0 until fadeIn) {
                 result[i] *= i.toFloat() / fadeIn
             }
+        }
+
+        // Save tail for next crossfade after applying current one
+        if (fadeSamples > 0) {
+            val start = (samples.size - fadeSamples).coerceAtLeast(0)
+            val tailSize = (samples.size - start).coerceAtMost(MAX_PREV_TAIL_SAMPLES)
+            prevTail = result.sliceArray((result.size - tailSize) until result.size)
+            prevSampleRate = sampleRate
         }
 
         return result

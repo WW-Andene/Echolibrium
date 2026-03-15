@@ -179,4 +179,35 @@
     <!-- L26: Dynamic language routing -->
     <string name="lang_route_label">%s notifications → Voice:</string>
     <string name="translate_lang_label">Translate %s notifications</string>
+
+    <!-- L-03: Default word rules (localizable via values-fr/strings.xml etc.) -->
+    <string-array name="default_word_rules_find">
+        <item>WhatsApp</item>
+        <item>Gmail</item>
+        <item>lol</item>
+        <item>tbh</item>
+        <item>idk</item>
+        <item>omg</item>
+        <item>brb</item>
+        <item>ngl</item>
+        <item>https://</item>
+        <item>http://</item>
+    </string-array>
+    <string-array name="default_word_rules_replace">
+        <item>Message</item>
+        <item>Email</item>
+        <item>laugh out loud</item>
+        <item>to be honest</item>
+        <item>I don\'t know</item>
+        <item>oh my god</item>
+        <item>be right back</item>
+        <item>not gonna lie</item>
+        <item>link</item>
+        <item>link</item>
+    </string-array>
+
+    <!-- F-01: Unsaved changes dialog -->
+    <string name="unsaved_changes_title">Unsaved changes</string>
+    <string name="unsaved_changes_message">You have unsaved voice profile changes. Discard them?</string>
+    <string name="discard">Discard</string>
 </resources>

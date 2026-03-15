@@ -18,7 +18,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.preference.PreferenceManager
 
-class ProfilesFragment : Fragment() {
+class ProfilesFragment : Fragment(), UnsavedChangesCheck {
 
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
@@ -35,6 +35,18 @@ class ProfilesFragment : Fragment() {
     private var pendingVoiceGridRender = false
     private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var initialProfileLoaded = false
+    /** F-01: Snapshot of profile at last save/load — used to detect unsaved changes. */
+    private var lastSavedProfile: VoiceProfile? = null
+
+    override fun hasUnsavedChanges(): Boolean {
+        val saved = lastSavedProfile ?: return false
+        return try {
+            val current = readProfileFromUI()
+            current != saved
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     private lateinit var downloadDelegate: DownloadDelegate
     private val profileGridCallbacks: ProfileGridBuilder.Callbacks by lazy {
@@ -459,6 +471,7 @@ class ProfilesFragment : Fragment() {
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
             viewModel.saveProfile(p)
+            lastSavedProfile = p  // F-01: update snapshot after save
             ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
             Toast.makeText(context, getString(R.string.saved_profile, p.name), Toast.LENGTH_SHORT).show()
         }
@@ -494,6 +507,7 @@ class ProfilesFragment : Fragment() {
 
     private fun loadProfileToUI(p: VoiceProfile) {
         viewModel.updateCurrentProfile(p)
+        lastSavedProfile = p  // F-01: snapshot for unsaved changes detection
         seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).toInt() - 50).coerceIn(0, 150)
         tvPitch.text = getString(R.string.pitch_label, p.pitch)
         seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)

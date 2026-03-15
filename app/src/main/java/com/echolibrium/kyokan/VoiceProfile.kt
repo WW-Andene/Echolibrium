@@ -61,9 +61,18 @@ data class VoiceProfile(
             val json = prefs.getString("voice_profiles", null) ?: return mutableListOf()
             return try {
                 val arr = JSONArray(json)
-                (0 until arr.length()).map { fromJson(arr.getJSONObject(it)) }.toMutableList()
+                // B-06: Per-entry try/catch — salvage valid profiles when one is corrupted
+                (0 until arr.length()).mapNotNull { i ->
+                    try {
+                        fromJson(arr.getJSONObject(i))
+                    } catch (e: Exception) {
+                        Log.w("VoiceProfile", "Skipping corrupted profile at index $i", e)
+                        null
+                    }
+                }.toMutableList()
             } catch (e: Exception) {
-                Log.e("VoiceProfile", "Failed to parse voice_profiles JSON, returning empty list. Data may be corrupted.", e)
+                Log.e("VoiceProfile", "Failed to parse voice_profiles JSON array — backing up corrupted data", e)
+                prefs.edit().putString("voice_profiles_backup_corrupted", json).apply()
                 mutableListOf()
             }
         }

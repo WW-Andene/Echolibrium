@@ -56,6 +56,8 @@ class LogcatFragment : Fragment() {
     private var lineCount = 0
     private var lastRefresh = 0L
     private var pendingRefresh = false
+    /** D-04: Reuse SpannableStringBuilder to reduce GC pressure during frequent refreshes. */
+    private val ssb = SpannableStringBuilder()
 
     companion object {
         private const val REFRESH_THROTTLE_MS = 200
@@ -273,7 +275,8 @@ class LogcatFragment : Fragment() {
         lineCount = filtered.size
         tvLineCount.text = getString(R.string.lines_count, lineCount)
 
-        val ssb = SpannableStringBuilder()
+        ssb.clear()
+        ssb.clearSpans()
         val displayLines = if (filtered.size > 500) filtered.takeLast(500) else filtered
 
         for (logLine in displayLines) {

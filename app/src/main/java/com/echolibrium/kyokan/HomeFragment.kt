@@ -300,8 +300,8 @@ class HomeFragment : Fragment() {
             else -> R.color.text_disabled
         }))
 
-        // Breathing animation when actively listening
-        if (listening) {
+        // Breathing animation when actively listening (G-01: skip if animations disabled)
+        if (listening && AnimationUtil.areAnimationsEnabled(ctx)) {
             if (breathAnimator == null || !breathAnimator!!.isRunning) {
                 breathAnimator = ObjectAnimator.ofFloat(tv, "alpha", 1f, 0.4f).apply {
                     duration = 1500

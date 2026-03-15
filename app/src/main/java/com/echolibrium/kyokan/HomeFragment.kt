@@ -25,11 +25,15 @@ import androidx.transition.AutoTransition
 import androidx.transition.TransitionManager
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Observer
 import androidx.preference.PreferenceManager
 
 class HomeFragment : Fragment() {
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private val c by lazy { requireContext().container }
+    private val viewModel: HomeViewModel by viewModels()
 
     private var breathAnimator: ObjectAnimator? = null
 
@@ -99,23 +103,25 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = getString(R.string.until_time, h)
         })
 
-        // Listening toggle — starts/stops VoiceCommandListener with mic permission
+        // Listening toggle — delegates to HomeViewModel (M28)
         val switchListening = v.findViewById<SwitchCompat>(R.id.switch_listening)
         val listeningStatus = v.findViewById<TextView>(R.id.listening_status)
-        switchListening.isChecked = prefs.getBoolean("listening_enabled", false)
-        updateListeningStatus(listeningStatus)
+        viewModel.listeningEnabled.observe(viewLifecycleOwner, Observer { enabled ->
+            if (switchListening.isChecked != enabled) switchListening.isChecked = enabled
+            updateListeningStatus(listeningStatus)
+        })
         switchListening.setOnCheckedChangeListener { _, enabled ->
-            prefs.edit().putBoolean("listening_enabled", enabled).apply()
+            viewModel.setListeningEnabled(enabled)
             val ctx = context ?: return@setOnCheckedChangeListener
             if (enabled) {
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {
                     requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
                 } else {
-                    VoiceCommandListener.start(ctx)
+                    viewModel.startListening()
                 }
             } else {
-                VoiceCommandListener.stop()
+                viewModel.stopListening()
             }
             updateListeningStatus(listeningStatus)
         }
@@ -142,10 +148,9 @@ class HomeFragment : Fragment() {
         if (requestCode == AUDIO_PERMISSION_CODE) {
             val ctx = context ?: return
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                VoiceCommandListener.start(ctx)
+                viewModel.startListening()
             } else {
-                prefs.edit().putBoolean("listening_enabled", false).apply()
-                view?.findViewById<SwitchCompat>(R.id.switch_listening)?.isChecked = false
+                viewModel.setListeningEnabled(false)
                 Toast.makeText(ctx, getString(R.string.mic_permission_required), Toast.LENGTH_SHORT).show()
             }
             view?.let { updateListeningStatus(it.findViewById(R.id.listening_status)) }
@@ -236,9 +241,7 @@ class HomeFragment : Fragment() {
 
     private fun showGuidance() {
         val guidance = view?.findViewById<TextView>(R.id.txt_guidance) ?: return
-        val hasVoice = VoiceDownloadManager.isModelReady(requireContext()) ||
-            VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER).any { VoiceRegistry.isReady(requireContext(), it.id) } ||
-            CloudTtsEngine.isEnabled()
+        val hasVoice = viewModel.isVoiceReady()
         val hasProfile = VoiceProfile.loadAll(prefs).any { it.voiceName.isNotBlank() }
 
         val tips = mutableListOf<String>()
@@ -259,8 +262,8 @@ class HomeFragment : Fragment() {
         val enabled = prefs.getBoolean("listening_enabled", false)
         val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
-        val listening = VoiceCommandListener.isListening
-        val wake = VoiceCommandListener.wakeWord
+        val listening = c.voiceCommandListener.isListening
+        val wake = c.voiceCommandListener.wakeWord
 
         tv.text = when {
             !enabled -> getString(R.string.listening_off)

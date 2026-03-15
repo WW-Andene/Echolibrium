@@ -15,9 +15,11 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Thread-safe: downloads run on background threads, state is volatile.
  */
-object PiperDownloadManager {
+class PiperDownloadManager {
 
-    private const val TAG = "PiperDownload"
+    companion object {
+        private const val TAG = "PiperDownload"
+    }
 
     // Per-voice state tracking (ConcurrentHashMap for thread safety across UI + download threads)
     private val voiceStates = ConcurrentHashMap<String, DownloadState>()

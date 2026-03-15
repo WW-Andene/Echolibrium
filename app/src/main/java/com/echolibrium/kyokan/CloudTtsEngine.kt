@@ -16,15 +16,19 @@ import java.util.concurrent.TimeUnit
  *
  * Returns PCM FloatArray + sample rate, matching SherpaEngine's contract.
  */
-object CloudTtsEngine {
+class CloudTtsEngine {
 
-    private const val TAG = "CloudTtsEngine"
-    private const val DIRECT_URL = "https://api.deepinfra.com/v1/openai/audio/speech"
-    private const val SAMPLE_RATE = 24000
-    private const val MODEL_ID = "canopylabs/orpheus-3b-0.1-ft"
+    companion object {
+        private const val TAG = "CloudTtsEngine"
+        private const val DIRECT_URL = "https://api.deepinfra.com/v1/openai/audio/speech"
+        private const val SAMPLE_RATE = 24000
+        private const val MODEL_ID = "canopylabs/orpheus-3b-0.1-ft"
+        private const val DEFAULT_VOICE = "tara"
+        private const val MAX_RETRIES = 1
+        private const val RETRY_DELAY_MS = 1500L
+    }
 
     val VOICES = setOf("tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe")
-    private const val DEFAULT_VOICE = "tara"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -61,9 +65,6 @@ object CloudTtsEngine {
     }
 
     fun isEnabled(): Boolean = enabled
-
-    private const val MAX_RETRIES = 1
-    private const val RETRY_DELAY_MS = 1500L
 
     /**
      * Synthesize text to PCM audio via DeepInfra Orpheus.

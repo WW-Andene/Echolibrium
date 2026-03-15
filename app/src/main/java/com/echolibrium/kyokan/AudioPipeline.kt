@@ -20,12 +20,17 @@ import java.util.concurrent.TimeUnit
  *
  * Runs on a single background thread so notifications are spoken in order.
  */
-object AudioPipeline {
+class AudioPipeline(
+    private val cloudTtsEngine: CloudTtsEngine,
+    private val sherpaEngine: SherpaEngine
+) {
 
-    private const val TAG = "AudioPipeline"
-
-    private const val AUDIO_TRACK_MIN_SAMPLE_RATE_HZ = 4000
-    private const val AUDIO_TRACK_MAX_SAMPLE_RATE_HZ = 192000
+    companion object {
+        private const val TAG = "AudioPipeline"
+        private const val AUDIO_TRACK_MIN_SAMPLE_RATE_HZ = 4000
+        private const val AUDIO_TRACK_MAX_SAMPLE_RATE_HZ = 192000
+        private const val CROSSFADE_MS = 40
+    }
 
     data class Item(
         val text: String,
@@ -62,7 +67,6 @@ object AudioPipeline {
     }
 
     // Crossfade state
-    private const val CROSSFADE_MS = 40
     private var prevTail: FloatArray? = null
     private var prevSampleRate: Int = 0
 
@@ -94,7 +98,7 @@ object AudioPipeline {
             ""
         }
         val key = userKey.ifBlank { BuildConfig.DEEPINFRA_API_KEY }
-        CloudTtsEngine.configure(key, proxyUrl)
+        cloudTtsEngine.configure(key, proxyUrl)
     }
 
     fun stop() {
@@ -106,7 +110,7 @@ object AudioPipeline {
     fun shutdown() {
         running = false
         stop()
-        SherpaEngine.release()
+        sherpaEngine.release()
     }
 
     // ── Enqueue ─────────────────────────────────────────────────────────────
@@ -178,12 +182,12 @@ object AudioPipeline {
     // ── Engine methods ──────────────────────────────────────────────────────
 
     private fun synthesizeWithCloud(text: String, item: Item): Pair<FloatArray, Int>? {
-        if (!CloudTtsEngine.isEnabled()) return null
+        if (!cloudTtsEngine.isEnabled()) return null
 
         val cloudVoice = VoiceRegistry.cloudVoiceById(item.voiceId)
         val voice = cloudVoice?.apiVoiceName
 
-        return CloudTtsEngine.synthesize(
+        return cloudTtsEngine.synthesize(
             text = text,
             voice = voice,
             language = item.language
@@ -193,22 +197,22 @@ object AudioPipeline {
     private fun synthesizeWithKokoro(
         ctx: Context, voiceId: String, text: String, speed: Float
     ): Pair<FloatArray, Int>? {
-        if (!SherpaEngine.initialize(ctx)) {
+        if (!sherpaEngine.initialize(ctx)) {
             Log.w(TAG, "Kokoro not ready — model may still be downloading")
             return null
         }
         val voice = KokoroVoices.byId(voiceId) ?: KokoroVoices.default()
-        return SherpaEngine.synthesize(text = text, sid = voice.sid, speed = speed)
+        return sherpaEngine.synthesize(text = text, sid = voice.sid, speed = speed)
     }
 
     private fun synthesizeWithPiper(
         ctx: Context, voiceId: String, text: String, speed: Float
     ): Pair<FloatArray, Int>? {
-        if (!SherpaEngine.initPiper(ctx, voiceId)) {
+        if (!sherpaEngine.initPiper(ctx, voiceId)) {
             Log.w(TAG, "Piper voice $voiceId not ready — may still be downloading")
             return null
         }
-        return SherpaEngine.synthesizePiper(voiceId = voiceId, text = text, speed = speed)
+        return sherpaEngine.synthesizePiper(voiceId = voiceId, text = text, speed = speed)
     }
 
     // ── Playback ────────────────────────────────────────────────────────────

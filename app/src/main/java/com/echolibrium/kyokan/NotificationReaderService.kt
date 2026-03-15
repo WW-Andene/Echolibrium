@@ -57,19 +57,21 @@ class NotificationReaderService : NotificationListenerService() {
         @Volatile var lastNotificationTime: Long = 0L
     }
 
+    private val c by lazy { container }
+
     override fun onCreate() {
         super.onCreate()
         CrashLogger.install(this)
         instance = this
         prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
-        AudioPipeline.start(this)
+        c.audioPipeline.start(this)
         TtsAliveService.start(this)
         if (prefs.getBoolean("listening_enabled", false)) {
             try {
                 val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
                     this, android.Manifest.permission.RECORD_AUDIO
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                if (hasPerm) VoiceCommandListener.start(this)
+                if (hasPerm) c.voiceCommandListener.start(this)
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting voice commands", e)
             }
@@ -83,8 +85,8 @@ class NotificationReaderService : NotificationListenerService() {
         lastNotificationTime = 0L
         cachedRules = null
         cachedProfiles = null
-        VoiceCommandListener.stop()
-        AudioPipeline.shutdown()
+        c.voiceCommandListener.stop()
+        c.audioPipeline.shutdown()
         TtsAliveService.stop(this)
         super.onDestroy()
     }
@@ -156,7 +158,7 @@ class NotificationReaderService : NotificationListenerService() {
                     else -> prefs.getString("translate_en_lang", "") ?: ""
                 }
                 if (targetLang.isNotBlank() && targetLang != detectedLang) {
-                    val translated = NotificationTranslator.translate(rawText, detectedLang, targetLang)
+                    val translated = c.notificationTranslator.translate(rawText, detectedLang, targetLang)
                     if (translated != rawText) rawText = translated
                     effectiveLang = targetLang
                 }
@@ -173,7 +175,7 @@ class NotificationReaderService : NotificationListenerService() {
 
             val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
 
-            AudioPipeline.enqueue(AudioPipeline.Item(
+            c.audioPipeline.enqueue(AudioPipeline.Item(
                 text     = rawText,
                 voiceId  = profile.voiceName,
                 pitch    = profile.pitch,
@@ -189,7 +191,7 @@ class NotificationReaderService : NotificationListenerService() {
             synchronized(readKeys) { readKeys.remove(sbn.key) }
         }
         if (prefs.getBoolean("notif_stop_on_swipe", false)) {
-            AudioPipeline.stop()
+            c.audioPipeline.stop()
         }
     }
 
@@ -275,7 +277,7 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     fun testSpeak(text: String, profile: VoiceProfile) {
-        AudioPipeline.enqueue(AudioPipeline.Item(
+        c.audioPipeline.enqueue(AudioPipeline.Item(
             text    = text,
             voiceId = profile.voiceName,
             pitch   = profile.pitch,
@@ -283,5 +285,5 @@ class NotificationReaderService : NotificationListenerService() {
         ))
     }
 
-    fun stopSpeaking() = AudioPipeline.stop()
+    fun stopSpeaking() = c.audioPipeline.stop()
 }

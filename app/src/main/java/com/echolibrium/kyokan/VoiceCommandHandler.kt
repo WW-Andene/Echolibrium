@@ -13,9 +13,11 @@ import androidx.preference.PreferenceManager
  *   - "stop" / "shut up" / "be quiet"
  *   - "what time is it?"
  */
-object VoiceCommandHandler {
+class VoiceCommandHandler {
 
-    private const val TAG = "VoiceCommandHandler"
+    companion object {
+        private const val TAG = "VoiceCommandHandler"
+    }
 
     private val REPEAT_TRIGGERS = listOf(
         "can you repeat", "repeat that", "say that again", "what did you say",
@@ -37,7 +39,7 @@ object VoiceCommandHandler {
         return when {
             matchesAny(normalized, REPEAT_TRIGGERS) -> { handleRepeat(ctx); true }
             matchesAny(normalized, TIME_AGO_TRIGGERS) -> { handleTimeAgo(ctx); true }
-            matchesAny(normalized, STOP_TRIGGERS) -> { handleStop(); true }
+            matchesAny(normalized, STOP_TRIGGERS) -> { handleStop(ctx); true }
             matchesAny(normalized, TIME_TRIGGERS) -> { handleTime(ctx); true }
             else -> false
         }
@@ -67,8 +69,8 @@ object VoiceCommandHandler {
         Log.d(TAG, "Handled: time ago command")
     }
 
-    private fun handleStop() {
-        AudioPipeline.stop()
+    private fun handleStop(ctx: Context) {
+        ctx.container.audioPipeline.stop()
         Log.d(TAG, "Handled: stop command")
     }
 

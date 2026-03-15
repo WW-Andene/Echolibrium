@@ -20,13 +20,17 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Commands: "repeat", "how long ago?", "stop", "what time?", "how are you feeling?"
  */
-object VoiceCommandListener {
+class VoiceCommandListener(
+    private val voiceCommandHandler: VoiceCommandHandler
+) {
 
-    private const val TAG = "VoiceCommandListener"
-    private const val RESTART_DELAY_MS = 800L
-    private const val NORMAL_RESTART_DELAY_MS = 300L
-    private const val MAX_CONSECUTIVE_ERRORS = 10
-    private const val MAX_BACKOFF_MS = 60_000L
+    companion object {
+        private const val TAG = "VoiceCommandListener"
+        private const val RESTART_DELAY_MS = 800L
+        private const val NORMAL_RESTART_DELAY_MS = 300L
+        private const val MAX_CONSECUTIVE_ERRORS = 10
+        private const val MAX_BACKOFF_MS = 60_000L
+    }
 
     @Volatile private var recognizer: SpeechRecognizer? = null
     @Volatile var isListening = false
@@ -139,7 +143,7 @@ object VoiceCommandListener {
         }, delay)
     }
 
-    private class CommandRecognitionListener(private val ctx: Context) : RecognitionListener {
+    private inner class CommandRecognitionListener(private val ctx: Context) : RecognitionListener {
 
         override fun onReadyForSpeech(params: Bundle?) {
             Log.d(TAG, "Listening for wake word '$wakeWord'…")
@@ -182,7 +186,7 @@ object VoiceCommandListener {
                         Log.d(TAG, "Wake word '$wake' detected!")
                     }
 
-                    VoiceCommandHandler.handleCommand(ctx, matches)
+                    voiceCommandHandler.handleCommand(ctx, matches)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing speech results", e)

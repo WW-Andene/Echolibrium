@@ -79,11 +79,12 @@ object VoiceRegistry {
     fun isPiper(voiceId: String): Boolean = engineFor(voiceId) == Engine.PIPER
 
     fun isReady(ctx: Context, voiceId: String): Boolean {
+        val c = ctx.container
         val entry = byId(voiceId) ?: return false
         return when (entry.engine) {
-            Engine.KOKORO -> VoiceDownloadManager.isModelReady(ctx)
-            Engine.PIPER -> PiperDownloadManager.isVoiceReady(ctx, voiceId)
-            Engine.CLOUD -> CloudTtsEngine.isEnabled()
+            Engine.KOKORO -> c.voiceDownloadManager.isModelReady(ctx)
+            Engine.PIPER -> c.piperDownloadManager.isVoiceReady(ctx, voiceId)
+            Engine.CLOUD -> c.cloudTtsEngine.isEnabled()
         }
     }
 

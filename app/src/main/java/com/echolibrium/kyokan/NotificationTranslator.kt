@@ -13,10 +13,30 @@ import java.util.concurrent.TimeUnit
  * On-device translation using ML Kit. Downloads language models on demand (~30MB each),
  * then works fully offline. Thread-safe singleton.
  */
-object NotificationTranslator {
+class NotificationTranslator {
 
-    private const val TAG = "Translator"
-    private const val TRANSLATE_TIMEOUT_MS = 5000L
+    companion object {
+        private const val TAG = "Translator"
+        private const val TRANSLATE_TIMEOUT_MS = 5000L
+
+        /** Supported languages: code → display name */
+        val LANGUAGES = linkedMapOf(
+            "" to "Off (no translation)",
+            "en" to "English",
+            "fr" to "French",
+            "es" to "Spanish",
+            "de" to "German",
+            "it" to "Italian",
+            "pt" to "Portuguese",
+            "nl" to "Dutch",
+            "ru" to "Russian",
+            "ja" to "Japanese",
+            "ko" to "Korean",
+            "zh" to "Chinese",
+            "ar" to "Arabic",
+            "hi" to "Hindi"
+        )
+    }
 
     // Cache translators by "source→target" key to avoid recreating
     private val translators = mutableMapOf<String, com.google.mlkit.nl.translate.Translator>()
@@ -26,24 +46,6 @@ object NotificationTranslator {
 
     // Background executor for ML Kit callbacks — avoids deadlock when called from main thread
     private val callbackExecutor = Executors.newSingleThreadExecutor()
-
-    /** Supported languages: code → display name */
-    val LANGUAGES = linkedMapOf(
-        "" to "Off (no translation)",
-        "en" to "English",
-        "fr" to "French",
-        "es" to "Spanish",
-        "de" to "German",
-        "it" to "Italian",
-        "pt" to "Portuguese",
-        "nl" to "Dutch",
-        "ru" to "Russian",
-        "ja" to "Japanese",
-        "ko" to "Korean",
-        "zh" to "Chinese",
-        "ar" to "Arabic",
-        "hi" to "Hindi"
-    )
 
     /**
      * Translate text synchronously (blocks up to 5s).

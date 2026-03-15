@@ -13,14 +13,14 @@ import java.io.File
  *
  * Stored in: context.filesDir/sherpa/kokoro-en-v0_19/
  */
-object VoiceDownloadManager {
+class VoiceDownloadManager {
 
-    private const val TAG = "VoiceDownload"
-
-    // Model package — int8 is ~120MB vs ~400MB for float32
-    const val MODEL_NAME   = "kokoro-en-v0_19"
-    const val DOWNLOAD_URL = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/kokoro-en-v0_19.tar.bz2"
-    const val MODEL_SIZE_MB = 120  // approximate, for display
+    companion object {
+        private const val TAG = "VoiceDownload"
+        const val MODEL_NAME   = "kokoro-en-v0_19"
+        const val DOWNLOAD_URL = "https://github.com/WW-Andene/Echolibrium/releases/download/tts-assets-v1/kokoro-en-v0_19.tar.bz2"
+        const val MODEL_SIZE_MB = 120  // approximate, for display
+    }
 
     @Volatile var state: DownloadState = DownloadState.NOT_DOWNLOADED
     @Volatile var progressPercent: Int = 0

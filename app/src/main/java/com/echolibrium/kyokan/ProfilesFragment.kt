@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.preference.PreferenceManager
 import androidx.transition.AutoTransition
 import androidx.transition.TransitionManager
@@ -48,6 +49,8 @@ class ProfilesFragment : Fragment() {
     }
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private val c by lazy { requireContext().container }
+    private val viewModel: ProfilesViewModel by viewModels()
     private var profiles = mutableListOf<VoiceProfile>()
     private var activeProfileId = ""
     private var currentProfile = VoiceProfile()
@@ -78,26 +81,33 @@ class ProfilesFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         bindViews(v)
-        profiles = VoiceProfile.loadAll(prefs)
-        activeProfileId = prefs.getString("active_profile_id", "") ?: ""
-        if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
 
-        // Restore state from config change / process death
+        // Restore filter state from config change / process death
         if (s != null) {
             genderFilter = s.getString("genderFilter", "All")
             languageFilter = s.getString("languageFilter", "All")
-            activeProfileId = s.getString("activeProfileId", activeProfileId)
+        }
+
+        // Observe ViewModel state (M28) — keeps local state in sync
+        viewModel.profiles.observe(viewLifecycleOwner) { list ->
+            profiles = list.toMutableList()
+            setupProfileSpinner()
+            renderProfileGrid()
+        }
+        viewModel.activeProfileId.observe(viewLifecycleOwner) { id ->
+            activeProfileId = id
+        }
+        viewModel.currentProfile.observe(viewLifecycleOwner) { profile ->
+            currentProfile = profile
         }
 
         // Register download listeners once (cleaned up in onDestroyView)
-        VoiceDownloadManager.addStateListener(kokoroStateListener)
-        VoiceDownloadManager.addProgressListener(kokoroProgressListener)
-        PiperDownloadManager.addStateListener(piperStateListener)
-        PiperDownloadManager.addProgressListener(piperProgressListener)
+        c.voiceDownloadManager.addStateListener(kokoroStateListener)
+        c.voiceDownloadManager.addProgressListener(kokoroProgressListener)
+        c.piperDownloadManager.addStateListener(piperStateListener)
+        c.piperDownloadManager.addProgressListener(piperProgressListener)
 
         setupCollapsibleSections(v)
-        setupProfileSpinner()
-        renderProfileGrid()
         buildFilterButtons()
         renderVoiceGrid()
         setupButtons()
@@ -204,7 +214,7 @@ class ProfilesFragment : Fragment() {
         val ctx = requireContext()
 
         // ── Orpheus ──────────────────────────────────────────────────────
-        val cloudEnabled = CloudTtsEngine.isEnabled()
+        val cloudEnabled = c.cloudTtsEngine.isEnabled()
         val orpheusSubtitle = if (cloudEnabled)
             getString(R.string.orpheus_subtitle_enabled, VoiceRegistry.CLOUD_VOICES.size)
         else
@@ -232,8 +242,8 @@ class ProfilesFragment : Fragment() {
         }
 
         // ── Kokoro ───────────────────────────────────────────────────────
-        val kokoroReady = VoiceDownloadManager.isModelReady(ctx)
-        val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
+        val kokoroReady = c.voiceDownloadManager.isModelReady(ctx)
+        val kokoroDownloading = c.voiceDownloadManager.state == DownloadState.DOWNLOADING
         val kokoroCount = VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO).size
         val kokoroSubtitle = when {
             kokoroReady -> getString(R.string.kokoro_subtitle_ready, kokoroCount)
@@ -251,7 +261,7 @@ class ProfilesFragment : Fragment() {
             when {
                 kokoroReady -> { status = getString(R.string.ready_status); statusColor = COLOR_READY }
                 kokoroDownloading -> {
-                    val pct = VoiceDownloadManager.progressPercent
+                    val pct = c.voiceDownloadManager.progressPercent
                     status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
                     statusColor = COLOR_KOKORO
                 }
@@ -276,7 +286,7 @@ class ProfilesFragment : Fragment() {
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
         val piperReadyCount = piperEntries.count { VoiceRegistry.isReady(ctx, it.id) }
         val piperSubtitle = getString(R.string.piper_subtitle, piperReadyCount, piperEntries.size)
-        val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !PiperDownloadManager.isDownloading(it.id) }
+        val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !c.piperDownloadManager.isDownloading(it.id) }
         val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
             { confirmDownloadAllPiper() }
         } else null
@@ -284,13 +294,13 @@ class ProfilesFragment : Fragment() {
 
         addFilteredVoiceCards(piperEntries) { v ->
             val ready = VoiceRegistry.isReady(ctx, v.id)
-            val downloading = PiperDownloadManager.isDownloading(v.id)
+            val downloading = c.piperDownloadManager.isDownloading(v.id)
             val status: String
             val statusColor: Int
             when {
                 ready -> { status = getString(R.string.ready_status); statusColor = COLOR_READY }
                 downloading -> {
-                    val pct = PiperDownloadManager.getProgress(v.id)
+                    val pct = c.piperDownloadManager.getProgress(v.id)
                     status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
                     statusColor = COLOR_PIPER
                 }
@@ -365,8 +375,8 @@ class ProfilesFragment : Fragment() {
         if (service != null) {
             service.testSpeak(previewText, tempProfile)
         } else {
-            AudioPipeline.start(ctx)
-            AudioPipeline.enqueue(AudioPipeline.Item(
+            c.audioPipeline.start(ctx)
+            c.audioPipeline.enqueue(AudioPipeline.Item(
                 text = previewText,
                 voiceId = voiceId,
                 pitch = tempProfile.pitch,
@@ -404,7 +414,7 @@ class ProfilesFragment : Fragment() {
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val key = input.text.toString().trim()
                 SecureKeyStore.setDeepInfraKey(ctx, key)
-                CloudTtsEngine.updateApiKey(key)
+                c.cloudTtsEngine.updateApiKey(key)
                 renderVoiceGrid()
             }
             .setNegativeButton(getString(R.string.cancel), null)
@@ -414,13 +424,13 @@ class ProfilesFragment : Fragment() {
     // ── Downloads ───────────────────────────────────────────────────────────
 
     private fun startKokoroDownload() {
-        VoiceDownloadManager.downloadModel(requireContext())
+        viewModel.startKokoroDownload()
         renderVoiceGrid()
         startDownloadRefresh()
     }
 
     private fun startPiperDownload(voiceId: String) {
-        PiperDownloadManager.downloadVoice(requireContext(), voiceId)
+        viewModel.startPiperDownload(voiceId)
         renderVoiceGrid()
         startDownloadRefresh()
     }
@@ -428,7 +438,7 @@ class ProfilesFragment : Fragment() {
     private fun confirmDownloadAllPiper() {
         val ctx = requireContext()
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
-        val remaining = piperEntries.count { !VoiceRegistry.isReady(ctx, it.id) && !PiperDownloadManager.isDownloading(it.id) }
+        val remaining = piperEntries.count { !VoiceRegistry.isReady(ctx, it.id) && !c.piperDownloadManager.isDownloading(it.id) }
         val estimatedMb = piperEntries.filter { !VoiceRegistry.isReady(ctx, it.id) }
             .sumOf { PiperVoices.byId(it.id)?.sizeMb ?: 40 }
         AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
@@ -443,8 +453,8 @@ class ProfilesFragment : Fragment() {
         val ctx = requireContext()
         val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
         piperEntries.forEach { v ->
-            if (!VoiceRegistry.isReady(ctx, v.id) && !PiperDownloadManager.isDownloading(v.id)) {
-                PiperDownloadManager.downloadVoice(ctx, v.id)
+            if (!VoiceRegistry.isReady(ctx, v.id) && !c.piperDownloadManager.isDownloading(v.id)) {
+                c.piperDownloadManager.downloadVoice(ctx, v.id)
             }
         }
         renderVoiceGrid()
@@ -510,11 +520,10 @@ class ProfilesFragment : Fragment() {
             contentDescription = "Profile ${p.name}${if (voiceEntry != null) ", voice ${voiceEntry.displayName}" else ""}${if (isActive) ", active" else ""}. Long press to rename."
 
             setOnClickListener {
-                activeProfileId = p.id
-                prefs.edit().putString("active_profile_id", activeProfileId).apply()
+                viewModel.setActiveProfile(p.id)
                 loadProfileToUI(p)
                 renderProfileGrid()
-                val idx = profiles.indexOfFirst { it.id == activeProfileId }.coerceAtLeast(0)
+                val idx = profiles.indexOfFirst { it.id == p.id }.coerceAtLeast(0)
                 profileSpinner.setSelection(idx)
             }
 
@@ -601,11 +610,7 @@ class ProfilesFragment : Fragment() {
             .setView(et)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val newName = et.text.toString().trim().ifBlank { p.name }
-                val updated = p.copy(name = newName)
-                val idx = profiles.indexOfFirst { it.id == p.id }
-                if (idx >= 0) profiles[idx] = updated
-                if (p.id == currentProfile.id) currentProfile = updated
-                VoiceProfile.saveAll(profiles, prefs)
+                viewModel.renameProfile(p.id, newName)
                 setupProfileSpinner()
                 renderProfileGrid()
             }
@@ -626,9 +631,8 @@ class ProfilesFragment : Fragment() {
         profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 if (!spinnerInitDone) { spinnerInitDone = true; return }
+                viewModel.setActiveProfile(profiles[pos].id)
                 loadProfileToUI(profiles[pos])
-                activeProfileId = profiles[pos].id
-                prefs.edit().putString("active_profile_id", activeProfileId).apply()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
@@ -670,7 +674,7 @@ class ProfilesFragment : Fragment() {
 
     private fun setupButtons() {
         // Show toast when TTS synthesis fails silently (B3: use listener list, not single slot)
-        AudioPipeline.addSynthesisErrorListener(synthesisErrorListener)
+        c.audioPipeline.addSynthesisErrorListener(synthesisErrorListener)
 
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
@@ -682,8 +686,8 @@ class ProfilesFragment : Fragment() {
             if (service != null) {
                 service.testSpeak(text, p)
             } else {
-                AudioPipeline.start(ctx)
-                AudioPipeline.enqueue(AudioPipeline.Item(
+                c.audioPipeline.start(ctx)
+                c.audioPipeline.enqueue(AudioPipeline.Item(
                     text = text,
                     voiceId = p.voiceName,
                     pitch = p.pitch,
@@ -693,9 +697,7 @@ class ProfilesFragment : Fragment() {
         }
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
-            val idx = profiles.indexOfFirst { it.id == p.id }
-            if (idx >= 0) profiles[idx] = p else profiles.add(p)
-            VoiceProfile.saveAll(profiles, prefs)
+            viewModel.saveProfile(p)
             renderProfileGrid()
             Toast.makeText(context, getString(R.string.saved_profile, p.name), Toast.LENGTH_SHORT).show()
         }
@@ -704,10 +706,7 @@ class ProfilesFragment : Fragment() {
             AlertDialog.Builder(requireContext()).setTitle(getString(R.string.new_profile)).setView(et)
                 .setPositiveButton(getString(R.string.create)) { _, _ ->
                     val name = et.text.toString().ifBlank { "Profile ${profiles.size + 1}" }
-                    val p = VoiceProfile(name = name)
-                    profiles.add(p); VoiceProfile.saveAll(profiles, prefs)
-                    activeProfileId = p.id
-                    prefs.edit().putString("active_profile_id", activeProfileId).apply()
+                    val p = viewModel.createProfile(name)
                     loadProfileToUI(p)
                     setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
                     renderProfileGrid()
@@ -717,10 +716,7 @@ class ProfilesFragment : Fragment() {
             if (profiles.size <= 1) { Toast.makeText(context, getString(R.string.cant_delete_last), Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             AlertDialog.Builder(requireContext()).setTitle("${getString(R.string.delete)} ${currentProfile.name}?")
                 .setPositiveButton(getString(R.string.delete)) { _, _ ->
-                    profiles.removeAll { it.id == currentProfile.id }
-                    VoiceProfile.saveAll(profiles, prefs)
-                    activeProfileId = profiles[0].id
-                    prefs.edit().putString("active_profile_id", activeProfileId).apply()
+                    viewModel.deleteCurrentProfile()
                     loadProfileToUI(profiles[0])
                     setupProfileSpinner()
                     renderProfileGrid()
@@ -728,7 +724,7 @@ class ProfilesFragment : Fragment() {
         }
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
             NotificationReaderService.instance?.stopSpeaking()
-            AudioPipeline.stop()
+            c.audioPipeline.stop()
         }
     }
 
@@ -766,11 +762,11 @@ class ProfilesFragment : Fragment() {
 
     override fun onDestroyView() {
         stopDownloadRefresh()
-        AudioPipeline.removeSynthesisErrorListener(synthesisErrorListener)
-        VoiceDownloadManager.removeStateListener(kokoroStateListener)
-        VoiceDownloadManager.removeProgressListener(kokoroProgressListener)
-        PiperDownloadManager.removeStateListener(piperStateListener)
-        PiperDownloadManager.removeProgressListener(piperProgressListener)
+        c.audioPipeline.removeSynthesisErrorListener(synthesisErrorListener)
+        c.voiceDownloadManager.removeStateListener(kokoroStateListener)
+        c.voiceDownloadManager.removeProgressListener(kokoroProgressListener)
+        c.piperDownloadManager.removeStateListener(piperStateListener)
+        c.piperDownloadManager.removeProgressListener(piperProgressListener)
         super.onDestroyView()
     }
 
@@ -779,8 +775,8 @@ class ProfilesFragment : Fragment() {
         refreshRunnable = object : Runnable {
             override fun run() {
                 if (!isAdded) return
-                val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
-                val piperDownloading = PiperDownloadManager.isAnyDownloading()
+                val kokoroDownloading = c.voiceDownloadManager.state == DownloadState.DOWNLOADING
+                val piperDownloading = c.piperDownloadManager.isAnyDownloading()
                 if (kokoroDownloading || piperDownloading) {
                     renderVoiceGridThrottled()
                     refreshHandler.postDelayed(this, 1000)
@@ -789,8 +785,8 @@ class ProfilesFragment : Fragment() {
                 }
             }
         }
-        val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
-        val piperDownloading = PiperDownloadManager.isAnyDownloading()
+        val kokoroDownloading = c.voiceDownloadManager.state == DownloadState.DOWNLOADING
+        val piperDownloading = c.piperDownloadManager.isAnyDownloading()
         if (kokoroDownloading || piperDownloading) {
             refreshHandler.postDelayed(refreshRunnable!!, 1000)
         }

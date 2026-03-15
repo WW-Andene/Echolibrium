@@ -9,29 +9,28 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.Spinner
-import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 /**
  * Thread safety (M9): `rules` MutableList is populated from a background thread via
  * `loadInstalledApps()`, but all mutations post results to `runOnUiThread` before
  * updating `rules`, ensuring single-thread access. The `profiles` list is read-only
  * after loading and refreshed via SharedPreferences listener on the main thread.
+ *
+ * M12: Uses RecyclerView for efficient scrolling of potentially hundreds of app rules.
  */
 class AppsFragment : Fragment() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private var rules = mutableListOf<AppRule>()
     private var profiles = listOf<VoiceProfile>()
-    private lateinit var container: LinearLayout
+    private lateinit var recycler: RecyclerView
+    private lateinit var adapter: AppRuleAdapter
     private var searchFilter = ""
     private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var searchRunnable: Runnable? = null
@@ -39,7 +38,7 @@ class AppsFragment : Fragment() {
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "voice_profiles" && isAdded) {
             profiles = VoiceProfile.loadAll(prefs)
-            renderRules()
+            submitList()
         }
     }
 
@@ -47,7 +46,11 @@ class AppsFragment : Fragment() {
         i.inflate(R.layout.fragment_apps, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        container = v.findViewById(R.id.apps_container)
+        recycler = v.findViewById(R.id.apps_recycler)
+        adapter = AppRuleAdapter { updated -> updateRule(updated) }
+        recycler.layoutManager = LinearLayoutManager(requireContext())
+        recycler.adapter = adapter
+
         rules = AppRule.loadAll(prefs)
         profiles = VoiceProfile.loadAll(prefs)
         prefs.registerOnSharedPreferenceChangeListener(prefListener)
@@ -58,7 +61,7 @@ class AppsFragment : Fragment() {
             override fun afterTextChanged(s: Editable?) {
                 searchFilter = s?.toString()?.trim() ?: ""
                 searchRunnable?.let { searchHandler.removeCallbacks(it) }
-                searchRunnable = Runnable { renderRules() }
+                searchRunnable = Runnable { submitList() }
                 searchHandler.postDelayed(searchRunnable!!, 250)
             }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -69,7 +72,7 @@ class AppsFragment : Fragment() {
         v.findViewById<Button>(R.id.btn_select_all).setOnClickListener { setAllEnabled(true) }
         v.findViewById<Button>(R.id.btn_deselect_all).setOnClickListener { setAllEnabled(false) }
 
-        renderRules()
+        submitList()
     }
 
     private fun setAllEnabled(enabled: Boolean) {
@@ -79,12 +82,16 @@ class AppsFragment : Fragment() {
             if (idx >= 0) rules[idx] = rules[idx].copy(enabled = enabled)
         }
         AppRule.saveAll(rules, prefs)
-        renderRules()
+        submitList()
     }
 
     private fun filteredRules(): List<AppRule> {
         if (searchFilter.isBlank()) return rules
         return rules.filter { it.appLabel.contains(searchFilter, ignoreCase = true) }
+    }
+
+    private fun submitList() {
+        adapter.submitList(filteredRules().map { AppRuleAdapter.Item(it, profiles) })
     }
 
     private fun loadInstalledApps() {
@@ -94,8 +101,6 @@ class AppsFragment : Fragment() {
 
         Thread {
             val pm = requireContext().packageManager
-            // Use queryIntentActivities with LAUNCHER intent — works with scoped <queries>
-            // instead of QUERY_ALL_PACKAGES. Returns all apps with a launcher icon (user apps).
             val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             val resolveInfos = try {
                 pm.queryIntentActivities(launcherIntent, 0)
@@ -119,80 +124,11 @@ class AppsFragment : Fragment() {
                     Toast.makeText(requireContext(), "No user apps found.", Toast.LENGTH_SHORT).show()
                 }
                 AppRule.saveAll(rules, prefs)
-                renderRules()
+                submitList()
                 btn.isEnabled = true
                 btn.text = "RELOAD APPS"
             }
         }.start()
-    }
-
-    private fun renderRules() {
-        container.removeAllViews()
-        filteredRules().forEach { container.addView(buildRow(it)) }
-    }
-
-    private fun buildRow(rule: AppRule): View {
-        val root = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, 3); layoutParams = lp
-        }
-
-        val top = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF181222.toInt()); setPadding(16, 14, 16, 14)
-        }
-        val label = TextView(requireContext()).apply {
-            text = rule.appLabel; textSize = 14f; setTextColor(0xFFd4cce0.toInt())
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val toggle = SwitchCompat(requireContext()).apply { isChecked = rule.enabled }
-        top.addView(label); top.addView(toggle); root.addView(top)
-
-        val bottom = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF110d18.toInt()); setPadding(16, 8, 16, 8)
-            visibility = if (rule.enabled) View.VISIBLE else View.GONE
-        }
-        toggle.setOnCheckedChangeListener { _, v ->
-            bottom.visibility = if (v) View.VISIBLE else View.GONE
-            updateRule(rule.copy(enabled = v))
-        }
-
-        val modes = arrayOf("Full", "Title only", "App only", "Text only", "Skip")
-        val modeVals = arrayOf("full", "title_only", "app_only", "text_only", "skip")
-        var modeInitDone = false
-        val modeSpinner = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
-            setSelection(modeVals.indexOf(rule.readMode).coerceAtLeast(0))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    if (!modeInitDone) { modeInitDone = true; return }
-                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = modeVals[pos])) }
-                }
-                override fun onNothingSelected(p: AdapterView<*>?) {}
-            }
-        }
-
-        val profileNames = listOf("Global") + profiles.map { "${it.emoji} ${it.name}" }
-        var profileInitDone = false
-        val profileSpinner = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, profileNames)
-            val idx = profiles.indexOfFirst { it.id == rule.profileId }
-            setSelection((idx + 1).coerceAtLeast(0))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    if (!profileInitDone) { profileInitDone = true; return }
-                    val pid = if (pos == 0) "" else profiles.getOrNull(pos - 1)?.id ?: ""
-                    rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(profileId = pid)) }
-                }
-                override fun onNothingSelected(p: AdapterView<*>?) {}
-            }
-        }
-        bottom.addView(modeSpinner); bottom.addView(profileSpinner); root.addView(bottom)
-        return root
     }
 
     override fun onDestroyView() {

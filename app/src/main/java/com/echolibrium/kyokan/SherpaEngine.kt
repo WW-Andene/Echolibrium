@@ -21,10 +21,15 @@ import java.io.File
  *
  * Thread-safe: all public methods are synchronized.
  */
-object SherpaEngine {
+class SherpaEngine(
+    private val voiceDownloadManager: VoiceDownloadManager,
+    private val piperDownloadManager: PiperDownloadManager
+) {
 
-    private const val TAG = "SherpaEngine"
-    private const val MAX_PIPER_CACHE = 1 // keep at most 1 Piper model (~80MB) to reduce memory pressure
+    companion object {
+        private const val TAG = "SherpaEngine"
+        private const val MAX_PIPER_CACHE = 1
+    }
 
     // Separate locks for Kokoro and Piper to avoid cross-engine blocking (E2)
     private val kokoroLock = Object()
@@ -53,13 +58,13 @@ object SherpaEngine {
 
     fun initialize(ctx: Context): Boolean = synchronized(kokoroLock) {
         if (isKokoroReady && kokoroTts != null) return true
-        if (!VoiceDownloadManager.isModelReady(ctx)) {
+        if (!voiceDownloadManager.isModelReady(ctx)) {
             Log.w(TAG, "Kokoro model not downloaded yet")
             return false
         }
 
         return try {
-            val modelDir = VoiceDownloadManager.getModelDir(ctx)
+            val modelDir = voiceDownloadManager.getModelDir(ctx)
             Log.d(TAG, "Loading Kokoro from $modelDir")
 
             val kokoroConfig = OfflineTtsKokoroModelConfig(
@@ -106,14 +111,14 @@ object SherpaEngine {
 
     fun initPiper(ctx: Context, voiceId: String): Boolean = synchronized(piperLock) {
         if (piperCache.containsKey(voiceId)) return true
-        if (!PiperDownloadManager.isVoiceReady(ctx, voiceId)) {
+        if (!piperDownloadManager.isVoiceReady(ctx, voiceId)) {
             Log.w(TAG, "Piper voice $voiceId not downloaded yet")
             return false
         }
 
         return try {
-            val voiceDir = PiperDownloadManager.getVoiceDir(ctx, voiceId)
-            val modelFile = PiperDownloadManager.getModelFile(voiceDir, voiceId)
+            val voiceDir = piperDownloadManager.getVoiceDir(ctx, voiceId)
+            val modelFile = piperDownloadManager.getModelFile(voiceDir, voiceId)
                 ?: throw IllegalStateException("No .onnx model found in $voiceDir")
             val tokensFile = File(voiceDir, "tokens.txt")
             val espeakDir = File(voiceDir, "espeak-ng-data")

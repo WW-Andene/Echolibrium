@@ -49,7 +49,7 @@
 
         <!-- Pitch & Speed -->
         <TextView android:id="@+id/label_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // PITCH &amp; SPEED" style="@style/SectionLabel"
+            android:text="▸ Pitch &amp; speed" style="@style/SectionLabel"
             android:clickable="true" android:focusable="true"
             android:nextFocusDown="@+id/txt_preview"
             android:contentDescription="@string/section_pitch_speed"/>

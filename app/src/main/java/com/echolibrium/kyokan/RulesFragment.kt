@@ -47,9 +47,9 @@ class RulesFragment : Fragment() {
         languageRouting = LanguageRoutingDelegate(requireContext(), prefs, c)
 
         // Collapsible sections
-        setupCollapsible(v, R.id.label_word_rules, R.id.section_word_rules, "WORD RULES")
-        setupCollapsible(v, R.id.label_notif_rules, R.id.section_notif_rules, "NOTIFICATION RULES")
-        setupCollapsible(v, R.id.label_lang_profiles, R.id.section_lang_profiles, "LANGUAGE PROFILES")
+        setupCollapsible(v, R.id.label_word_rules, R.id.section_word_rules, "Word replacements")
+        setupCollapsible(v, R.id.label_notif_rules, R.id.section_notif_rules, "Notification behavior")
+        setupCollapsible(v, R.id.label_lang_profiles, R.id.section_lang_profiles, "Language & translation")
 
         // Delegate setup
         wordRules.setup(v)
@@ -72,7 +72,7 @@ class RulesFragment : Fragment() {
                 TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
             }
             section.visibility = if (visible) View.GONE else View.VISIBLE
-            label.text = "${if (visible) "▸" else "▾"} // $name"
+            label.text = "${if (visible) "▸" else "▾"} $name"
         }
     }
 }

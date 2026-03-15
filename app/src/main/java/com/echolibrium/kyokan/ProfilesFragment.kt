@@ -102,7 +102,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun setupCollapsibleSections(v: View) {
-        setupCollapsibleSection(v, R.id.label_pitch_speed, R.id.section_pitch_speed, "// PITCH & SPEED")
+        setupCollapsibleSection(v, R.id.label_pitch_speed, R.id.section_pitch_speed, "Pitch & speed")
     }
 
     private fun setupCollapsibleSection(v: View, labelId: Int, sectionId: Int, title: String) {

@@ -11,7 +11,7 @@
 
         <!-- Collapsible: Word Rules -->
         <TextView android:id="@+id/label_word_rules" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // WORD RULES" style="@style/SectionLabel"
+            android:text="▸ Word replacements" style="@style/SectionLabel"
             android:clickable="true" android:focusable="true"
             android:nextFocusDown="@+id/label_notif_rules"
             android:contentDescription="@string/section_word_rules"/>
@@ -33,7 +33,7 @@
 
         <!-- Collapsible: Notification Rules -->
         <TextView android:id="@+id/label_notif_rules" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // NOTIFICATION RULES" style="@style/SectionLabel"
+            android:text="▸ Notification behavior" style="@style/SectionLabel"
             android:clickable="true" android:focusable="true"
             android:nextFocusUp="@+id/label_word_rules"
             android:nextFocusDown="@+id/label_lang_profiles"
@@ -116,7 +116,7 @@
 
         <!-- Collapsible: Language Profiles -->
         <TextView android:id="@+id/label_lang_profiles" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="▸ // LANGUAGE PROFILES" style="@style/SectionLabel"
+            android:text="▸ Language &amp; translation" style="@style/SectionLabel"
             android:clickable="true" android:focusable="true"
             android:nextFocusUp="@+id/label_notif_rules"
             android:contentDescription="@string/section_lang_profiles"/>
@@ -141,7 +141,7 @@
 
             <!-- L26: Dynamic voice routing per language -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="// VOICE ROUTING"
+                android:text="Voice routing"
                 android:textColor="@color/text_section" android:textSize="11sp" android:fontFamily="sans-serif"
                 android:layout_marginBottom="8dp"/>
             <LinearLayout android:id="@+id/voice_routing_container" android:layout_width="match_parent"
@@ -153,7 +153,7 @@
                 android:background="@color/divider" android:layout_marginBottom="12dp"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="// TRANSLATION"
+                android:text="Translation"
                 android:textColor="@color/text_section" android:textSize="11sp" android:fontFamily="sans-serif"
                 android:layout_marginBottom="4dp"/>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

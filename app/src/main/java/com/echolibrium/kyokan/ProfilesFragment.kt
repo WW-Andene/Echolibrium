@@ -2,6 +2,7 @@ package com.echolibrium.kyokan
 
 import android.os.Bundle
 import android.text.InputType
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -414,6 +415,44 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             .show()
     }
 
+    /**
+     * C-04: When the user saves a profile using a cloud voice, check if any enabled
+     * app rules target sensitive apps (banking, auth, health) without forceLocal=true.
+     * Shows a one-time recommendation to mark them "Local Only".
+     */
+    private fun checkSensitiveAppsForCloudVoice(profile: VoiceProfile) {
+        if (!VoiceRegistry.isCloud(profile.voiceName)) return
+        if (repo.getBoolean("cloud_sensitive_warned", false)) return
+
+        val sensitivePrefixes = listOf(
+            "com.google.android.apps.authenticator", "com.authy.", "com.onepassword.",
+            "com.lastpass.", "org.keepass", "com.bitwarden.",
+            "com.paypal.", "com.venmo.", "com.squareup.cash",
+            "com.chase.", "com.wellsfargo.", "com.bankofamerica.", "com.citi.",
+            "com.mint.", "com.wealthfront.", "com.robinhood.",
+            "com.google.android.apps.walletnfcrel",
+            "com.myfitnesspal.", "com.fitbit.", "com.samsung.android.health"
+        )
+
+        val rules = repo.getAppRules()
+        val exposedApps = rules.filter { rule ->
+            rule.enabled && !rule.forceLocal &&
+                sensitivePrefixes.any { prefix -> rule.packageName.startsWith(prefix) }
+        }
+
+        if (exposedApps.isEmpty()) return
+
+        val appNames = exposedApps.joinToString(", ") { it.appLabel }
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.cloud_sensitive_title))
+            .setMessage(getString(R.string.cloud_sensitive_message, appNames))
+            .setPositiveButton(getString(R.string.cloud_sensitive_dismiss)) { _, _ ->
+                repo.putBoolean("cloud_sensitive_warned", true)
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
     // ── API key dialog ─────────────────────────────────────────────────────
 
     private fun showDeepInfraKeyDialog() {
@@ -436,9 +475,14 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             .setView(input)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val key = input.text.toString().trim()
-                SecureKeyStore.setDeepInfraKey(ctx, key)
-                c.cloudTtsEngine.updateApiKey(key)
-                renderVoiceGrid()
+                try {
+                    SecureKeyStore.setDeepInfraKey(ctx, key)
+                    c.cloudTtsEngine.updateApiKey(key)
+                    renderVoiceGrid()
+                } catch (e: Exception) {
+                    Log.e("ProfilesFragment", "Failed to save API key to secure storage", e)
+                    Toast.makeText(ctx, getString(R.string.save_key_failed), Toast.LENGTH_LONG).show()
+                }
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -478,6 +522,8 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             lastSavedProfile = p  // F-01: update snapshot after save
             ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
             Toast.makeText(context, getString(R.string.saved_profile, p.name), Toast.LENGTH_SHORT).show()
+            // C-04: Warn about sensitive apps if saving a cloud voice profile
+            checkSensitiveAppsForCloudVoice(p)
         }
         btnNew.setOnClickListener {
             val et = EditText(requireContext()).apply {

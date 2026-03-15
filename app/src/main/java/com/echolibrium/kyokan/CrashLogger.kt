@@ -68,7 +68,9 @@ object CrashLogger {
         throwable.printStackTrace(pw)
         pw.flush()
 
-        logFile.writeText(sw.toString())
+        // C-03: Sanitize sensitive data before writing to disk
+        val sanitized = sanitize(sw.toString())
+        logFile.writeText(sanitized)
         Log.e(TAG, "Crash log written to ${logFile.absolutePath}")
 
         // Prune old logs
@@ -84,5 +86,15 @@ object CrashLogger {
         return logDir.listFiles()
             ?.maxByOrNull { it.lastModified() }
             ?.readText()
+    }
+
+    /**
+     * C-03: Redact potential API keys and auth tokens from crash log text.
+     * Protects against accidental exposure when users share crash reports.
+     */
+    private fun sanitize(text: String): String {
+        return text
+            .replace(Regex("Bearer [^\\s\"']+"), "Bearer [REDACTED]")
+            .replace(Regex("[A-Za-z0-9_-]{24,}"), "[REDACTED]")
     }
 }

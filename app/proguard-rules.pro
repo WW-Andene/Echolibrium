@@ -12,8 +12,9 @@
 -keep class * extends androidx.room.RoomDatabase { *; }
 -dontwarn androidx.room.**
 
-# Fragment classes (instantiated by FragmentManager via class name)
--keep class com.echolibrium.kyokan.*Fragment { *; }
+# Fragment classes (instantiated by FragmentManager via class name after configuration changes)
+# Keeps class names for reflection but allows R8 to shrink unused members.
+-keep class * extends androidx.fragment.app.Fragment
 
 # Keep enum entries (used by valueOf in deserialization)
 -keepclassmembers enum com.echolibrium.kyokan.** {

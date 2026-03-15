@@ -68,6 +68,7 @@ class HomeFragment : Fragment() {
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
+        private const val POST_NOTIF_PERMISSION_CODE = 1002
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
@@ -202,6 +203,10 @@ class HomeFragment : Fragment() {
             }
             view?.let { updateListeningStatus(it.findViewById(R.id.listening_status)) }
         }
+        if (requestCode == POST_NOTIF_PERMISSION_CODE) {
+            // C-01: Refresh setup status after POST_NOTIFICATIONS result (granted or denied)
+            view?.let { updateSetup(it.findViewById(R.id.btn_setup), it.findViewById(R.id.txt_setup_status)) }
+        }
     }
 
     private fun isNotifGranted() = (activity as? MainActivity)?.isNotificationAccessGranted() == true
@@ -217,16 +222,25 @@ class HomeFragment : Fragment() {
         return !repo.getBoolean("restricted_done", false)
     }
 
+    /** C-01: On Android 13+, POST_NOTIFICATIONS must be granted at runtime for foreground service notification. */
+    private fun needsPostNotifPermission(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 33) return false
+        return ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+    }
+
     private fun updateSetup(btn: Button, txt: TextView) {
         val notif = isNotifGranted()
         val battery = isBatteryExempt()
         val restricted = needsRestricted()
+        val postNotif = needsPostNotifPermission()
         if (notif) repo.putBoolean("restricted_done", true)
 
         val steps = mutableListOf<String>()
-        if (restricted) steps.add("Allow restricted settings")
-        if (!battery) steps.add("Disable battery optimization")
-        if (!notif) steps.add("Grant notification access")
+        if (restricted) steps.add(getString(R.string.setup_step_restricted))
+        if (postNotif) steps.add(getString(R.string.setup_step_post_notif))
+        if (!battery) steps.add(getString(R.string.setup_step_battery))
+        if (!notif) steps.add(getString(R.string.setup_step_notif_access))
 
         if (steps.isEmpty()) {
             btn.text = "\u2713 ${getString(R.string.all_permissions_granted)}"
@@ -247,6 +261,8 @@ class HomeFragment : Fragment() {
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     append(getString(if (!restricted) R.string.status_restricted_ok else R.string.status_restricted_fail))
                     append("  ·  ")
+                    append(getString(if (!postNotif) R.string.status_post_notif_ok else R.string.status_post_notif_fail))
+                    append("  ·  ")
                 }
                 append(getString(if (battery) R.string.status_battery_ok else R.string.status_battery_fail))
                 append("  ·  ")
@@ -266,6 +282,10 @@ class HomeFragment : Fragment() {
                     data = Uri.parse("package:${ctx.packageName}")
                 })
                 Toast.makeText(ctx, getString(R.string.allow_restricted_settings), Toast.LENGTH_LONG).show()
+            }
+            needsPostNotifPermission() -> {
+                @Suppress("DEPRECATION")
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), POST_NOTIF_PERMISSION_CODE)
             }
             !isBatteryExempt() -> {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {

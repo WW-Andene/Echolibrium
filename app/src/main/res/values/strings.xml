@@ -155,6 +155,12 @@
     <string name="cloud_privacy_accept">I understand</string>
     <string name="cloud_privacy_decline">Use local voices only</string>
     <string name="deepinfra_key_full_message">Enter your DeepInfra API key to enable cloud voices (Orpheus).\n\n%s</string>
+    <string name="save_key_failed">Failed to save API key — try again</string>
+
+    <!-- C-04: Sensitive app warning for cloud voices -->
+    <string name="cloud_sensitive_title">Sensitive apps detected</string>
+    <string name="cloud_sensitive_message">You are using a cloud voice. Notification text from these apps will be sent to DeepInfra servers:\n\n%s\n\nConsider marking them as \"Local Only\" in the Apps tab to keep their notifications on-device.</string>
+    <string name="cloud_sensitive_dismiss">Got it</string>
 
     <!-- L15: Onboarding -->
     <string name="onboarding_welcome">Welcome to Kyōkan!\n\nThree quick steps to start:\n\n\u2460 Complete the setup below to grant permissions\n\u2461 Go to Profiles to download a voice model\n\u2462 Configure per-app rules in the Apps tab\n\nTap the setup button to get started.</string>
@@ -233,12 +239,20 @@
     <!-- N-01: Externalized status strings -->
     <string name="status_restricted_ok">✓ Restricted</string>
     <string name="status_restricted_fail">✗ Restricted</string>
+    <string name="status_post_notif_ok">✓ Post notif</string>
+    <string name="status_post_notif_fail">✗ Post notif</string>
     <string name="status_battery_ok">✓ Battery</string>
     <string name="status_battery_fail">✗ Battery</string>
     <string name="status_notif_ok">✓ Notifications</string>
     <string name="status_notif_fail">✗ Notifications</string>
     <string name="status_all_granted">Restricted ✓  Battery ✓  Notifications ✓</string>
     <string name="setup_label">Setup: %s</string>
+
+    <!-- C-01: Setup step labels -->
+    <string name="setup_step_restricted">Allow restricted settings</string>
+    <string name="setup_step_post_notif">Allow notification posting</string>
+    <string name="setup_step_battery">Disable battery optimization</string>
+    <string name="setup_step_notif_access">Grant notification access</string>
     <string name="logcat_failed">Failed to start logcat: %s</string>
     <string name="listening_status_wake">Listening: say \"%1$s\" + command: repeat / how long ago? / stop / what time?</string>
     <string name="listening_status_active">Listening for: repeat / how long ago? / stop / what time?</string>

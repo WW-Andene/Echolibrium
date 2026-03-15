@@ -215,7 +215,7 @@ class ProfilesFragment : Fragment() {
                 accent = AppColors.engineOrpheus(requireContext()),
                 enabled = cloudEnabled,
                 onClick = if (cloudEnabled) {
-                    { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
+                    { selectCloudVoice(v.id) }
                 } else {
                     { showDeepInfraKeyDialog() }
                 }
@@ -371,6 +371,31 @@ class ProfilesFragment : Fragment() {
 
     private fun emptyLabel(msg: String) =
         VoiceCardBuilder.emptyLabel(requireContext(), msg)
+
+    // ── Cloud voice privacy consent ────────────────────────────────────────
+
+    /**
+     * Select a cloud voice with privacy consent gate (Phase 3.1).
+     * First time a cloud voice is selected, shows a dialog explaining that
+     * notification text will be sent to DeepInfra. Consent is persisted.
+     */
+    private fun selectCloudVoice(voiceId: String) {
+        if (prefs.getBoolean("cloud_privacy_acknowledged", false)) {
+            currentProfile = currentProfile.copy(voiceName = voiceId)
+            renderVoiceGrid()
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.cloud_privacy_title))
+            .setMessage(getString(R.string.privacy_disclosure))
+            .setPositiveButton(getString(R.string.cloud_privacy_accept)) { _, _ ->
+                prefs.edit().putBoolean("cloud_privacy_acknowledged", true).apply()
+                currentProfile = currentProfile.copy(voiceName = voiceId)
+                renderVoiceGrid()
+            }
+            .setNegativeButton(getString(R.string.cloud_privacy_decline), null)
+            .show()
+    }
 
     // ── API key dialog ─────────────────────────────────────────────────────
 

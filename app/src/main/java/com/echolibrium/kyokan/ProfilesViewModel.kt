@@ -54,8 +54,7 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
     fun setActiveProfile(id: String) {
         _activeProfileId.value = id
         prefs.edit().putString("active_profile_id", id).apply()
-        val profile = _profiles.value?.find { it.id == id }
-        if (profile != null) _currentProfile.value = profile
+        _profiles.value?.find { it.id == id }?.let { _currentProfile.value = it }
     }
 
     fun updateCurrentProfile(profile: VoiceProfile) {

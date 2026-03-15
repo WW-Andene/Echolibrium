@@ -42,6 +42,9 @@ android {
     }
     buildTypes {
         debug {
+            // WARNING: DEEPINFRA_API_KEY is baked into the debug APK as a BuildConfig field.
+            // Anyone with the APK can extract it. Never distribute debug builds externally.
+            // Release builds use an empty string — users enter their own key at runtime.
             buildConfigField "String", "DEEPINFRA_API_KEY", "\"${localProps.getProperty('DEEPINFRA_API_KEY', '')}\""
             buildConfigField "String", "PROXY_BASE_URL", "\"${localProps.getProperty('PROXY_BASE_URL', 'https://kyokan-tts.whisperingwishes-app.workers.dev')}\""
         }

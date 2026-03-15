@@ -119,8 +119,9 @@ class VoiceCommandListener(
 
     private fun scheduleRestart(isError: Boolean = false) {
         if (!isListening) return
+        val errCount: Int
         if (isError) {
-            val errCount = consecutiveErrors.incrementAndGet()
+            errCount = consecutiveErrors.incrementAndGet()
             if (errCount > MAX_CONSECUTIVE_ERRORS) {
                 Log.w(TAG, "Too many consecutive errors ($errCount), stopping listener")
                 isListening = false
@@ -129,10 +130,10 @@ class VoiceCommandListener(
             }
         } else {
             consecutiveErrors.set(0)
+            errCount = 0
         }
         // Exponential backoff on errors: 800ms, 1.6s, 3.2s, ... up to 60s
         val delay = if (isError) {
-            val errCount = consecutiveErrors.get()
             (RESTART_DELAY_MS * (1L shl (errCount - 1).coerceAtMost(6)))
                 .coerceAtMost(MAX_BACKOFF_MS)
         } else {

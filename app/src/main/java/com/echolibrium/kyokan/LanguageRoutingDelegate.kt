@@ -23,8 +23,9 @@ class LanguageRoutingDelegate(
     private val prefs: SharedPreferences,
     private val container: AppContainer
 ) {
-    private val translateCodes = NotificationTranslator.LANGUAGES.keys.toList().filter { it.isNotEmpty() }
-    private val translateNames = NotificationTranslator.LANGUAGES.values.toList().filter { it != "Off (no translation)" }
+    private val translateEntries = NotificationTranslator.LANGUAGES.entries.filter { it.key.isNotEmpty() }
+    private val translateCodes = translateEntries.map { it.key }
+    private val translateNames = translateEntries.map { it.value }
 
     /** Language flags for display — falls back to language code if no emoji. */
     private val langFlags = mapOf(

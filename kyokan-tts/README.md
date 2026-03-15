@@ -1,3 +1,7 @@
+> **Note:** This is a standalone server-side TTS routing module. The Android app (`app/`) does NOT
+> use this module — `CloudTtsEngine.kt` talks directly to DeepInfra's API. This module is for
+> future server-side TTS routing with multiple engine support.
+
 # Kyōkan TTS Engine
 
 Multi-engine TTS system for Kyōkan — routes notifications to the best voice engine.

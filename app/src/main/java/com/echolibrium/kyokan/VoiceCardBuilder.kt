@@ -217,26 +217,6 @@ object VoiceCardBuilder {
         }
     }
 
-    fun addVoiceRows(target: LinearLayout, cards: List<View>, columns: Int = 3) {
-        val ctx = target.context
-        cards.chunked(columns).forEach { rowCards ->
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-            rowCards.forEach { row.addView(it) }
-            repeat(columns - rowCards.size) {
-                row.addView(View(ctx).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                })
-            }
-            target.addView(row)
-        }
-    }
-
     fun emptyLabel(ctx: Context, msg: String): View {
         return TextView(ctx).apply {
             text = msg; setTextColor(AppColors.textSection(ctx)); textSize = 12f

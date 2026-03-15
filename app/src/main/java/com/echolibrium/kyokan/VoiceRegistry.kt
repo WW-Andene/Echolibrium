@@ -46,7 +46,6 @@ object VoiceRegistry {
         val apiVoiceName: String
     ) {
         val genderIcon get() = if (gender == "Female") "♀" else "♂"
-        @Deprecated("Unused — views use AppColors.genderColor() instead") val genderColor get() = if (gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
     }
 
     val CLOUD_VOICES = listOf(
@@ -93,5 +92,6 @@ object VoiceRegistry {
     fun byEngine(engine: Engine): List<VoiceEntry> = ALL.filter { it.engine == engine }
     fun genders(): List<String> = listOf("All", "Female", "Male")
     fun languages(): List<String> = listOf("All") + ALL.map { it.language }.distinct().sorted()
+    /** Returns engine filter options. Currently unused in UI — planned for future engine filter. */
     fun engines(): List<String> = listOf("All", "Kokoro", "Piper", "Orpheus")
 }

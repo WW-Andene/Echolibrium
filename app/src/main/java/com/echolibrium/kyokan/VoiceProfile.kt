@@ -51,7 +51,7 @@ data class VoiceProfile(
             if (json.length > PREFS_SIZE_WARN_BYTES) {
                 Log.w("VoiceProfile", "voice_profiles JSON is ${json.length} bytes — consider pruning old profiles")
             }
-            prefs.edit().putString("voice_profiles", json).commit()
+            prefs.edit().putString("voice_profiles", json).apply()
         }
 
         /** L5: Warn threshold for SharedPreferences value size (512KB). */

@@ -42,10 +42,13 @@ class HomeFragment : Fragment() {
         private const val AUDIO_PERMISSION_CODE = 1001
     }
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_home, c, false)
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
+        inflater.inflate(R.layout.fragment_home, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        v.findViewById<TextView>(R.id.txt_version).text =
+            "v${BuildConfig.VERSION_NAME}  ·  Kokoro + Piper + Orpheus"
+
         val btnSetup      = v.findViewById<Button>(R.id.btn_setup)
         val txtSetup      = v.findViewById<TextView>(R.id.txt_setup_status)
         val switchEnabled = v.findViewById<SwitchCompat>(R.id.switch_enabled)

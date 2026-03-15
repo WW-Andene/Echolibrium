@@ -8,6 +8,9 @@
 // Simple in-memory rate limiter (per-worker-instance)
 // Cloudflare Workers restart frequently, so this resets naturally.
 // For stricter limits, use Cloudflare Workers KV or Rate Limiting rules.
+// LIMITATION: This rate limit is per-isolate, not globally shared.
+// Under high traffic, Cloudflare may spawn multiple isolates, each with
+// its own rateLimitMap, effectively multiplying the per-IP allowance.
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 30; // max requests per IP per window
 const MAX_INPUT_LENGTH = 2000; // max characters per request

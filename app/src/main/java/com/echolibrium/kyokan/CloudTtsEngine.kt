@@ -93,9 +93,6 @@ class CloudTtsEngine {
             put("voice", v)
         }
 
-        // Use proxy if available, otherwise hit DeepInfra directly
-        val url = proxy ?: DIRECT_URL
-
         // Try proxy first, then fall back to direct API with user's key
         val urlsToTry = mutableListOf<Pair<String, Boolean>>()
         if (proxy != null) urlsToTry.add(Pair(proxy, false))  // proxy: no auth header

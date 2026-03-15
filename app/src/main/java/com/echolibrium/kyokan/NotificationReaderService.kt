@@ -50,7 +50,7 @@ class NotificationReaderService : NotificationListenerService() {
     )
 
     companion object {
-        var instance: NotificationReaderService? = null
+        @Volatile var instance: NotificationReaderService? = null
         private const val KEY_EXPIRY_MS = 5 * 60 * 1000L
 
         private const val TAG = "NotifReader"

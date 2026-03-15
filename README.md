@@ -2,6 +2,11 @@
 
 Notification reader for Android with multi-engine TTS and adaptive voice profiles.
 
+## Naming
+- **Echolibrium** — project/repository name
+- **Kyōkan (共感)** — product name shown to users (means "empathy/resonance" in Japanese)
+- **Package:** `com.echolibrium.kyokan` — bridges both names
+
 ## Features
 - Reads notification text aloud (app name + title + body, configurable per app)
 - **Three TTS engines:**

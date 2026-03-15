@@ -30,6 +30,12 @@
 
     <!-- ═══ Functional accent colors — brighter for dark backgrounds ═══ -->
     <color name="accent_red">#ff4444</color>
+    <color name="accent_orange">#ffaa44</color>
+    <color name="accent_cyan">#33ccff</color>
+    <color name="accent_blue">#88bbff</color>
+    <color name="accent_dnd">#ffbb33</color>
+    <color name="accent_save">#8888ff</color>
+    <color name="accent_rose">#d4788a</color>
     <color name="status_ready">#00cc66</color>
     <color name="status_error">#ff4444</color>
 

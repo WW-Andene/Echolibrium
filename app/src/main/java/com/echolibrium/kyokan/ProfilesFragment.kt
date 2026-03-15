@@ -73,8 +73,8 @@ class ProfilesFragment : Fragment() {
     private lateinit var genderRow: LinearLayout
     private lateinit var nationRow: LinearLayout
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_profiles, c, false)
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
+        inflater.inflate(R.layout.fragment_profiles, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
         bindViews(v)

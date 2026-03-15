@@ -4,7 +4,7 @@
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
-    <string name="nav_voices">Voices</string>
+    <string name="nav_voices">Profiles</string>
     <string name="nav_apps">Apps</string>
     <string name="nav_rules">Rules</string>
     <string name="nav_log">Log</string>

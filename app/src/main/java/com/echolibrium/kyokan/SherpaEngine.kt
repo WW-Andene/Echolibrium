@@ -48,7 +48,7 @@ class SherpaEngine(
 
     // ── Public state ────────────────────────────────────────────────────────
 
-    var lastSampleRate: Int = 22050
+    @Volatile var lastSampleRate: Int = 22050
         private set
 
     /** True if Kokoro is initialized (for backward compat with AudioPipeline) */

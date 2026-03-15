@@ -35,13 +35,16 @@ class RulesFragment : Fragment() {
         }
     }
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_rules, c, false)
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
+        inflater.inflate(R.layout.fragment_rules, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
         prefs.registerOnSharedPreferenceChangeListener(prefListener)
 
-        // Initialize delegates
+        // Delegates have intentionally different constructor signatures:
+        // - WordRulesDelegate(Context, SharedPreferences, LinearLayout) — needs direct container access for view building
+        // - NotificationRulesDelegate(SharedPreferences) — pure preference management, no view building
+        // - LanguageRoutingDelegate(Context, SharedPreferences, AppContainer) — needs container for NotificationTranslator
         wordRules = WordRulesDelegate(requireContext(), prefs, v.findViewById(R.id.rules_container))
         notificationRules = NotificationRulesDelegate(prefs)
         languageRouting = LanguageRoutingDelegate(requireContext(), prefs, c)

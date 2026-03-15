@@ -42,8 +42,8 @@ class AppsFragment : Fragment() {
         }
     }
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_apps, c, false)
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
+        inflater.inflate(R.layout.fragment_apps, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
         recycler = v.findViewById(R.id.apps_recycler)

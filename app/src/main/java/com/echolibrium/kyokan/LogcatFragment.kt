@@ -84,8 +84,8 @@ class LogcatFragment : Fragment() {
 
     data class LogLine(val raw: String, val level: Char, val tag: String, val message: String, val pid: String)
 
-    override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
-        i.inflate(R.layout.fragment_logcat, c, false)
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
+        inflater.inflate(R.layout.fragment_logcat, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
         tvLog = v.findViewById(R.id.tv_log)

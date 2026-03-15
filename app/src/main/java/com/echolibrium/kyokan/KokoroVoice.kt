@@ -15,7 +15,6 @@ data class KokoroVoice(
     val nationality: String  // American | British
 ) {
     val genderIcon get() = if (gender == "Female") "♀" else "♂"
-    @Deprecated("Unused — views use AppColors.genderColor() instead") val genderColor get() = if (gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
     val flagEmoji get() = if (nationality == "American") "🇺🇸" else "🇬🇧"
 }
 

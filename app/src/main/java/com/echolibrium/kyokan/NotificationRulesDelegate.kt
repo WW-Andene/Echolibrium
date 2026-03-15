@@ -40,10 +40,10 @@ class NotificationRulesDelegate(private val prefs: SharedPreferences) {
         val seekCooldown = v.findViewById<SeekBar>(R.id.seek_cooldown)
         val cooldown = prefs.getInt("notif_cooldown", 3)
         seekCooldown.progress = cooldown
-        txtCooldown.text = "Cooldown per app: ${cooldown}s"
+        txtCooldown.text = v.context.getString(R.string.cooldown_label, cooldown)
         seekCooldown.setOnSeekBarChangeListener(onSeekBarChange { value ->
             prefs.edit().putInt("notif_cooldown", value).apply()
-            txtCooldown.text = "Cooldown per app: ${value}s"
+            txtCooldown.text = v.context.getString(R.string.cooldown_label, value)
         })
 
         // L1: min=1 to prevent visual/logical mismatch (0 would be selectable but meaningless)
@@ -52,10 +52,10 @@ class NotificationRulesDelegate(private val prefs: SharedPreferences) {
         seekMaxQueue.min = 1
         val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
         seekMaxQueue.progress = maxQueue
-        txtMaxQueue.text = "Max queue size: $maxQueue"
+        txtMaxQueue.text = v.context.getString(R.string.max_queue_label, maxQueue)
         seekMaxQueue.setOnSeekBarChangeListener(onSeekBarChange { value ->
             prefs.edit().putInt("notif_max_queue", value).apply()
-            txtMaxQueue.text = "Max queue size: $value"
+            txtMaxQueue.text = v.context.getString(R.string.max_queue_label, value)
         })
     }
 }

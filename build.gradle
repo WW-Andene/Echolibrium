@@ -1,4 +1,10 @@
 plugins {
+    // Upgrade path: Kotlin 2.0+ (K2 compiler) + AGP 8.5+
+    // Prerequisites before upgrading:
+    //   1. Test K2 compiler with `kotlin.experimental.tryK2=true` in gradle.properties
+    //   2. Update deprecated API usage flagged by K2
+    //   3. Verify sherpa-onnx AAR compatibility with newer AGP
+    //   4. Run full regression test after upgrade
     id 'com.android.application' version '8.2.2' apply false
     id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
 }

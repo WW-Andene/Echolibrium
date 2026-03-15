@@ -13,6 +13,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
@@ -33,6 +34,16 @@ class MainActivity : AppCompatActivity() {
             if (darkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
         )
         super.onCreate(savedInstanceState)
+
+        // Edge-to-edge: draw behind system bars (M25)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        // Light status bar icons in dark mode, dark icons in light mode
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = !darkMode
+        insetsController.isAppearanceLightNavigationBars = !darkMode
+
         CrashLogger.install(this)
         setContentView(R.layout.activity_main)
         for (id in tabIds) {
@@ -40,7 +51,15 @@ class MainActivity : AppCompatActivity() {
         }
         if (savedInstanceState == null) selectTab(R.id.nav_home)
 
-        // Edge-to-edge: apply system bar insets to bottom nav (M25)
+        // Edge-to-edge: apply status bar insets to fragment container top padding
+        val fragmentContainer = findViewById<View>(R.id.fragment_container)
+        ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, bars.top, v.paddingRight, v.paddingBottom)
+            insets
+        }
+
+        // Edge-to-edge: apply navigation bar insets to bottom nav
         val bottomNav = findViewById<LinearLayout>(R.id.bottom_nav)
         ViewCompat.setOnApplyWindowInsetsListener(bottomNav) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())

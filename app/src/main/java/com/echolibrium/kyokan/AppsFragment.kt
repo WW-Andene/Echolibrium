@@ -1,7 +1,6 @@
 package com.echolibrium.kyokan
 
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.text.Editable
@@ -13,20 +12,15 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 /**
- * Thread safety (M9): `rules` MutableList is populated from a background thread via
- * `loadInstalledApps()`, but all mutations post results to `runOnUiThread` before
- * updating `rules`, ensuring single-thread access. The `profiles` list is read-only
- * after loading and refreshed via SharedPreferences listener on the main thread.
- *
- * M12: Uses RecyclerView for efficient scrolling of potentially hundreds of app rules.
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class AppsFragment : Fragment() {
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    private val c by lazy { requireContext().container }
+    private val repo by lazy { c.repo }
     private var rules = mutableListOf<AppRule>()
     private var profiles = listOf<VoiceProfile>()
     private lateinit var recycler: RecyclerView
@@ -35,9 +29,9 @@ class AppsFragment : Fragment() {
     private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var searchRunnable: Runnable? = null
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    private val repoListener: (String) -> Unit = { key ->
         if (key == "voice_profiles" && isAdded) {
-            profiles = VoiceProfile.loadAll(prefs)
+            profiles = repo.getProfiles()
             submitList()
         }
     }
@@ -51,12 +45,11 @@ class AppsFragment : Fragment() {
         recycler.layoutManager = LinearLayoutManager(requireContext())
         recycler.adapter = adapter
 
-        rules = AppRule.loadAll(prefs)
-        profiles = VoiceProfile.loadAll(prefs)
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        rules = repo.getAppRules().toMutableList()
+        profiles = repo.getProfiles()
+        repo.addChangeListener(repoListener)
         v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
 
-        // Search bar with debounce (E3: avoid rebuilding all rows on every keystroke)
         v.findViewById<EditText>(R.id.et_search).addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 searchFilter = s?.toString()?.trim() ?: ""
@@ -68,7 +61,6 @@ class AppsFragment : Fragment() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
 
-        // Select / Deselect all
         v.findViewById<Button>(R.id.btn_select_all).setOnClickListener { setAllEnabled(true) }
         v.findViewById<Button>(R.id.btn_deselect_all).setOnClickListener { setAllEnabled(false) }
 
@@ -81,7 +73,7 @@ class AppsFragment : Fragment() {
             val idx = rules.indexOfFirst { it.packageName == rule.packageName }
             if (idx >= 0) rules[idx] = rules[idx].copy(enabled = enabled)
         }
-        AppRule.saveAll(rules, prefs)
+        repo.saveAppRules(rules)
         submitList()
     }
 
@@ -123,7 +115,7 @@ class AppsFragment : Fragment() {
                 if (rules.isEmpty()) {
                     Toast.makeText(requireContext(), getString(R.string.no_user_apps), Toast.LENGTH_SHORT).show()
                 }
-                AppRule.saveAll(rules, prefs)
+                repo.saveAppRules(rules)
                 submitList()
                 btn.isEnabled = true
                 btn.text = getString(R.string.reload_apps)
@@ -132,13 +124,13 @@ class AppsFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        repo.removeChangeListener(repoListener)
         super.onDestroyView()
     }
 
     private fun updateRule(updated: AppRule) {
         val idx = rules.indexOfFirst { it.packageName == updated.packageName }
         if (idx >= 0) rules[idx] = updated else rules.add(updated)
-        AppRule.saveAll(rules, prefs)
+        repo.saveAppRules(rules)
     }
 }

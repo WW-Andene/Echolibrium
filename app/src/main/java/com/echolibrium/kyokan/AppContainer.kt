@@ -10,18 +10,25 @@ import androidx.preference.PreferenceManager
  * Holds all previously-singleton instances. Created once in KyokanApp.onCreate()
  * and accessed via KyokanApp.container throughout the app.
  *
- * Stateless utilities (DownloadUtil, SecureKeyStore, CrashLogger) remain as objects.
- *
- * I-07: Central access point for SharedPreferences. All classes should access
- * preferences through this container rather than calling
- * PreferenceManager.getDefaultSharedPreferences() directly.
- * Future: extract a full SettingsRepository wrapping prefs with typed accessors.
+ * I-07 / O-01: All data access goes through [repo] (SettingsRepository).
+ * [prefs] is still available for components that need raw SharedPreferences
+ * during gradual migration, but prefer [repo] for all new code.
  */
 class AppContainer(private val appContext: Context) {
 
-    /** I-07: Single SharedPreferences access point for the entire app. */
+    /** I-07: Single SharedPreferences access point — prefer repo for typed access. */
     val prefs: SharedPreferences by lazy {
         PreferenceManager.getDefaultSharedPreferences(appContext)
+    }
+
+    /** O-01: Room database for structured data. */
+    val database: KyokanDatabase by lazy {
+        KyokanDatabase.create(appContext)
+    }
+
+    /** I-07 / O-01: Typed repository — single entry point for all data access. */
+    val repo: SettingsRepository by lazy {
+        SettingsRepository(database, prefs)
     }
 
     val cloudTtsEngine: CloudTtsEngine = CloudTtsEngine()

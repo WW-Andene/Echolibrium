@@ -1,6 +1,5 @@
 package com.echolibrium.kyokan
 
-import android.content.SharedPreferences
 import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -53,39 +52,41 @@ class CloudTtsEngine {
     @Volatile
     private var enabled = false
 
-    /** K-01: SharedPreferences for daily usage tracking. Set via configure(). */
+    /** K-01: SettingsRepository for daily usage tracking. Set via configure(). */
     @Volatile
-    private var prefs: SharedPreferences? = null
+    private var repo: SettingsRepository? = null
 
     /** K-01: Get today's character usage count, resetting if day changed. */
     fun dailyCharsUsed(): Int {
-        val p = prefs ?: return 0
+        val r = repo ?: return 0
         val today = java.time.LocalDate.now().toString()
-        val storedDate = p.getString(PREF_DAILY_CHARS_DATE, "") ?: ""
+        val storedDate = r.getString(PREF_DAILY_CHARS_DATE)
         if (storedDate != today) {
-            p.edit().putInt(PREF_DAILY_CHARS, 0).putString(PREF_DAILY_CHARS_DATE, today).apply()
+            r.putInt(PREF_DAILY_CHARS, 0)
+            r.putString(PREF_DAILY_CHARS_DATE, today)
             return 0
         }
-        return p.getInt(PREF_DAILY_CHARS, 0)
+        return r.getInt(PREF_DAILY_CHARS, 0)
     }
 
     private fun addDailyChars(count: Int) {
-        val p = prefs ?: return
+        val r = repo ?: return
         val today = java.time.LocalDate.now().toString()
-        val storedDate = p.getString(PREF_DAILY_CHARS_DATE, "") ?: ""
-        val current = if (storedDate == today) p.getInt(PREF_DAILY_CHARS, 0) else 0
-        p.edit().putInt(PREF_DAILY_CHARS, current + count).putString(PREF_DAILY_CHARS_DATE, today).apply()
+        val storedDate = r.getString(PREF_DAILY_CHARS_DATE)
+        val current = if (storedDate == today) r.getInt(PREF_DAILY_CHARS, 0) else 0
+        r.putInt(PREF_DAILY_CHARS, current + count)
+        r.putString(PREF_DAILY_CHARS_DATE, today)
     }
 
     /**
      * Configure with optional proxy URL and/or direct API key.
      * Proxy takes priority: if set, cloud TTS is enabled without a local key.
      */
-    fun configure(key: String, proxy: String = "", sharedPrefs: SharedPreferences? = null) {
+    fun configure(key: String, proxy: String = "", settingsRepo: SettingsRepository? = null) {
         apiKey = key
         proxyUrl = proxy.ifBlank { null }
         enabled = proxyUrl != null || key.isNotBlank()
-        if (sharedPrefs != null) prefs = sharedPrefs
+        if (settingsRepo != null) repo = settingsRepo
         Log.i(TAG, "Cloud TTS ${if (enabled) "enabled" else "disabled"}" +
                 if (proxyUrl != null) " (via proxy)" else "")
     }

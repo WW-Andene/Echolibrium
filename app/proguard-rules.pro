@@ -2,9 +2,15 @@
 -keep class com.k2fsa.sherpa.onnx.** { *; }
 -keepclassmembers class com.k2fsa.sherpa.onnx.** { *; }
 
-# Classes deserialized from SharedPreferences / JSON (reflection-based)
+# Room entities and data classes (reflection + Room annotation processing)
 -keep class com.echolibrium.kyokan.VoiceProfile { *; }
 -keep class com.echolibrium.kyokan.AppRule { *; }
+-keep class com.echolibrium.kyokan.WordRule { *; }
+
+# Room database
+-keep class com.echolibrium.kyokan.KyokanDatabase { *; }
+-keep class * extends androidx.room.RoomDatabase { *; }
+-dontwarn androidx.room.**
 
 # Fragment classes (instantiated by FragmentManager via class name)
 -keep class com.echolibrium.kyokan.*Fragment { *; }

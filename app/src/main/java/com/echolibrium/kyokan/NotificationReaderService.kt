@@ -1,10 +1,8 @@
 package com.echolibrium.kyokan
 
-import android.content.SharedPreferences
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import androidx.preference.PreferenceManager
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
 import java.util.concurrent.CountDownLatch
@@ -18,11 +16,14 @@ import java.util.concurrent.TimeUnit
  * binder thread (onNotificationPosted/Removed) and the single-threaded processingExecutor.
  * All accesses are protected by synchronized(readKeys/swipedKeys/appLastRead) blocks.
  * The cachedRules/cachedProfiles volatiles are read from the executor and invalidated
- * from the main thread via SharedPreferences listener — safe due to @Volatile.
+ * from the main thread via repository listener — safe due to @Volatile.
+ *
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class NotificationReaderService : NotificationListenerService() {
 
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
+    private val c by lazy { container }
+    private val repo by lazy { c.repo }
 
     // Guarded by synchronized(readKeys) — accessed from binder + executor threads
     private val readKeys = LinkedHashMap<String, Long>(128, 0.75f, true)
@@ -31,12 +32,12 @@ class NotificationReaderService : NotificationListenerService() {
     // Guarded by synchronized(appLastRead)
     private val appLastRead = mutableMapOf<String, Long>()
 
-    // Cached data — invalidated via SharedPreferences listener (QW6)
+    // Cached data — invalidated via repository listener (QW6)
     @Volatile private var cachedRules: List<AppRule>? = null
     @Volatile private var cachedProfiles: List<VoiceProfile>? = null
     @Volatile private var cachedWordRules: List<Pair<String, String>>? = null
 
-    private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    private val repoListener: (String) -> Unit = { key ->
         when (key) {
             "app_rules" -> cachedRules = null
             "voice_profiles", "active_profile_id" -> cachedProfiles = null
@@ -59,16 +60,14 @@ class NotificationReaderService : NotificationListenerService() {
         @Volatile var lastNotificationTime: Long = 0L
     }
 
-    private val c by lazy { container }
-
     override fun onCreate() {
         super.onCreate()
         CrashLogger.install(this)
         instance = this
-        prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
+        repo.addChangeListener(repoListener)
         c.audioPipeline.start(this)
         TtsAliveService.start(this)
-        if (prefs.getBoolean("listening_enabled", false)) {
+        if (repo.getBoolean("listening_enabled", false)) {
             try {
                 val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
                     this, android.Manifest.permission.RECORD_AUDIO
@@ -81,7 +80,7 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     override fun onDestroy() {
-        prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
+        repo.removeChangeListener(repoListener)
         instance = null
         lastSpokenText = ""
         lastNotificationTime = 0L
@@ -95,25 +94,25 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (!prefs.getBoolean("service_enabled", true)) return
+        if (!repo.getBoolean("service_enabled", true)) return
         if (sbn.packageName == packageName) return
         if (isDndActive()) return
-        if (sbn.isOngoing && !prefs.getBoolean("notif_read_ongoing", false)) return
+        if (sbn.isOngoing && !repo.getBoolean("notif_read_ongoing", false)) return
 
-        val rules = cachedRules ?: AppRule.loadAll(prefs).also { cachedRules = it }
+        val rules = cachedRules ?: repo.getAppRules().also { cachedRules = it }
         val rule  = rules.find { it.packageName == sbn.packageName }
         if (rule?.readMode == "skip" || rule?.enabled == false) return
 
         val now = System.currentTimeMillis()
 
         // Skip notifications that the user already swiped away
-        if (prefs.getBoolean("notif_skip_swiped", true)) {
+        if (repo.getBoolean("notif_skip_swiped", true)) {
             synchronized(swipedKeys) {
                 if (swipedKeys.remove(sbn.key)) return
             }
         }
 
-        if (prefs.getBoolean("notif_read_once", true)) {
+        if (repo.getBoolean("notif_read_once", true)) {
             val key = sbn.key
             synchronized(readKeys) {
                 if (readKeys.containsKey(key)) return
@@ -122,7 +121,7 @@ class NotificationReaderService : NotificationListenerService() {
             }
         }
 
-        val cooldownMs = prefs.getInt("notif_cooldown", 3) * 1000L
+        val cooldownMs = repo.getInt("notif_cooldown", 3) * 1000L
         if (cooldownMs > 0) {
             synchronized(appLastRead) {
                 val lastRead = appLastRead[sbn.packageName] ?: 0L
@@ -140,23 +139,24 @@ class NotificationReaderService : NotificationListenerService() {
         val pkgName = sbn.packageName
 
         processingExecutor.execute {
-            val profiles  = cachedProfiles ?: VoiceProfile.loadAll(prefs).also { cachedProfiles = it }
-            val activeId = prefs.getString("active_profile_id", "") ?: ""
+            val profiles  = cachedProfiles ?: repo.getProfiles().also { cachedProfiles = it }
+            val activeId = repo.activeProfileId
 
-            val readMode = rule?.readMode ?: prefs.getString("read_mode", "full") ?: "full"
-            var rawText = buildMessage(appName, title, text, readMode)
+            val readMode = rule?.readMode ?: repo.getString("read_mode", "full")
+            val readAppName = repo.getBoolean("read_app_name", true)
+            var rawText = NotificationFormatter.buildMessage(appName, title, text, readMode, readAppName)
             if (rawText.isBlank()) return@execute
 
-            // Apply word replacement rules (H11: was dead code — now wired in)
+            // Apply word replacement rules
             rawText = applyWordRules(rawText)
 
             // Language detection — L26: generic routing for all supported languages
             val appLang = getAppLanguage(pkgName)
             val detectedLang = detectLanguage("$title $text", appLang)
-            val translateEnabled = prefs.getBoolean("translate_${detectedLang}_enabled", false)
+            val translateEnabled = repo.getBoolean("translate_${detectedLang}_enabled", false)
             var effectiveLang = detectedLang
             if (translateEnabled) {
-                val targetLang = prefs.getString("translate_${detectedLang}_lang", "") ?: ""
+                val targetLang = repo.getString("translate_${detectedLang}_lang")
                 if (targetLang.isNotBlank() && targetLang != detectedLang) {
                     val translated = c.notificationTranslator.translate(rawText, detectedLang, targetLang)
                     if (translated != rawText) rawText = translated
@@ -180,7 +180,7 @@ class NotificationReaderService : NotificationListenerService() {
             lastSpokenText = rawText
             lastNotificationTime = now
 
-            val maxQueue = prefs.getInt("notif_max_queue", 10).coerceAtLeast(1)
+            val maxQueue = repo.getInt("notif_max_queue", 10).coerceAtLeast(1)
 
             c.audioPipeline.enqueue(AudioPipeline.Item(
                 text     = rawText,
@@ -193,11 +193,11 @@ class NotificationReaderService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (prefs.getBoolean("notif_skip_swiped", true)) {
+        if (repo.getBoolean("notif_skip_swiped", true)) {
             synchronized(swipedKeys) { swipedKeys.add(sbn.key) }
             synchronized(readKeys) { readKeys.remove(sbn.key) }
         }
-        if (prefs.getBoolean("notif_stop_on_swipe", false)) {
+        if (repo.getBoolean("notif_stop_on_swipe", false)) {
             c.audioPipeline.stop()
         }
     }
@@ -210,18 +210,6 @@ class NotificationReaderService : NotificationListenerService() {
         }
     }
 
-    private fun buildMessage(appName: String, title: String, text: String, mode: String) =
-        when (mode) {
-            "app_only"   -> appName
-            "title_only" -> "$appName. $title"
-            "text_only"  -> text
-            else         -> buildString {
-                if (prefs.getBoolean("read_app_name", true)) append("$appName. ")
-                if (title.isNotBlank()) append("$title. ")
-                if (text.isNotBlank()) append(text)
-            }
-        }
-
     /**
      * Apply word replacement rules to text before speaking (H11).
      * Rules are find→replace pairs configured in the Rules tab.
@@ -229,40 +217,21 @@ class NotificationReaderService : NotificationListenerService() {
      */
     private fun applyWordRules(text: String): String {
         val rules = cachedWordRules ?: loadWordRules().also { cachedWordRules = it }
-        if (rules.isEmpty()) return text
-        var result = text
-        for ((find, replace) in rules) {
-            if (find.isNotBlank()) {
-                result = result.replace(find, replace, ignoreCase = true)
-            }
-        }
-        return result
+        return NotificationFormatter.applyWordRules(text, rules)
     }
 
     private fun loadWordRules(): List<Pair<String, String>> {
-        val json = prefs.getString("wording_rules", null) ?: return emptyList()
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).mapNotNull { i ->
-                val obj = arr.getJSONObject(i)
-                val find = obj.optString("find", "")
-                val replace = obj.optString("replace", "")
-                if (find.isNotBlank()) find to replace else null
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse wording_rules", e)
-            emptyList()
-        }
+        return repo.getWordRules()
+            .filter { it.find.isNotBlank() }
+            .map { it.find to it.replace }
     }
 
     private fun isDndActive(): Boolean {
-        if (!prefs.getBoolean("dnd_enabled", false)) return false
-        val start = prefs.getInt("dnd_start", 22)
-        val end   = prefs.getInt("dnd_end",   8)
-        // L2: start == end means no window — DND effectively disabled
-        if (start == end) return false
+        if (!repo.getBoolean("dnd_enabled", false)) return false
+        val start = repo.getInt("dnd_start", 22)
+        val end   = repo.getInt("dnd_end",   8)
         val hour  = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        return if (start > end) hour >= start || hour < end else hour in start until end
+        return NotificationFormatter.isDndActiveForHour(hour, start, end)
     }
 
     private fun getAppName(pkg: String) = try {
@@ -271,9 +240,8 @@ class NotificationReaderService : NotificationListenerService() {
     } catch (e: Exception) { pkg }
 
     private fun resolveProfileByLanguage(lang: String, profiles: List<VoiceProfile>): String? {
-        if (!prefs.getBoolean("lang_routing_enabled", false)) return null
-        // L26: Check language-specific profile first, then fall back to generic
-        val id = prefs.getString("lang_profile_$lang", "") ?: ""
+        if (!repo.getBoolean("lang_routing_enabled", false)) return null
+        val id = repo.getString("lang_profile_$lang")
         return id.ifEmpty { null }
     }
 

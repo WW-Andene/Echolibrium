@@ -17,8 +17,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
-import androidx.preference.PreferenceManager
-
 class MainActivity : AppCompatActivity() {
 
     companion object {
@@ -30,8 +28,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // L14: Apply saved theme preference before setContentView
-        val darkMode = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("dark_mode", true)
+        // I-07: Use repo for typed access
+        val darkMode = container.repo.getBoolean("dark_mode", true)
         AppCompatDelegate.setDefaultNightMode(
             if (darkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
         )

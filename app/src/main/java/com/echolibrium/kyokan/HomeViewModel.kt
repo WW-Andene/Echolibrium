@@ -4,24 +4,22 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.preference.PreferenceManager
 
 /**
  * ViewModel for HomeFragment (M28).
- *
- * Manages setup state and listening configuration.
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(app)
     private val c = app.container
+    private val repo = c.repo
 
-    private val _listeningEnabled = MutableLiveData(prefs.getBoolean("listening_enabled", false))
+    private val _listeningEnabled = MutableLiveData(repo.getBoolean("listening_enabled", false))
     val listeningEnabled: LiveData<Boolean> = _listeningEnabled
 
     fun setListeningEnabled(enabled: Boolean) {
         _listeningEnabled.value = enabled
-        prefs.edit().putBoolean("listening_enabled", enabled).apply()
+        repo.putBoolean("listening_enabled", enabled)
     }
 
     fun startListening() {

@@ -117,8 +117,7 @@ class AudioPipeline(
             ""
         }
         val key = userKey.ifBlank { BuildConfig.DEEPINFRA_API_KEY }
-        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
-        cloudTtsEngine.configure(key, proxyUrl, prefs)
+        cloudTtsEngine.configure(key, proxyUrl, ctx.container.repo)
     }
 
     fun stop() {

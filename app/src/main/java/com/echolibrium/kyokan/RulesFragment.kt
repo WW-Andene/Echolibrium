@@ -1,33 +1,27 @@
 package com.echolibrium.kyokan
 
-import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.fragment.app.Fragment
-import androidx.preference.PreferenceManager
 
 /**
  * Thin host fragment for the Rules tab (M20: decomposed into delegates).
- *
- * Each feature area is handled by its own delegate:
- * - [WordRulesDelegate]: find/replace word rules
- * - [NotificationRulesDelegate]: notification behavior (read-once, cooldown, etc.)
- * - [LanguageRoutingDelegate]: per-language voice routing + translation
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class RulesFragment : Fragment() {
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private val c by lazy { requireContext().container }
+    private val repo by lazy { c.repo }
 
     private lateinit var wordRules: WordRulesDelegate
     private lateinit var notificationRules: NotificationRulesDelegate
     private lateinit var languageRouting: LanguageRoutingDelegate
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    private val repoListener: (String) -> Unit = listener@{ key ->
         if ((key == "voice_profiles" || key == "active_profile_id") && isAdded) {
-            val v = view ?: return@OnSharedPreferenceChangeListener
+            val v = view ?: return@listener
             languageRouting.refreshProfileSpinners(v)
         }
     }
@@ -36,29 +30,23 @@ class RulesFragment : Fragment() {
         inflater.inflate(R.layout.fragment_rules, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        repo.addChangeListener(repoListener)
 
-        // Delegates have intentionally different constructor signatures:
-        // - WordRulesDelegate(Context, SharedPreferences, LinearLayout) — needs direct container access for view building
-        // - NotificationRulesDelegate(SharedPreferences) — pure preference management, no view building
-        // - LanguageRoutingDelegate(Context, SharedPreferences, AppContainer) — needs container for NotificationTranslator
-        wordRules = WordRulesDelegate(requireContext(), prefs, v.findViewById(R.id.rules_container))
-        notificationRules = NotificationRulesDelegate(prefs)
-        languageRouting = LanguageRoutingDelegate(requireContext(), prefs, c)
+        wordRules = WordRulesDelegate(requireContext(), repo, v.findViewById(R.id.rules_container))
+        notificationRules = NotificationRulesDelegate(repo)
+        languageRouting = LanguageRoutingDelegate(requireContext(), repo, c)
 
-        // Collapsible sections (L-04: shared helper)
         CollapsibleSectionHelper.setup(v, R.id.label_word_rules, R.id.section_word_rules, "Word replacements")
         CollapsibleSectionHelper.setup(v, R.id.label_notif_rules, R.id.section_notif_rules, "Notification behavior")
         CollapsibleSectionHelper.setup(v, R.id.label_lang_profiles, R.id.section_lang_profiles, "Language & translation")
 
-        // Delegate setup
         wordRules.setup(v)
         notificationRules.setup(v)
         languageRouting.setup(v)
     }
 
     override fun onDestroyView() {
-        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        repo.removeChangeListener(repoListener)
         super.onDestroyView()
     }
 

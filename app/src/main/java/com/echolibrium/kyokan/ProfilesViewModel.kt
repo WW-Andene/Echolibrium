@@ -1,22 +1,19 @@
 package com.echolibrium.kyokan
 
 import android.app.Application
-import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.preference.PreferenceManager
 
 /**
  * ViewModel for ProfilesFragment (M28).
  *
- * Manages voice profiles, active profile selection, and voice grid state.
- * Survives configuration changes and decouples business logic from the fragment.
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(app)
     private val c = app.container
+    private val repo = c.repo
 
     private val _profiles = MutableLiveData<List<VoiceProfile>>()
     val profiles: LiveData<List<VoiceProfile>> = _profiles
@@ -27,24 +24,24 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
     private val _currentProfile = MutableLiveData<VoiceProfile>()
     val currentProfile: LiveData<VoiceProfile> = _currentProfile
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    private val repoListener: (String) -> Unit = { key ->
         when (key) {
             "voice_profiles" -> loadProfiles()
-            "active_profile_id" -> _activeProfileId.value = prefs.getString("active_profile_id", "")
+            "active_profile_id" -> _activeProfileId.value = repo.activeProfileId
         }
     }
 
     init {
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        repo.addChangeListener(repoListener)
         loadProfiles()
     }
 
     fun loadProfiles() {
-        val loaded = VoiceProfile.loadAll(prefs).toMutableList()
+        val loaded = repo.getProfiles().toMutableList()
         if (loaded.isEmpty()) loaded.add(VoiceProfile())
         _profiles.value = loaded
 
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+        val activeId = repo.activeProfileId
         _activeProfileId.value = activeId
 
         val profile = loaded.find { it.id == activeId } ?: loaded[0]
@@ -53,7 +50,7 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setActiveProfile(id: String) {
         _activeProfileId.value = id
-        prefs.edit().putString("active_profile_id", id).apply()
+        repo.activeProfileId = id
         _profiles.value?.find { it.id == id }?.let { _currentProfile.value = it }
     }
 
@@ -65,7 +62,7 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
         val list = _profiles.value?.toMutableList() ?: mutableListOf()
         val idx = list.indexOfFirst { it.id == profile.id }
         if (idx >= 0) list[idx] = profile else list.add(profile)
-        VoiceProfile.saveAll(list, prefs)
+        repo.saveProfiles(list)
         _profiles.value = list
         if (profile.id == _activeProfileId.value) _currentProfile.value = profile
     }
@@ -74,7 +71,7 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
         val profile = VoiceProfile(name = name)
         val list = _profiles.value?.toMutableList() ?: mutableListOf()
         list.add(profile)
-        VoiceProfile.saveAll(list, prefs)
+        repo.saveProfiles(list)
         _profiles.value = list
         setActiveProfile(profile.id)
         return profile
@@ -85,7 +82,7 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
         if (list.size <= 1) return false
         val current = _currentProfile.value ?: return false
         list.removeAll { it.id == current.id }
-        VoiceProfile.saveAll(list, prefs)
+        repo.saveProfiles(list)
         _profiles.value = list
         setActiveProfile(list[0].id)
         return true
@@ -97,7 +94,7 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
         if (idx < 0) return
         val updated = list[idx].copy(name = newName)
         list[idx] = updated
-        VoiceProfile.saveAll(list, prefs)
+        repo.saveProfiles(list)
         _profiles.value = list
         if (profileId == _currentProfile.value?.id) _currentProfile.value = updated
     }
@@ -112,6 +109,6 @@ class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        repo.removeChangeListener(repoListener)
     }
 }

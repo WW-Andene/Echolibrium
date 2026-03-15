@@ -1,6 +1,5 @@
 package com.echolibrium.kyokan
 
-import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
@@ -11,15 +10,14 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.content.Context
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Delegate handling word find/replace rules (M20: decomposed from RulesFragment).
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class WordRulesDelegate(
     private val context: Context,
-    private val prefs: SharedPreferences,
+    private val repo: SettingsRepository,
     private val container: LinearLayout
 ) {
     private val rules = mutableListOf<Pair<String, String>>()
@@ -44,17 +42,12 @@ class WordRulesDelegate(
 
     private fun loadRules() {
         rules.clear()
-        val json = prefs.getString("wording_rules", null) ?: return
-        try {
-            val arr = JSONArray(json)
-            repeat(arr.length()) { rules.add(arr.getJSONObject(it).optString("find") to arr.getJSONObject(it).optString("replace")) }
-        } catch (_: Exception) {}
+        repo.getWordRules().forEach { rules.add(it.find to it.replace) }
     }
 
     private fun saveRules() {
-        val arr = JSONArray()
-        rules.forEach { (f, r) -> arr.put(JSONObject().apply { put("find", f); put("replace", r) }) }
-        prefs.edit().putString("wording_rules", arr.toString()).apply()
+        val wordRules = rules.mapIndexed { _, (f, r) -> WordRule(find = f, replace = r) }
+        repo.saveWordRules(wordRules)
     }
 
     /** B-09: Debounced save — cancels pending save and posts new one after 500ms. */

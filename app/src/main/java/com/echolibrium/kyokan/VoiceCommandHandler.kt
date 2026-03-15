@@ -2,16 +2,10 @@ package com.echolibrium.kyokan
 
 import android.content.Context
 import android.util.Log
-import androidx.preference.PreferenceManager
 
 /**
  * Processes recognized voice commands and generates spoken responses.
- *
- * Supported commands:
- *   - "can you repeat?" / "repeat that" / "say that again"
- *   - "how long ago?" / "when was that?"
- *   - "stop" / "shut up" / "be quiet"
- *   - "what time is it?"
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class VoiceCommandHandler {
 
@@ -83,9 +77,9 @@ class VoiceCommandHandler {
 
     private fun speak(ctx: Context, text: String) {
         val service = NotificationReaderService.instance ?: return
-        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-        val profiles = VoiceProfile.loadAll(prefs)
-        val profileId = prefs.getString("active_profile_id", "") ?: ""
+        val repo = ctx.container.repo
+        val profiles = repo.getProfiles()
+        val profileId = repo.activeProfileId
         val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
         service.speakDirect(text, profile)
     }

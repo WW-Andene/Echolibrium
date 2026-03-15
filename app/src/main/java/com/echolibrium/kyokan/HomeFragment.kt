@@ -30,13 +30,15 @@ import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
-import androidx.preference.PreferenceManager
 import java.io.File
 
+/**
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
+ */
 class HomeFragment : Fragment() {
 
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private val c by lazy { requireContext().container }
+    private val repo by lazy { c.repo }
     private val viewModel: HomeViewModel by viewModels()
 
     private var breathAnimator: ObjectAnimator? = null
@@ -51,7 +53,7 @@ class HomeFragment : Fragment() {
                 .setTitle(getString(R.string.import_confirm_title))
                 .setMessage(getString(R.string.import_confirm_message))
                 .setPositiveButton(getString(R.string.import_data)) { _, _ ->
-                    if (DataExportHelper.importAll(ctx, json)) {
+                    if (repo.importAll(org.json.JSONObject(json))) {
                         Toast.makeText(ctx, getString(R.string.import_success), Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(ctx, getString(R.string.import_failed), Toast.LENGTH_SHORT).show()
@@ -86,33 +88,32 @@ class HomeFragment : Fragment() {
         val seekDndEnd    = v.findViewById<SeekBar>(R.id.seek_dnd_end)
         val txtDndStart   = v.findViewById<TextView>(R.id.txt_dnd_start)
         val txtDndEnd     = v.findViewById<TextView>(R.id.txt_dnd_end)
-        // L15: Show onboarding for first-time users
         val txtOnboarding = v.findViewById<TextView>(R.id.txt_onboarding)
-        if (!isNotifGranted() && !prefs.getBoolean("onboarding_dismissed", false)) {
+        if (!isNotifGranted() && !repo.getBoolean("onboarding_dismissed", false)) {
             txtOnboarding.visibility = View.VISIBLE
         }
 
         updateSetup(btnSetup, txtSetup)
         btnSetup.setOnClickListener { openNextSetupStep() }
 
-        switchEnabled.isChecked = prefs.getBoolean("service_enabled", true)
-        switchEnabled.setOnCheckedChangeListener { _, v2 -> prefs.edit().putBoolean("service_enabled", v2).apply() }
+        switchEnabled.isChecked = repo.getBoolean("service_enabled", true)
+        switchEnabled.setOnCheckedChangeListener { _, v2 -> repo.putBoolean("service_enabled", v2) }
 
         val modes = arrayOf("Full (App + Title + Text)", "App + Title", "App name only", "Text only")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only")
         spinnerMode.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
-        spinnerMode.setSelection(modeVals.indexOf(prefs.getString("read_mode", "full")).coerceAtLeast(0))
+        spinnerMode.setSelection(modeVals.indexOf(repo.getString("read_mode", "full")).coerceAtLeast(0))
         spinnerMode.onItemSelectedSkipFirst { pos ->
-            prefs.edit().putString("read_mode", modeVals[pos]).apply()
+            repo.putString("read_mode", modeVals[pos])
         }
 
-        switchAppName.isChecked = prefs.getBoolean("read_app_name", true)
-        switchAppName.setOnCheckedChangeListener { _, v2 -> prefs.edit().putBoolean("read_app_name", v2).apply() }
+        switchAppName.isChecked = repo.getBoolean("read_app_name", true)
+        switchAppName.setOnCheckedChangeListener { _, v2 -> repo.putBoolean("read_app_name", v2) }
 
-        switchDnd.isChecked = prefs.getBoolean("dnd_enabled", false)
+        switchDnd.isChecked = repo.getBoolean("dnd_enabled", false)
         layoutDnd.visibility = if (switchDnd.isChecked) View.VISIBLE else View.GONE
         switchDnd.setOnCheckedChangeListener { _, v2 ->
-            prefs.edit().putBoolean("dnd_enabled", v2).apply()
+            repo.putBoolean("dnd_enabled", v2)
             val parent = layoutDnd.parent as? ViewGroup
             if (parent != null) {
                 TransitionManager.beginDelayedTransition(parent, AutoTransition().apply { duration = 250 })
@@ -120,27 +121,27 @@ class HomeFragment : Fragment() {
             layoutDnd.visibility = if (v2) View.VISIBLE else View.GONE
         }
 
-        val dndStart = prefs.getInt("dnd_start", 22)
+        val dndStart = repo.getInt("dnd_start", 22)
         seekDndStart.max = 23; seekDndStart.progress = dndStart
         txtDndStart.text = getString(R.string.silence_from, formatHour(dndStart))
         seekDndStart.setOnSeekBarChangeListener(onSeekBarChange { h ->
-            prefs.edit().putInt("dnd_start", h).apply()
+            repo.putInt("dnd_start", h)
             txtDndStart.text = getString(R.string.silence_from, formatHour(h))
         })
 
-        val dndEnd = prefs.getInt("dnd_end", 8)
+        val dndEnd = repo.getInt("dnd_end", 8)
         seekDndEnd.max = 23; seekDndEnd.progress = dndEnd
         txtDndEnd.text = getString(R.string.until_time, formatHour(dndEnd))
         seekDndEnd.setOnSeekBarChangeListener(onSeekBarChange { h ->
-            prefs.edit().putInt("dnd_end", h).apply()
+            repo.putInt("dnd_end", h)
             txtDndEnd.text = getString(R.string.until_time, formatHour(h))
         })
 
         // L14: Dark mode toggle
         val switchDarkMode = v.findViewById<SwitchCompat>(R.id.switch_dark_mode)
-        switchDarkMode.isChecked = prefs.getBoolean("dark_mode", true)
+        switchDarkMode.isChecked = repo.getBoolean("dark_mode", true)
         switchDarkMode.setOnCheckedChangeListener { _, dark ->
-            prefs.edit().putBoolean("dark_mode", dark).apply()
+            repo.putBoolean("dark_mode", dark)
             AppCompatDelegate.setDefaultNightMode(
                 if (dark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
             )
@@ -212,21 +213,17 @@ class HomeFragment : Fragment() {
 
     private fun needsRestricted(): Boolean {
         if (android.os.Build.VERSION.SDK_INT < 33) return false
-        // Once notification access is granted, restricted settings must be allowed
         if (isNotifGranted()) return false
-        // Track whether user already visited restricted settings screen
-        return !prefs.getBoolean("restricted_done", false)
+        return !repo.getBoolean("restricted_done", false)
     }
 
     private fun updateSetup(btn: Button, txt: TextView) {
         val notif = isNotifGranted()
         val battery = isBatteryExempt()
         val restricted = needsRestricted()
-        // If notif is granted, restricted is implicitly done — persist it
-        if (notif) prefs.edit().putBoolean("restricted_done", true).apply()
+        if (notif) repo.putBoolean("restricted_done", true)
 
         val steps = mutableListOf<String>()
-        // Order: restricted → battery → notifications
         if (restricted) steps.add("Allow restricted settings")
         if (!battery) steps.add("Disable battery optimization")
         if (!notif) steps.add("Grant notification access")
@@ -238,10 +235,8 @@ class HomeFragment : Fragment() {
             btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
             txt.text = getString(R.string.status_all_granted)
             txt.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
-            // L15: Dismiss onboarding once setup complete
-            prefs.edit().putBoolean("onboarding_dismissed", true).apply()
+            repo.putBoolean("onboarding_dismissed", true)
             view?.findViewById<TextView>(R.id.txt_onboarding)?.visibility = View.GONE
-            // Post-setup guidance (M22)
             showGuidance()
         } else {
             btn.text = getString(R.string.setup_label, steps.first())
@@ -265,21 +260,18 @@ class HomeFragment : Fragment() {
     private fun openNextSetupStep() {
         val ctx = requireContext()
         when {
-            // Step 1: Restricted settings (Android 13+ sideloaded apps)
             needsRestricted() -> {
-                prefs.edit().putBoolean("restricted_done", true).apply()
+                repo.putBoolean("restricted_done", true)
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.parse("package:${ctx.packageName}")
                 })
                 Toast.makeText(ctx, getString(R.string.allow_restricted_settings), Toast.LENGTH_LONG).show()
             }
-            // Step 2: Battery optimization — system dialog, one tap
             !isBatteryExempt() -> {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:${ctx.packageName}")
                 })
             }
-            // Step 3: Notification listener access
             !isNotifGranted() -> {
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 Toast.makeText(ctx, getString(R.string.enable_kyokan), Toast.LENGTH_LONG).show()
@@ -293,8 +285,8 @@ class HomeFragment : Fragment() {
     private fun showGuidance() {
         val guidance = view?.findViewById<TextView>(R.id.txt_guidance) ?: return
         val hasVoice = viewModel.isVoiceReady()
-        val hasProfile = VoiceProfile.loadAll(prefs).any { it.voiceName.isNotBlank() }
-        val hasRules = AppRule.loadAll(prefs).isNotEmpty()
+        val hasProfile = repo.getProfiles().any { it.voiceName.isNotBlank() }
+        val hasRules = repo.getAppRules().isNotEmpty()
 
         val tips = mutableListOf<String>()
         if (!hasVoice) tips.add(getString(R.string.guidance_download_voice))
@@ -305,7 +297,6 @@ class HomeFragment : Fragment() {
             guidance.text = "${getString(R.string.guidance_title)}\n${tips.joinToString("\n")}"
             guidance.visibility = View.VISIBLE
         } else {
-            // F-05: Show contextual tip for returning users instead of hiding
             guidance.text = getString(R.string.guidance_all_set)
             guidance.visibility = View.VISIBLE
         }
@@ -313,7 +304,7 @@ class HomeFragment : Fragment() {
 
     private fun updateListeningStatus(tv: TextView) {
         val ctx = context ?: return
-        val enabled = prefs.getBoolean("listening_enabled", false)
+        val enabled = repo.getBoolean("listening_enabled", false)
         val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
         val listening = c.voiceCommandListener.isListening
@@ -332,7 +323,6 @@ class HomeFragment : Fragment() {
             else -> R.color.text_disabled
         }))
 
-        // Breathing animation when actively listening (G-01: skip if animations disabled)
         if (listening && AnimationUtil.areAnimationsEnabled(ctx)) {
             if (breathAnimator == null || !breathAnimator!!.isRunning) {
                 breathAnimator = ObjectAnimator.ofFloat(tv, "alpha", 1f, 0.4f).apply {
@@ -352,7 +342,7 @@ class HomeFragment : Fragment() {
     /** B-10: Export all user data as JSON via share intent. */
     private fun exportData() {
         val ctx = requireContext()
-        val json = DataExportHelper.exportAll(ctx)
+        val json = repo.exportAll().toString(2)
         val file = File(ctx.cacheDir, "kyokan_backup.json")
         file.writeText(json)
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
@@ -364,7 +354,7 @@ class HomeFragment : Fragment() {
         startActivity(Intent.createChooser(share, getString(R.string.export_data)))
     }
 
-    /** A-05: Locale-aware hour formatting — US users see "10:00 PM", others see native format. */
+    /** A-05: Locale-aware hour formatting. */
     private fun formatHour(hour: Int): String {
         val cal = java.util.Calendar.getInstance().apply {
             set(java.util.Calendar.HOUR_OF_DAY, hour)

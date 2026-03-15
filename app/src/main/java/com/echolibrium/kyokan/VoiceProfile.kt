@@ -1,6 +1,8 @@
 package com.echolibrium.kyokan
 
 import android.util.Log
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -8,11 +10,12 @@ import kotlin.math.roundToInt
 /**
  * Voice profile — named container with voice selection, pitch, and speed.
  *
- * Backward-compatible: reads old JSON profiles and ignores removed fields.
+ * Room entity (O-01) and JSON-serializable for export/import (B-10).
  * Schema version (_v) tracks format changes for future migration paths.
  */
+@Entity(tableName = "voice_profiles")
 data class VoiceProfile(
-    val id: String = java.util.UUID.randomUUID().toString(),
+    @PrimaryKey val id: String = java.util.UUID.randomUUID().toString(),
     val name: String = "New Profile",
     val emoji: String = "🎙️",
     val voiceName: String = "",
@@ -45,6 +48,7 @@ data class VoiceProfile(
         /** Round Double to 2 decimal places then convert to Float — avoids precision loss (L3). */
         private fun Double.roundToFloat(): Float = ((this * 100).roundToInt() / 100f)
 
+        @Deprecated("Use SettingsRepository.saveProfiles() instead", ReplaceWith("repo.saveProfiles(profiles)"))
         fun saveAll(profiles: List<VoiceProfile>, prefs: android.content.SharedPreferences) {
             val arr = JSONArray(); profiles.forEach { arr.put(it.toJson()) }
             val json = arr.toString()
@@ -59,19 +63,24 @@ data class VoiceProfile(
         /** L5: Warn threshold for SharedPreferences value size (512KB). */
         private const val PREFS_SIZE_WARN_BYTES = 512 * 1024
 
+        /** Parse a JSON array string into a list of profiles (used by migration + import). */
+        fun parseJsonArray(json: String): List<VoiceProfile> {
+            val arr = JSONArray(json)
+            return (0 until arr.length()).mapNotNull { i ->
+                try {
+                    fromJson(arr.getJSONObject(i))
+                } catch (e: Exception) {
+                    Log.w("VoiceProfile", "Skipping corrupted profile at index $i", e)
+                    null
+                }
+            }
+        }
+
+        @Deprecated("Use SettingsRepository.getProfiles() instead", ReplaceWith("repo.getProfiles()"))
         fun loadAll(prefs: android.content.SharedPreferences): MutableList<VoiceProfile> {
             val json = prefs.getString("voice_profiles", null) ?: return mutableListOf()
             return try {
-                val arr = JSONArray(json)
-                // B-06: Per-entry try/catch — salvage valid profiles when one is corrupted
-                (0 until arr.length()).mapNotNull { i ->
-                    try {
-                        fromJson(arr.getJSONObject(i))
-                    } catch (e: Exception) {
-                        Log.w("VoiceProfile", "Skipping corrupted profile at index $i", e)
-                        null
-                    }
-                }.toMutableList()
+                parseJsonArray(json).toMutableList()
             } catch (e: Exception) {
                 Log.e("VoiceProfile", "Failed to parse voice_profiles JSON array — backing up corrupted data", e)
                 prefs.edit().putString("voice_profiles_backup_corrupted", json).apply()

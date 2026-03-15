@@ -9,16 +9,11 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
-import androidx.preference.PreferenceManager
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Continuous voice command listener using Android's SpeechRecognizer.
- *
- * The mic only triggers action when the active profile name (wake word)
- * is heard first, preventing false positives.
- *
- * Commands: "repeat", "how long ago?", "stop", "what time?", "how are you feeling?"
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class VoiceCommandListener(
     private val voiceCommandHandler: VoiceCommandHandler
@@ -89,16 +84,16 @@ class VoiceCommandListener(
     }
 
     fun loadWakeWord(ctx: Context) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-        val profiles = VoiceProfile.loadAll(prefs)
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+        val repo = ctx.container.repo
+        val profiles = repo.getProfiles()
+        val activeId = repo.activeProfileId
         val profile = profiles.find { it.id == activeId }
         wakeWord = (profile?.name ?: "").lowercase().trim()
         Log.d(TAG, "Wake word set to: '$wakeWord'")
     }
 
     private fun startListeningInternal() {
-        val rec = recognizer ?: return  // local copy — safe if nulled concurrently
+        val rec = recognizer ?: return
         if (!isListening) return
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -157,7 +152,6 @@ class VoiceCommandListener(
         override fun onError(error: Int) {
             if (error == SpeechRecognizer.ERROR_NO_MATCH ||
                 error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                // Normal: no speech detected — restart without counting as error
                 scheduleRestart(isError = false)
                 return
             }
@@ -165,7 +159,6 @@ class VoiceCommandListener(
                 Log.d(TAG, "Recognition client error — skipping restart")
                 return
             }
-            // Real error — use exponential backoff
             Log.w(TAG, "Recognition error: $error (consecutive: ${consecutiveErrors.get() + 1})")
             scheduleRestart(isError = true)
         }

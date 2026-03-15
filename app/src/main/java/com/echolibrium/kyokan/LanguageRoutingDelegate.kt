@@ -1,7 +1,6 @@
 package com.echolibrium.kyokan
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -14,19 +13,18 @@ import androidx.transition.AutoTransition
 import androidx.transition.TransitionManager
 
 /**
- * Delegate handling language-based voice routing and translation (M20: decomposed from RulesFragment).
- * L26: Now dynamically supports all languages in NotificationTranslator.LANGUAGES.
+ * Delegate handling language-based voice routing and translation (M20).
+ * I-07: Uses SettingsRepository instead of direct SharedPreferences access.
  */
 class LanguageRoutingDelegate(
     private val context: Context,
-    private val prefs: SharedPreferences,
+    private val repo: SettingsRepository,
     private val container: AppContainer
 ) {
     private val translateEntries = NotificationTranslator.LANGUAGES.entries.filter { it.key.isNotEmpty() }
     private val translateCodes = translateEntries.map { it.key }
     private val translateNames = translateEntries.map { it.value }
 
-    /** Language flags for display — falls back to language code if no emoji. */
     private val langFlags = mapOf(
         "en" to "\uD83C\uDDFA\uD83C\uDDF8\uD83C\uDDEC\uD83C\uDDE7", "fr" to "\uD83C\uDDEB\uD83C\uDDF7",
         "es" to "\uD83C\uDDEA\uD83C\uDDF8", "de" to "\uD83C\uDDE9\uD83C\uDDEA",
@@ -37,13 +35,11 @@ class LanguageRoutingDelegate(
         "hi" to "\uD83C\uDDEE\uD83C\uDDF3"
     )
 
-    // Track dynamically created profile spinners for refresh
     private val profileSpinners = mutableMapOf<String, Spinner>()
 
-    /** Called when voice_profiles or active_profile_id changes to refresh spinners. */
     fun refreshProfileSpinners(v: View) {
-        val profiles = VoiceProfile.loadAll(prefs)
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+        val profiles = repo.getProfiles()
+        val activeId = repo.activeProfileId
         for ((langCode, spinner) in profileSpinners) {
             refreshSpinner(spinner, "lang_profile_$langCode", profiles, activeId)
         }
@@ -51,16 +47,15 @@ class LanguageRoutingDelegate(
 
     fun setup(v: View) {
         val switchLangRouting = v.findViewById<SwitchCompat>(R.id.switch_lang_routing)
-        switchLangRouting.isChecked = prefs.getBoolean("lang_routing_enabled", false)
+        switchLangRouting.isChecked = repo.getBoolean("lang_routing_enabled", false)
         switchLangRouting.setOnCheckedChangeListener { _, checked ->
-            prefs.edit().putBoolean("lang_routing_enabled", checked).apply()
+            repo.putBoolean("lang_routing_enabled", checked)
         }
 
         // D-02: Cache profile list once instead of re-parsing per language
-        val profiles = VoiceProfile.loadAll(prefs)
-        val activeId = prefs.getString("active_profile_id", "") ?: ""
+        val profiles = repo.getProfiles()
+        val activeId = repo.activeProfileId
 
-        // Build dynamic voice routing spinners
         val routingContainer = v.findViewById<LinearLayout>(R.id.voice_routing_container)
         routingContainer.removeAllViews()
         profileSpinners.clear()
@@ -70,7 +65,6 @@ class LanguageRoutingDelegate(
             addVoiceRoutingRow(routingContainer, langCode, "$flag  $langName notifications \u2192 Voice:", profiles, activeId)
         }
 
-        // Build dynamic translation routes
         val translationContainer = v.findViewById<LinearLayout>(R.id.translation_container)
         translationContainer.removeAllViews()
         for (langCode in translateCodes) {
@@ -113,12 +107,12 @@ class LanguageRoutingDelegate(
         val ids = listOf("") + profiles.map { it.id }
 
         spinner.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, names)
-        val savedId = prefs.getString(prefKey, "") ?: ""
+        val savedId = repo.getString(prefKey)
         val idx = ids.indexOf(savedId).coerceAtLeast(0)
         spinner.setSelection(idx)
 
         spinner.onItemSelectedSkipFirst { position ->
-            prefs.edit().putString(prefKey, ids[position]).apply()
+            repo.putString(prefKey, ids[position])
         }
     }
 
@@ -128,7 +122,7 @@ class LanguageRoutingDelegate(
         val ids = listOf("") + profiles.map { it.id }
 
         spinner.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, names)
-        val savedId = prefs.getString(prefKey, "") ?: ""
+        val savedId = repo.getString(prefKey)
         val idx = ids.indexOf(savedId).coerceAtLeast(0)
         spinner.setSelection(idx)
     }
@@ -138,7 +132,6 @@ class LanguageRoutingDelegate(
         val enabledKey = "translate_${sourceLang}_enabled"
         val langKey = "translate_${sourceLang}_lang"
 
-        // Switch row
         val switchRow = LinearLayout(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -158,7 +151,6 @@ class LanguageRoutingDelegate(
         switchRow.addView(switch)
         parent.addView(switchRow)
 
-        // Target label
         val targetLabel = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -172,7 +164,6 @@ class LanguageRoutingDelegate(
         }
         parent.addView(targetLabel)
 
-        // Target spinner
         val spinner = Spinner(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -183,7 +174,6 @@ class LanguageRoutingDelegate(
         }
         parent.addView(spinner)
 
-        // Status text
         val status = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -194,26 +184,26 @@ class LanguageRoutingDelegate(
         }
         parent.addView(status)
 
-        // Wire up
-        val enabled = prefs.getBoolean(enabledKey, false)
+        val enabled = repo.getBoolean(enabledKey, false)
         switch.isChecked = enabled
         spinner.visibility = if (enabled) View.VISIBLE else View.GONE
         targetLabel.visibility = if (enabled) View.VISIBLE else View.GONE
 
         spinner.adapter = ArrayAdapter(context,
             android.R.layout.simple_spinner_dropdown_item, translateNames)
-        val savedLang = prefs.getString(langKey, "") ?: ""
+        val savedLang = repo.getString(langKey)
         val idx = translateCodes.indexOf(savedLang).coerceAtLeast(0)
         spinner.setSelection(idx)
         val resolvedLang = translateCodes[idx]
         if (savedLang.isEmpty() && resolvedLang.isNotEmpty()) {
-            prefs.edit().putString(langKey, resolvedLang).apply()
+            repo.putString(langKey, resolvedLang)
         }
         updateTranslateStatus(status, enabled, if (savedLang.isEmpty()) resolvedLang else savedLang, sourceLang)
 
         switch.setOnCheckedChangeListener { _, checked ->
             val lang = translateCodes[spinner.selectedItemPosition]
-            prefs.edit().putBoolean(enabledKey, checked).putString(langKey, lang).apply()
+            repo.putBoolean(enabledKey, checked)
+            repo.putString(langKey, lang)
             val p = spinner.parent as? ViewGroup
             if (p != null) {
                 TransitionManager.beginDelayedTransition(p, AutoTransition().apply { duration = 200 })
@@ -234,7 +224,7 @@ class LanguageRoutingDelegate(
 
         spinner.onItemSelectedSkipFirst { pos ->
             val lang = translateCodes[pos]
-            prefs.edit().putString(langKey, lang).apply()
+            repo.putString(langKey, lang)
             if (switch.isChecked && lang != sourceLang) {
                 status.text = "Downloading model\u2026"
                 container.notificationTranslator.ensureModel(sourceLang, lang) { ok ->

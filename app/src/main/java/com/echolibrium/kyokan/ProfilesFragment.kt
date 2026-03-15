@@ -16,13 +16,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.preference.PreferenceManager
 
+/** I-07: Uses SettingsRepository instead of direct SharedPreferences access. */
 class ProfilesFragment : Fragment(), UnsavedChangesCheck {
 
-
-    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private val c by lazy { requireContext().container }
+    private val repo by lazy { c.repo }
     private val viewModel: ProfilesViewModel by viewModels()
     private var profiles = mutableListOf<VoiceProfile>()
     private var activeProfileId = ""
@@ -392,7 +391,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
      * notification text will be sent to DeepInfra. Consent is persisted.
      */
     private fun selectCloudVoice(voiceId: String) {
-        if (prefs.getBoolean("cloud_privacy_acknowledged", false)) {
+        if (repo.getBoolean("cloud_privacy_acknowledged", false)) {
             viewModel.updateCurrentProfile(currentProfile.copy(voiceName = voiceId))
             renderVoiceGrid()
             return
@@ -401,7 +400,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             .setTitle(getString(R.string.cloud_privacy_title))
             .setMessage(getString(R.string.privacy_disclosure))
             .setPositiveButton(getString(R.string.cloud_privacy_accept)) { _, _ ->
-                prefs.edit().putBoolean("cloud_privacy_acknowledged", true).apply()
+                repo.putBoolean("cloud_privacy_acknowledged", true)
                 viewModel.updateCurrentProfile(currentProfile.copy(voiceName = voiceId))
                 renderVoiceGrid()
             }

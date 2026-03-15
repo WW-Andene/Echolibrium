@@ -38,18 +38,20 @@ class ProfilesFragment : Fragment() {
     private var initialProfileLoaded = false
 
     private lateinit var downloadDelegate: DownloadDelegate
-    private val profileGridCallbacks = object : ProfileGridBuilder.Callbacks {
-        override fun onProfileSelected(profile: VoiceProfile) {
-            viewModel.setActiveProfile(profile.id)
-            loadProfileToUI(profile)
-            ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
-            val idx = profiles.indexOfFirst { it.id == profile.id }.coerceAtLeast(0)
-            profileSpinner.setSelection(idx)
-        }
-        override fun onProfileRenamed(profileId: String, newName: String) {
-            viewModel.renameProfile(profileId, newName)
-            setupProfileSpinner()
-            ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
+    private val profileGridCallbacks: ProfileGridBuilder.Callbacks by lazy {
+        object : ProfileGridBuilder.Callbacks {
+            override fun onProfileSelected(profile: VoiceProfile) {
+                viewModel.setActiveProfile(profile.id)
+                loadProfileToUI(profile)
+                ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
+                val idx = profiles.indexOfFirst { it.id == profile.id }.coerceAtLeast(0)
+                profileSpinner.setSelection(idx)
+            }
+            override fun onProfileRenamed(profileId: String, newName: String) {
+                viewModel.renameProfile(profileId, newName)
+                setupProfileSpinner()
+                ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
+            }
         }
     }
 

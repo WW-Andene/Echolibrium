@@ -19,15 +19,19 @@ import android.widget.TextView
 import android.widget.Toast
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
 import androidx.transition.AutoTransition
 import androidx.transition.TransitionManager
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
 import androidx.preference.PreferenceManager
+import java.io.File
 
 class HomeFragment : Fragment() {
 
@@ -36,6 +40,29 @@ class HomeFragment : Fragment() {
     private val viewModel: HomeViewModel by viewModels()
 
     private var breathAnimator: ObjectAnimator? = null
+
+    /** B-10: File picker callback for data import. */
+    private val importLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val ctx = context ?: return@registerForActivityResult
+        try {
+            val json = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@registerForActivityResult
+            AlertDialog.Builder(ctx)
+                .setTitle(getString(R.string.import_confirm_title))
+                .setMessage(getString(R.string.import_confirm_message))
+                .setPositiveButton(getString(R.string.import_data)) { _, _ ->
+                    if (DataExportHelper.importAll(ctx, json)) {
+                        Toast.makeText(ctx, getString(R.string.import_success), Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(ctx, getString(R.string.import_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show()
+        } catch (_: Exception) {
+            Toast.makeText(ctx, getString(R.string.import_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
 
     companion object {
         private const val AUDIO_PERMISSION_CODE = 1001
@@ -142,6 +169,9 @@ class HomeFragment : Fragment() {
             updateListeningStatus(listeningStatus)
         }
 
+        // B-10: Data export/import buttons
+        v.findViewById<Button>(R.id.btn_export).setOnClickListener { exportData() }
+        v.findViewById<Button>(R.id.btn_import).setOnClickListener { importLauncher.launch("application/json") }
     }
 
     override fun onResume() {
@@ -317,6 +347,21 @@ class HomeFragment : Fragment() {
             breathAnimator = null
             tv.alpha = 1f
         }
+    }
+
+    /** B-10: Export all user data as JSON via share intent. */
+    private fun exportData() {
+        val ctx = requireContext()
+        val json = DataExportHelper.exportAll(ctx)
+        val file = File(ctx.cacheDir, "kyokan_backup.json")
+        file.writeText(json)
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(share, getString(R.string.export_data)))
     }
 
     /** A-05: Locale-aware hour formatting — US users see "10:00 PM", others see native format. */

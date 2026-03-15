@@ -5,12 +5,14 @@
 // Optional: set ALLOWED_ORIGIN env var to restrict to your app's package
 // (e.g. "com.echolibrium.kyokan")
 
-// Simple in-memory rate limiter (per-worker-instance)
-// Cloudflare Workers restart frequently, so this resets naturally.
-// For stricter limits, use Cloudflare Workers KV or Rate Limiting rules.
-// LIMITATION: This rate limit is per-isolate, not globally shared.
-// Under high traffic, Cloudflare may spawn multiple isolates, each with
-// its own rateLimitMap, effectively multiplying the per-IP allowance.
+// KNOWN LIMITATION: In-memory rate limiter resets when worker instance restarts
+// (Cloudflare Workers restart frequently) and doesn't share state across instances.
+// For production use with real traffic, replace with one of:
+//   1. Cloudflare Rate Limiting rules (dashboard → Security → WAF → Rate limiting rules)
+//   2. Cloudflare Workers KV for durable per-IP counters
+//   3. Cloudflare D1 (SQLite) for more sophisticated rate tracking
+// The current in-memory approach is adequate for single-user/low-traffic deployment.
+// TODO: Migrate to Cloudflare Rate Limiting rules before public release.
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 30; // max requests per IP per window
 const MAX_INPUT_LENGTH = 2000; // max characters per request

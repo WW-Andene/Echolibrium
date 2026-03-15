@@ -176,8 +176,17 @@
     <string name="theme_label">Dark mode</string>
     <string name="theme_description">Switch between light and dark appearance</string>
 
+    <!-- B-10: Data export/import -->
+    <string name="section_data">Data</string>
+    <string name="export_data">Export</string>
+    <string name="import_data">Import</string>
+    <string name="export_success">Data exported</string>
+    <string name="import_success">Data imported successfully</string>
+    <string name="import_failed">Import failed — invalid file</string>
+    <string name="import_confirm_title">Import data?</string>
+    <string name="import_confirm_message">This will overwrite your current profiles, app rules, and word rules. Continue?</string>
+
     <!-- L26: Dynamic language routing -->
-    <string name="lang_route_label">%s notifications → Voice:</string>
     <string name="translate_lang_label">Translate %s notifications</string>
 
     <!-- L-03: Default word rules (localizable via values-fr/strings.xml etc.) -->

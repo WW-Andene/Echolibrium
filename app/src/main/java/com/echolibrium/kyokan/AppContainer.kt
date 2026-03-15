@@ -1,6 +1,8 @@
 package com.echolibrium.kyokan
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.preference.PreferenceManager
 
 /**
  * Manual dependency injection container (M29).
@@ -9,8 +11,18 @@ import android.content.Context
  * and accessed via KyokanApp.container throughout the app.
  *
  * Stateless utilities (DownloadUtil, SecureKeyStore, CrashLogger) remain as objects.
+ *
+ * I-07: Central access point for SharedPreferences. All classes should access
+ * preferences through this container rather than calling
+ * PreferenceManager.getDefaultSharedPreferences() directly.
+ * Future: extract a full SettingsRepository wrapping prefs with typed accessors.
  */
 class AppContainer(private val appContext: Context) {
+
+    /** I-07: Single SharedPreferences access point for the entire app. */
+    val prefs: SharedPreferences by lazy {
+        PreferenceManager.getDefaultSharedPreferences(appContext)
+    }
 
     val cloudTtsEngine: CloudTtsEngine = CloudTtsEngine()
 

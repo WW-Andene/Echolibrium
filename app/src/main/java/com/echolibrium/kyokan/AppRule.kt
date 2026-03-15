@@ -29,7 +29,9 @@ data class AppRule(
         )
         fun saveAll(rules: List<AppRule>, prefs: android.content.SharedPreferences) {
             val arr = JSONArray(); rules.forEach { arr.put(it.toJson()) }
-            prefs.edit().putString("app_rules", arr.toString()).apply()
+            prefs.edit().putString("app_rules", arr.toString())
+                .putInt("data_version", prefs.getInt("data_version", 0) + 1) // O-01: migration tracking
+                .apply()
         }
         fun loadAll(prefs: android.content.SharedPreferences): MutableList<AppRule> {
             val json = prefs.getString("app_rules", null) ?: return mutableListOf()

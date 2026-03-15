@@ -60,7 +60,7 @@ object VoiceRegistry {
         CloudVoice("cloud_orpheus_zac",   "Zac",   "Male",   "English", "American", "zac"),
     )
 
-    private val cloudEntries: List<VoiceEntry> = CLOUD_VOICES.map { v ->
+    val cloudEntries: List<VoiceEntry> = CLOUD_VOICES.map { v ->
         VoiceEntry(
             id = v.id, displayName = v.displayName, engine = Engine.CLOUD,
             gender = v.gender, language = v.language, nationality = v.nationality,

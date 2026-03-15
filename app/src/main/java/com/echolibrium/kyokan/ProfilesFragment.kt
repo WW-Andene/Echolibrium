@@ -222,7 +222,7 @@ class ProfilesFragment : Fragment() {
         val cloudKeyAction: (() -> Unit) = { showDeepInfraKeyDialog() }
         voiceGrid.addView(buildSectionHeader(getString(R.string.engine_orpheus), orpheusSubtitle, COLOR_ORPHEUS, cloudKeyAction, getString(R.string.key_btn)))
 
-        addFilteredVoiceCards(VoiceRegistry.CLOUD_VOICES) { v ->
+        addFilteredVoiceCards(VoiceRegistry.cloudEntries) { v ->
             buildVoiceCard(
                 name = v.displayName,
                 icon = genderIcon(v.gender),

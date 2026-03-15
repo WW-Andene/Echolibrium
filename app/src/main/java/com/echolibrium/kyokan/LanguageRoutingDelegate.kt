@@ -102,7 +102,7 @@ class LanguageRoutingDelegate(
     }
 
     private fun setupProfileSpinner(spinner: Spinner, prefKey: String, profiles: List<VoiceProfile>, activeId: String) {
-        val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: "Active profile"
+        val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: context.getString(R.string.active_profile_fallback)
         val names = listOf("($activeName)") + profiles.map { "${it.emoji} ${it.name}" }
         val ids = listOf("") + profiles.map { it.id }
 
@@ -117,7 +117,7 @@ class LanguageRoutingDelegate(
     }
 
     private fun refreshSpinner(spinner: Spinner, prefKey: String, profiles: List<VoiceProfile>, activeId: String) {
-        val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: "Active profile"
+        val activeName = profiles.find { it.id == activeId }?.let { "${it.emoji} ${it.name}" } ?: context.getString(R.string.active_profile_fallback)
         val names = listOf("($activeName)") + profiles.map { "${it.emoji} ${it.name}" }
         val ids = listOf("") + profiles.map { it.id }
 
@@ -212,11 +212,11 @@ class LanguageRoutingDelegate(
             targetLabel.visibility = if (checked) View.VISIBLE else View.GONE
             updateTranslateStatus(status, checked, lang, sourceLang)
             if (checked && lang.isNotBlank() && lang != sourceLang) {
-                status.text = "Downloading model\u2026"
+                status.text = context.getString(R.string.downloading_model)
                 container.notificationTranslator.ensureModel(sourceLang, lang) { ok ->
                     status.post {
                         updateTranslateStatus(status, true, lang, sourceLang)
-                        if (!ok) status.text = "\u2717 Download failed \u2014 needs internet once"
+                        if (!ok) status.text = context.getString(R.string.download_model_failed)
                     }
                 }
             }
@@ -226,11 +226,11 @@ class LanguageRoutingDelegate(
             val lang = translateCodes[pos]
             repo.putString(langKey, lang)
             if (switch.isChecked && lang != sourceLang) {
-                status.text = "Downloading model\u2026"
+                status.text = context.getString(R.string.downloading_model)
                 container.notificationTranslator.ensureModel(sourceLang, lang) { ok ->
                     status.post {
                         updateTranslateStatus(status, true, lang, sourceLang)
-                        if (!ok) status.text = "\u2717 Download failed \u2014 needs internet once"
+                        if (!ok) status.text = context.getString(R.string.download_model_failed)
                     }
                 }
             } else {
@@ -244,9 +244,9 @@ class LanguageRoutingDelegate(
         val tgtName = NotificationTranslator.LANGUAGES[targetLang] ?: targetLang
         tv.text = when {
             !enabled -> ""
-            targetLang == sourceLang -> "Same language \u2014 no translation needed"
-            targetLang.isNotBlank() -> "Will translate $srcName \u2192 $tgtName before speaking"
-            else -> "Select target language"
+            targetLang == sourceLang -> context.getString(R.string.translate_same_language)
+            targetLang.isNotBlank() -> context.getString(R.string.translate_will_translate, srcName, tgtName)
+            else -> context.getString(R.string.translate_select_target)
         }
     }
 }

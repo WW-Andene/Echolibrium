@@ -195,6 +195,21 @@
     <!-- L26: Dynamic language routing -->
     <string name="translate_lang_label">Translate %s notifications</string>
 
+    <!-- N-01: Extracted from LanguageRoutingDelegate and VoiceCardBuilder -->
+    <string name="active_profile_fallback">Active profile</string>
+    <string name="downloading_model">Downloading model…</string>
+    <string name="download_model_failed">✗ Download failed — needs internet once</string>
+    <string name="translate_same_language">Same language — no translation needed</string>
+    <string name="translate_will_translate">Will translate %1$s → %2$s before speaking</string>
+    <string name="translate_select_target">Select target language</string>
+    <string name="synthesizing_preview">⏳ synthesizing…</string>
+
+    <!-- N-03: Extracted from fragment_rules.xml inline text -->
+    <string name="lang_routing_description">Route notifications to different voice profiles by detected language. When enabled, the app auto-detects language and uses the mapped profile.</string>
+    <string name="voice_routing_label">Voice routing</string>
+    <string name="translation_label">Translation</string>
+    <string name="translation_description">Translate notifications before speaking. Works with or without voice routing above.</string>
+
     <!-- L-03: Default word rules (localizable via values-fr/strings.xml etc.) -->
     <string-array name="default_word_rules_find">
         <item>WhatsApp</item>

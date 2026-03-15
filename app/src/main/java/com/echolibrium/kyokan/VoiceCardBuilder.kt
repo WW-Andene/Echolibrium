@@ -210,7 +210,7 @@ object VoiceCardBuilder {
                     isFocusable = true
                     contentDescription = "Preview $name voice"
                     setOnClickListener {
-                        text = "⏳ synthesizing…"
+                        text = ctx.getString(R.string.synthesizing_preview)
                         isEnabled = false
                         onPreview(voiceId, name)
                         postDelayed({ text = originalText; isEnabled = true }, 10_000)

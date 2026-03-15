@@ -124,7 +124,7 @@
             android:background="@color/surface" android:padding="@dimen/spacing_lg"
             android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Route notifications to different voice profiles by detected language. When enabled, the app auto-detects language and uses the mapped profile."
+                android:text="@string/lang_routing_description"
                 android:textSize="@dimen/text_caption" android:textColor="@color/text_section" android:fontFamily="sans-serif"
                 android:layout_marginBottom="@dimen/spacing_md"/>
 
@@ -140,7 +140,7 @@
 
             <!-- L26: Dynamic voice routing per language -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Voice routing"
+                android:text="@string/voice_routing_label"
                 android:textColor="@color/text_section" android:textSize="@dimen/text_label" android:fontFamily="sans-serif"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
             <LinearLayout android:id="@+id/voice_routing_container" android:layout_width="match_parent"
@@ -152,11 +152,11 @@
                 android:background="@color/divider" android:layout_marginBottom="@dimen/spacing_md"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Translation"
+                android:text="@string/translation_label"
                 android:textColor="@color/text_section" android:textSize="@dimen/text_label" android:fontFamily="sans-serif"
                 android:layout_marginBottom="@dimen/spacing_xs"/>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Translate notifications before speaking. Works with or without voice routing above."
+                android:text="@string/translation_description"
                 android:textSize="@dimen/text_label" android:textColor="@color/text_dimmed" android:fontFamily="sans-serif"
                 android:layout_marginBottom="10dp"/>
 

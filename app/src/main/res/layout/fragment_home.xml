@@ -14,19 +14,19 @@
                 android:orientation="vertical">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="KYŌKAN" android:textSize="22sp" android:textStyle="bold"
-                    android:textColor="#b898d4" android:fontFamily="monospace" android:letterSpacing="0.12"/>
+                    android:textColor="#b898d4" android:fontFamily="sans-serif" android:letterSpacing="0.12"/>
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="v4.0  ·  Kokoro + Piper + Orpheus" android:textSize="10sp"
-                    android:textColor="#5a4a6e" android:fontFamily="monospace"/>
+                    android:textColor="#7e6e98" android:fontFamily="sans-serif"/>
             </LinearLayout>
         </LinearLayout>
 
         <Button android:id="@+id/btn_setup" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:backgroundTint="#b898d4"
-            android:textColor="#0a0710" android:fontFamily="monospace" android:layout_marginBottom="4dp"/>
+            android:textColor="#0a0710" android:fontFamily="sans-serif" android:layout_marginBottom="4dp"/>
         <TextView android:id="@+id/txt_setup_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="#181222"
-            android:fontFamily="monospace" android:textSize="11sp" android:textColor="#8a7a9e"
+            android:fontFamily="sans-serif" android:textSize="11sp" android:textColor="#8a7a9e"
             android:layout_marginBottom="20dp"/>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -36,7 +36,7 @@
             android:layout_marginBottom="16dp">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="@string/enable_notification_reading"
-                android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="monospace"/>
+                android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="sans-serif"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_enabled"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
@@ -51,7 +51,7 @@
             android:layout_marginBottom="20dp">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="@string/always_read_app_name"
-                android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="monospace"/>
+                android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="sans-serif"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_app_name"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
@@ -62,7 +62,7 @@
             android:orientation="horizontal" android:background="#181222" android:padding="16dp">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="@string/enable_quiet_hours"
-                android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="monospace"/>
+                android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="sans-serif"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_dnd"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
@@ -72,7 +72,7 @@
             android:layout_marginTop="3dp" android:visibility="gone">
             <TextView android:id="@+id/txt_dnd_start" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Silence from: 22:00"
-                android:textColor="#b0a4c0" android:fontFamily="monospace" android:textSize="13sp"
+                android:textColor="#b0a4c0" android:fontFamily="sans-serif" android:textSize="13sp"
                 android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_dnd_start" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="#ffaa00"
@@ -80,7 +80,7 @@
                 android:contentDescription="Silence start hour"/>
             <TextView android:id="@+id/txt_dnd_end" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Until: 08:00"
-                android:textColor="#b0a4c0" android:fontFamily="monospace" android:textSize="13sp"
+                android:textColor="#b0a4c0" android:fontFamily="sans-serif" android:textSize="13sp"
                 android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_dnd_end" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="#ffaa00"
@@ -97,17 +97,17 @@
                 android:layout_weight="1" android:orientation="vertical">
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/activate_listening"
-                    android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="monospace"/>
+                    android:textColor="#d4cce0" android:textSize="14sp" android:fontFamily="sans-serif"/>
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/listening_description"
-                    android:textColor="#7a6a8e" android:textSize="12sp" android:fontFamily="monospace"/>
+                    android:textColor="#7a6a8e" android:textSize="12sp" android:fontFamily="sans-serif"/>
             </LinearLayout>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_listening"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
         <TextView android:id="@+id/listening_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="12dp" android:background="#181222"
-            android:fontFamily="monospace" android:textSize="11sp" android:textColor="#8a7a9e"
+            android:fontFamily="sans-serif" android:textSize="11sp" android:textColor="#8a7a9e"
             android:layout_marginBottom="20dp"
             android:text="@string/listening_off"/>
 

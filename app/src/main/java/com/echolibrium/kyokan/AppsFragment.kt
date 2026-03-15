@@ -1,6 +1,7 @@
 package com.echolibrium.kyokan
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.text.Editable
@@ -29,6 +30,13 @@ class AppsFragment : Fragment() {
     private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var searchRunnable: Runnable? = null
 
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "voice_profiles" && isAdded) {
+            profiles = VoiceProfile.loadAll(prefs)
+            renderRules()
+        }
+    }
+
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_apps, c, false)
 
@@ -36,6 +44,7 @@ class AppsFragment : Fragment() {
         container = v.findViewById(R.id.apps_container)
         rules = AppRule.loadAll(prefs)
         profiles = VoiceProfile.loadAll(prefs)
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
         v.findViewById<Button>(R.id.btn_load_apps).setOnClickListener { loadInstalledApps() }
 
         // Search bar with debounce (E3: avoid rebuilding all rows on every keystroke)
@@ -146,12 +155,14 @@ class AppsFragment : Fragment() {
 
         val modes = arrayOf("Full", "Title only", "App only", "Text only", "Skip")
         val modeVals = arrayOf("full", "title_only", "app_only", "text_only", "skip")
+        var modeInitDone = false
         val modeSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
             setSelection(modeVals.indexOf(rule.readMode).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    if (!modeInitDone) { modeInitDone = true; return }
                     rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(readMode = modeVals[pos])) }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -159,6 +170,7 @@ class AppsFragment : Fragment() {
         }
 
         val profileNames = listOf("Global") + profiles.map { "${it.emoji} ${it.name}" }
+        var profileInitDone = false
         val profileSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, profileNames)
             val idx = profiles.indexOfFirst { it.id == rule.profileId }
@@ -166,6 +178,7 @@ class AppsFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    if (!profileInitDone) { profileInitDone = true; return }
                     val pid = if (pos == 0) "" else profiles.getOrNull(pos - 1)?.id ?: ""
                     rules.find { it.packageName == rule.packageName }?.let { updateRule(it.copy(profileId = pid)) }
                 }
@@ -174,6 +187,11 @@ class AppsFragment : Fragment() {
         }
         bottom.addView(modeSpinner); bottom.addView(profileSpinner); root.addView(bottom)
         return root
+    }
+
+    override fun onDestroyView() {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        super.onDestroyView()
     }
 
     private fun updateRule(updated: AppRule) {

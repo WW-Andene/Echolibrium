@@ -1,5 +1,6 @@
 package com.echolibrium.kyokan
 
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -27,11 +28,20 @@ class RulesFragment : Fragment() {
     private val rules = mutableListOf<Pair<String, String>>()
     private lateinit var container: LinearLayout
 
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if ((key == "voice_profiles" || key == "active_profile_id") && isAdded) {
+            val v = view ?: return@OnSharedPreferenceChangeListener
+            setupLangProfileSpinner(v, R.id.spinner_lang_en, "lang_profile_en")
+            setupLangProfileSpinner(v, R.id.spinner_lang_fr, "lang_profile_fr")
+        }
+    }
+
     override fun onCreateView(i: LayoutInflater, c: ViewGroup?, s: Bundle?): View =
         i.inflate(R.layout.fragment_rules, c, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
         container = v.findViewById(R.id.rules_container)
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
 
         // ── Collapsible: Word Rules ──
         val labelWord = v.findViewById<TextView>(R.id.label_word_rules)
@@ -286,6 +296,11 @@ class RulesFragment : Fragment() {
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
+    }
+
+    override fun onDestroyView() {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        super.onDestroyView()
     }
 
     private fun updateTranslateStatus(tv: TextView, enabled: Boolean, targetLang: String, sourceLang: String) {

@@ -6,7 +6,7 @@
     <color name="bg">#110d18</color>
     <color name="surface">#181222</color>
     <color name="surface_elevated">#201830</color>
-    <color name="nav_inactive">#5a4a6e</color>
+    <color name="nav_inactive">#7e6e98</color>
     <color name="ic_launcher_background">#f5f0eb</color>
 
     <!-- Text colors — warm cream/lavender tones -->
@@ -14,9 +14,9 @@
     <color name="text_secondary">#b0a4c0</color>
     <color name="text_hint">#6e5f82</color>
     <color name="text_muted">#8a7a9e</color>
-    <color name="text_dimmed">#5a4a6e</color>
+    <color name="text_dimmed">#7e6e98</color>
     <color name="text_section">#9b7eb8</color>
-    <color name="text_section_label">#8a6eaa</color>
+    <color name="text_section_label">#9070b4</color>
     <color name="text_disabled">#6e5f82</color>
 
     <!-- Accent colors — engine-specific colors kept per audit ("could coexist") -->

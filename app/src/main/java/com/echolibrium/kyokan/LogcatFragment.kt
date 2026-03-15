@@ -70,7 +70,7 @@ class LogcatFragment : Fragment() {
 
         private val LEVEL_ORDER = "VDIWEF"
 
-        private val COLOR_VERBOSE = Color.parseColor("#5a4a6e")
+        private val COLOR_VERBOSE = Color.parseColor("#7e6e98")
         private val COLOR_DEBUG   = Color.parseColor("#b0a4c0")
         private val COLOR_INFO    = Color.parseColor("#9b7eb8")
         private val COLOR_WARN    = Color.parseColor("#ffcc00")
@@ -124,10 +124,10 @@ class LogcatFragment : Fragment() {
         // App-only chip
         chipAppOnly.setOnClickListener {
             appOnlyMode = !appOnlyMode
-            chipAppOnly.setTextColor(if (appOnlyMode) Color.parseColor("#b898d4") else Color.parseColor("#5a4a6e"))
+            chipAppOnly.setTextColor(if (appOnlyMode) Color.parseColor("#b898d4") else Color.parseColor("#7e6e98"))
             if (appOnlyMode) {
                 pipelineMode = false
-                chipPipeline.setTextColor(Color.parseColor("#5a4a6e"))
+                chipPipeline.setTextColor(Color.parseColor("#7e6e98"))
             }
             refreshDisplay()
         }
@@ -135,10 +135,10 @@ class LogcatFragment : Fragment() {
         // Pipeline chip
         chipPipeline.setOnClickListener {
             pipelineMode = !pipelineMode
-            chipPipeline.setTextColor(if (pipelineMode) Color.parseColor("#9b7eb8") else Color.parseColor("#5a4a6e"))
+            chipPipeline.setTextColor(if (pipelineMode) Color.parseColor("#9b7eb8") else Color.parseColor("#7e6e98"))
             if (pipelineMode) {
                 appOnlyMode = false
-                chipAppOnly.setTextColor(Color.parseColor("#5a4a6e"))
+                chipAppOnly.setTextColor(Color.parseColor("#7e6e98"))
             }
             refreshDisplay()
         }

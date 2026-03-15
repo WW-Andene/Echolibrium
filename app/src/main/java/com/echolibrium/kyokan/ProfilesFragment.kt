@@ -30,6 +30,8 @@ class ProfilesFragment : Fragment() {
     private var languageFilter = "All"
     private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var refreshRunnable: Runnable? = null
+    private var lastVoiceGridRender = 0L
+    private var pendingVoiceGridRender = false
 
     private lateinit var profileSpinner: Spinner
     private lateinit var txtPreview: EditText
@@ -55,6 +57,13 @@ class ProfilesFragment : Fragment() {
         activeProfileId = prefs.getString("active_profile_id", "") ?: ""
         if (profiles.isEmpty()) { profiles.add(VoiceProfile(name = "Default")); VoiceProfile.saveAll(profiles, prefs) }
 
+        // Restore state from config change / process death
+        if (s != null) {
+            genderFilter = s.getString("genderFilter", "All")
+            languageFilter = s.getString("languageFilter", "All")
+            activeProfileId = s.getString("activeProfileId", activeProfileId)
+        }
+
         // Register download listeners once (cleaned up in onDestroyView)
         VoiceDownloadManager.addStateListener(kokoroStateListener)
         VoiceDownloadManager.addProgressListener(kokoroProgressListener)
@@ -68,6 +77,13 @@ class ProfilesFragment : Fragment() {
         renderVoiceGrid()
         setupButtons()
         loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("genderFilter", genderFilter)
+        outState.putString("languageFilter", languageFilter)
+        outState.putString("activeProfileId", activeProfileId)
     }
 
     private fun setupCollapsibleSections(v: View) {
@@ -141,7 +157,22 @@ class ProfilesFragment : Fragment() {
 
     // ── Voice grid rendering ───────────────────────────────────────────────
 
+    private fun renderVoiceGridThrottled() {
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastVoiceGridRender
+        if (elapsed >= 500) {
+            renderVoiceGrid()
+        } else if (!pendingVoiceGridRender) {
+            pendingVoiceGridRender = true
+            refreshHandler.postDelayed({
+                pendingVoiceGridRender = false
+                if (isAdded) renderVoiceGrid()
+            }, 500 - elapsed)
+        }
+    }
+
     private fun renderVoiceGrid() {
+        lastVoiceGridRender = System.currentTimeMillis()
         voiceGrid.removeAllViews()
         val ctx = requireContext()
 
@@ -297,7 +328,7 @@ class ProfilesFragment : Fragment() {
                         when (v.gender) {
                             "Female" -> 0xFF4a2a3e.toInt()
                             "Male" -> 0xFF3a4058.toInt()
-                            else -> 0xFF5a4a6e.toInt()
+                            else -> 0xFF7e6e98.toInt()
                         }
                     },
                     status = status,
@@ -316,168 +347,45 @@ class ProfilesFragment : Fragment() {
         }
     }
 
-    // ── Shared UI builders ─────────────────────────────────────────────────
+    // ── UI builder delegation (extracted to VoiceCardBuilder) ────────────────
 
-    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null, downloadIcon: String = "⬇ ALL"): android.view.View {
-        val ctx = requireContext()
-        val dp = ctx.resources.displayMetrics.density
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.setMargins(0, (14 * dp).toInt(), 0, (10 * dp).toInt()); layoutParams = lp
-        }
-
-        val titleRow = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-        titleRow.addView(android.view.View(ctx).apply {
-            setBackgroundColor(accent)
-            layoutParams = LinearLayout.LayoutParams(4, (36 * dp).toInt()).also { it.setMargins(0, 0, (10 * dp).toInt(), 0) }
-        })
-        titleRow.addView(TextView(ctx).apply {
-            text = title; textSize = 14f; setTextColor(accent)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        if (onDownloadAll != null) {
-            titleRow.addView(Button(ctx).apply {
-                text = downloadIcon; textSize = 10f; setTextColor(accent)
-                setBackgroundColor(0xFF181222.toInt())
-                setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
-                minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
-                setOnClickListener { onDownloadAll() }
-            })
-        }
-        container.addView(titleRow)
-
-        container.addView(TextView(ctx).apply {
-            text = subtitle; textSize = 10f; setTextColor(0xFF5a4a6e.toInt())
-            setPadding((14 * dp).toInt(), (2 * dp).toInt(), 0, 0)
-        })
-
-        return container
-    }
+    private fun buildSectionHeader(title: String, subtitle: String, accent: Int, onDownloadAll: (() -> Unit)? = null, downloadIcon: String = "⬇ ALL") =
+        VoiceCardBuilder.buildSectionHeader(requireContext(), title, subtitle, accent, onDownloadAll, downloadIcon)
 
     private fun buildVoiceCard(
         name: String, icon: String, iconColor: Int,
         status: String, statusColor: Int,
         voiceId: String, active: Boolean, accent: Int,
         enabled: Boolean, onClick: (() -> Unit)?
-    ): android.view.View {
+    ) = VoiceCardBuilder.buildVoiceCard(
+        requireContext(), name, icon, iconColor, status, statusColor,
+        voiceId, active, accent, enabled, onClick,
+        onPreview = if (enabled) { vid, vname -> previewVoice(vid, vname) } else null
+    )
+
+    private fun previewVoice(voiceId: String, name: String) {
         val ctx = requireContext()
-        val dp = ctx.resources.displayMetrics.density
-
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            setPadding((10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt(), (10 * dp).toInt())
-            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.setMargins((2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt())
-            layoutParams = lp
-
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 8 * dp
-                if (active) {
-                    setColor(0xFF2a1828.toInt())
-                    setStroke((2 * dp).toInt(), accent)
-                } else {
-                    setColor(if (enabled) 0xFF1a1428.toInt() else 0xFF181222.toInt())
-                    setStroke(1, if (enabled) 0xFF2a2040.toInt() else 0xFF201830.toInt())
-                }
-            }
-
-            contentDescription = "$name voice, ${if (icon == "♀") "female" else if (icon == "♂") "male" else "unknown gender"}, $status${if (active) ", selected" else ""}"
-            if (onClick != null) setOnClickListener { onClick() }
-
-            // Gender icon
-            addView(TextView(ctx).apply {
-                text = icon; textSize = 22f; gravity = android.view.Gravity.CENTER
-                setTextColor(iconColor)
-                importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            })
-
-            // Voice name
-            addView(TextView(ctx).apply {
-                text = name; textSize = 13f; gravity = android.view.Gravity.CENTER
-                setTextColor(when {
-                    active  -> accent
-                    enabled -> 0xFFddd6e8.toInt()
-                    else    -> 0xFF8a7a9e.toInt()
-                })
-                typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD
-                           else android.graphics.Typeface.DEFAULT
-                setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
-            })
-
-            // Status line (ready / 42% / tap to download / cloud / no API key)
-            addView(TextView(ctx).apply {
-                text = status; textSize = 10f; gravity = android.view.Gravity.CENTER
-                setTextColor(statusColor)
-            })
-
-            // Inline preview button — only shown when voice is ready
-            if (enabled) {
-                addView(TextView(ctx).apply {
-                    text = "▶ preview"
-                    textSize = 9f
-                    gravity = android.view.Gravity.CENTER
-                    setTextColor(accent.and(0x00FFFFFF.toInt()).or(0x99000000.toInt())) // 60% alpha of accent
-                    setPadding(0, (4 * dp).toInt(), 0, 0)
-                    isClickable = true
-                    isFocusable = true
-                    contentDescription = "Preview $name voice"
-                    setOnClickListener {
-                        val previewText = txtPreview.text.toString().ifBlank { "Hello! This is $name." }
-                        val tempProfile = currentProfile.copy(voiceName = voiceId)
-                        val service = NotificationReaderService.instance
-                        if (service != null) {
-                            service.testSpeak(previewText, tempProfile)
-                        } else {
-                            AudioPipeline.start(ctx)
-                            AudioPipeline.enqueue(AudioPipeline.Item(
-                                text = previewText,
-                                voiceId = voiceId,
-                                pitch = tempProfile.pitch,
-                                speed = tempProfile.speed
-                            ))
-                        }
-                    }
-                })
-            }
+        val previewText = txtPreview.text.toString().ifBlank { "Hello! This is $name." }
+        val tempProfile = currentProfile.copy(voiceName = voiceId)
+        val service = NotificationReaderService.instance
+        if (service != null) {
+            service.testSpeak(previewText, tempProfile)
+        } else {
+            AudioPipeline.start(ctx)
+            AudioPipeline.enqueue(AudioPipeline.Item(
+                text = previewText,
+                voiceId = voiceId,
+                pitch = tempProfile.pitch,
+                speed = tempProfile.speed
+            ))
         }
     }
 
-    private fun addVoiceRows(cards: List<android.view.View>) {
-        val ctx = requireContext()
-        val cols = 3
-        cards.chunked(cols).forEach { rowCards ->
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-            rowCards.forEach { row.addView(it) }
-            repeat(cols - rowCards.size) {
-                row.addView(android.view.View(ctx).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                })
-            }
-            voiceGrid.addView(row)
-        }
-    }
+    private fun addVoiceRows(cards: List<android.view.View>) =
+        VoiceCardBuilder.addVoiceRows(voiceGrid, cards)
 
-    private fun emptyLabel(msg: String): android.view.View {
-        return TextView(requireContext()).apply {
-            text = msg; setTextColor(0xFF9b7eb8.toInt()); textSize = 12f
-            setPadding(6, 8, 0, 8)
-        }
-    }
+    private fun emptyLabel(msg: String) =
+        VoiceCardBuilder.emptyLabel(requireContext(), msg)
 
     // ── API key dialog ─────────────────────────────────────────────────────
 
@@ -497,7 +405,7 @@ class ProfilesFragment : Fragment() {
 
         AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
             .setTitle("DeepInfra API Key")
-            .setMessage("Enter your DeepInfra API key to enable cloud voices (Orpheus).")
+            .setMessage("Enter your DeepInfra API key to enable cloud voices (Orpheus).\n\nPrivacy note: When using cloud voices, notification text is sent to DeepInfra servers for speech synthesis. This may include private message content. Local voices (Kokoro, Piper) keep all data on-device.")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val key = input.text.toString().trim()
@@ -642,7 +550,7 @@ class ProfilesFragment : Fragment() {
             card.addView(TextView(ctx).apply {
                 text = voiceEntry.displayName
                 textSize = 9f
-                setTextColor(if (isActive) 0xFF9b7eb8.toInt() else 0xFF5a4a6e.toInt())
+                setTextColor(if (isActive) 0xFF9b7eb8.toInt() else 0xFF7e6e98.toInt())
                 gravity = android.view.Gravity.CENTER
                 maxLines = 1
             })
@@ -684,7 +592,10 @@ class ProfilesFragment : Fragment() {
             .show()
     }
 
+    private var spinnerInitDone = false
+
     private fun setupProfileSpinner() {
+        spinnerInitDone = false
         profileSpinner.adapter = ArrayAdapter(requireContext(),
             android.R.layout.simple_spinner_dropdown_item, profiles.map { p ->
                 "${p.emoji} ${p.name}"
@@ -693,6 +604,7 @@ class ProfilesFragment : Fragment() {
         profileSpinner.setSelection(idx)
         profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (!spinnerInitDone) { spinnerInitDone = true; return }
                 loadProfileToUI(profiles[pos])
                 activeProfileId = profiles[pos].id
                 prefs.edit().putString("active_profile_id", activeProfileId).apply()
@@ -711,7 +623,7 @@ class ProfilesFragment : Fragment() {
     private val kokoroStateListener: (DownloadState) -> Unit = { state ->
         activity?.runOnUiThread {
             if (isAdded) {
-                renderVoiceGrid()
+                renderVoiceGridThrottled()
                 if (state == DownloadState.ERROR) {
                     Toast.makeText(context, "Kokoro download failed: ${VoiceDownloadManager.errorMessage}", Toast.LENGTH_LONG).show()
                 }
@@ -719,12 +631,12 @@ class ProfilesFragment : Fragment() {
         }
     }
     private val kokoroProgressListener: (Int) -> Unit = { _ ->
-        activity?.runOnUiThread { if (isAdded) renderVoiceGrid() }
+        activity?.runOnUiThread { if (isAdded) renderVoiceGridThrottled() }
     }
     private val piperStateListener: (String, DownloadState) -> Unit = { vid, state ->
         activity?.runOnUiThread {
             if (isAdded) {
-                renderVoiceGrid()
+                renderVoiceGridThrottled()
                 if (state == DownloadState.ERROR) {
                     Toast.makeText(context, "Download failed for $vid: ${PiperDownloadManager.getError(vid)}", Toast.LENGTH_LONG).show()
                 }
@@ -732,7 +644,7 @@ class ProfilesFragment : Fragment() {
         }
     }
     private val piperProgressListener: (String, Int) -> Unit = { _, _ ->
-        activity?.runOnUiThread { if (isAdded) renderVoiceGrid() }
+        activity?.runOnUiThread { if (isAdded) renderVoiceGridThrottled() }
     }
 
     private fun setupButtons() {
@@ -849,7 +761,7 @@ class ProfilesFragment : Fragment() {
                 val kokoroDownloading = VoiceDownloadManager.state == DownloadState.DOWNLOADING
                 val piperDownloading = PiperDownloadManager.isAnyDownloading()
                 if (kokoroDownloading || piperDownloading) {
-                    renderVoiceGrid()
+                    renderVoiceGridThrottled()
                     refreshHandler.postDelayed(this, 1000)
                 } else {
                     renderVoiceGrid()

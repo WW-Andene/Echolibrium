@@ -199,7 +199,11 @@ class AudioPipeline(
         val (pcm, sampleRate) = result
 
         // ── Play ────────────────────────────────────────────────────────
-        playPcm(pcm, sampleRate)
+        if (!playPcm(pcm, sampleRate)) {
+            // Bug 6: Audio focus denied (e.g. phone call active) — notify so
+            // TtsAliveService notification and UI listeners can show feedback
+            notifySynthesisError(voiceId, "Audio busy — notification skipped")
+        }
     }
 
     // ── Engine methods ──────────────────────────────────────────────────────
@@ -263,14 +267,15 @@ class AudioPipeline(
         focusRequest = null
     }
 
-    private fun playPcm(samples: FloatArray, sampleRate: Int) {
+    /** @return true if playback completed (or at least started), false if audio focus was denied */
+    private fun playPcm(samples: FloatArray, sampleRate: Int): Boolean {
         val pcm = applyCrossfade(samples, sampleRate)
-        if (pcm.isEmpty()) return
+        if (pcm.isEmpty()) return true // empty is not a focus error
 
         // D-01: Request audio focus before playback — skip if denied (e.g. during phone call)
         if (!requestAudioFocus()) {
             Log.w(TAG, "Audio focus denied — skipping playback")
-            return
+            return false
         }
 
         val safeRate = sampleRate.coerceIn(
@@ -300,7 +305,7 @@ class AudioPipeline(
                 .build()
         } catch (e: Exception) {
             Log.e(TAG, "AudioTrack creation failed", e)
-            return
+            return true // not a focus denial — don't trigger "audio busy" error
         }
 
         synchronized(trackLock) { currentTrack = track }
@@ -339,6 +344,7 @@ class AudioPipeline(
             synchronized(trackLock) { if (currentTrack === track) currentTrack = null }
             abandonAudioFocus()
         }
+        return true
     }
 
     private fun applyCrossfade(samples: FloatArray, sampleRate: Int): FloatArray {

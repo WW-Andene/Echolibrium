@@ -192,7 +192,7 @@ class SettingsRepository(
                     is String -> editor.putString(key, value)
                     is Boolean -> editor.putBoolean(key, value)
                     is Int -> editor.putInt(key, value)
-                    is Long -> editor.putLong(key, value.toString())
+                    is Long -> editor.putLong(key, value)
                 }
             }
             editor.apply()
@@ -223,6 +223,7 @@ class SettingsRepository(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to migrate voice profiles", e)
             }
+            Unit
         }
 
         // Migrate app rules
@@ -237,6 +238,7 @@ class SettingsRepository(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to migrate app rules", e)
             }
+            Unit
         }
 
         // Migrate word rules
@@ -259,6 +261,7 @@ class SettingsRepository(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to migrate word rules", e)
             }
+            Unit
         }
 
         // Mark migration done — old SP keys kept for backup safety

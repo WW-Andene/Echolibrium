@@ -73,8 +73,8 @@ class DownloadDelegate(
 
     // ── Download listeners (register once, clean up in release) ─────────────
 
-    val kokoroStateListener: (DownloadState) -> Unit = { state ->
-        val f = fragment ?: return@kokoroStateListener
+    val kokoroStateListener: (DownloadState) -> Unit = listener@{ state ->
+        val f = fragment ?: return@listener
         f.activity?.runOnUiThread {
             if (f.isAdded) {
                 onVoiceGridChanged()
@@ -85,15 +85,15 @@ class DownloadDelegate(
         }
     }
 
-    val kokoroProgressListener: (Int) -> Unit = { _ ->
-        val f = fragment ?: return@kokoroProgressListener
+    val kokoroProgressListener: (Int) -> Unit = listener@{ _ ->
+        val f = fragment ?: return@listener
         f.activity?.runOnUiThread {
             if (f.isAdded) onVoiceGridChanged()
         }
     }
 
-    val piperStateListener: (String, DownloadState) -> Unit = { vid, state ->
-        val f = fragment ?: return@piperStateListener
+    val piperStateListener: (String, DownloadState) -> Unit = listener@{ vid, state ->
+        val f = fragment ?: return@listener
         f.activity?.runOnUiThread {
             if (f.isAdded) {
                 onVoiceGridChanged()
@@ -104,8 +104,8 @@ class DownloadDelegate(
         }
     }
 
-    val piperProgressListener: (String, Int) -> Unit = { _, _ ->
-        val f = fragment ?: return@piperProgressListener
+    val piperProgressListener: (String, Int) -> Unit = listener@{ _, _ ->
+        val f = fragment ?: return@listener
         f.activity?.runOnUiThread {
             if (f.isAdded) onVoiceGridChanged()
         }

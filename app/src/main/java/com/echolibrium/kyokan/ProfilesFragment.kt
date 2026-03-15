@@ -2,7 +2,6 @@ package com.echolibrium.kyokan
 
 import android.os.Bundle
 import android.text.InputType
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,11 +32,26 @@ class ProfilesFragment : Fragment() {
     private var currentProfile = VoiceProfile()
     private var genderFilter = "All"
     private var languageFilter = "All"
-    private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var refreshRunnable: Runnable? = null
     private var lastVoiceGridRender = 0L
     private var pendingVoiceGridRender = false
+    private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var initialProfileLoaded = false
+
+    private lateinit var downloadDelegate: DownloadDelegate
+    private val profileGridCallbacks = object : ProfileGridBuilder.Callbacks {
+        override fun onProfileSelected(profile: VoiceProfile) {
+            viewModel.setActiveProfile(profile.id)
+            loadProfileToUI(profile)
+            ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
+            val idx = profiles.indexOfFirst { it.id == profile.id }.coerceAtLeast(0)
+            profileSpinner.setSelection(idx)
+        }
+        override fun onProfileRenamed(profileId: String, newName: String) {
+            viewModel.renameProfile(profileId, newName)
+            setupProfileSpinner()
+            ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
+        }
+    }
 
     private lateinit var profileSpinner: Spinner
     private lateinit var txtPreview: EditText
@@ -70,7 +84,7 @@ class ProfilesFragment : Fragment() {
         viewModel.profiles.observe(viewLifecycleOwner) { list ->
             profiles = list.toMutableList()
             setupProfileSpinner()
-            renderProfileGrid()
+            ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
             if (!initialProfileLoaded && profiles.isNotEmpty()) {
                 initialProfileLoaded = true
                 loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
@@ -83,11 +97,14 @@ class ProfilesFragment : Fragment() {
             currentProfile = profile
         }
 
+        // Initialize download delegate
+        downloadDelegate = DownloadDelegate(this, c, viewModel) { renderVoiceGridThrottled() }
+
         // Register download listeners once (cleaned up in onDestroyView)
-        c.voiceDownloadManager.addStateListener(kokoroStateListener)
-        c.voiceDownloadManager.addProgressListener(kokoroProgressListener)
-        c.piperDownloadManager.addStateListener(piperStateListener)
-        c.piperDownloadManager.addProgressListener(piperProgressListener)
+        c.voiceDownloadManager.addStateListener(downloadDelegate.kokoroStateListener)
+        c.voiceDownloadManager.addProgressListener(downloadDelegate.kokoroProgressListener)
+        c.piperDownloadManager.addStateListener(downloadDelegate.piperStateListener)
+        c.piperDownloadManager.addProgressListener(downloadDelegate.piperProgressListener)
 
         setupCollapsibleSections(v)
         buildFilterButtons()
@@ -232,7 +249,7 @@ class ProfilesFragment : Fragment() {
             else -> getString(R.string.kokoro_subtitle_size, kokoroCount, VoiceDownloadManager.MODEL_SIZE_MB)
         }
         val kokoroDownloadAll: (() -> Unit)? = if (!kokoroReady && !kokoroDownloading) {
-            { startKokoroDownload() }
+            { downloadDelegate.startKokoroDownload() }
         } else null
         voiceGrid.addView(buildSectionHeader(getString(R.string.engine_kokoro), kokoroSubtitle, AppColors.engineKokoro(requireContext()), kokoroDownloadAll, getString(R.string.download_all_btn)))
 
@@ -257,7 +274,7 @@ class ProfilesFragment : Fragment() {
                 accent = AppColors.engineKokoro(requireContext()), enabled = kokoroReady,
                 onClick = when {
                     kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
-                    !kokoroDownloading -> {{ startKokoroDownload() }}
+                    !kokoroDownloading -> {{ downloadDelegate.startKokoroDownload() }}
                     else -> null
                 }
             )
@@ -269,7 +286,7 @@ class ProfilesFragment : Fragment() {
         val piperSubtitle = getString(R.string.piper_subtitle, piperReadyCount, piperEntries.size)
         val piperHasUndownloaded = piperEntries.any { !VoiceRegistry.isReady(ctx, it.id) && !c.piperDownloadManager.isDownloading(it.id) }
         val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
-            { confirmDownloadAllPiper() }
+            { downloadDelegate.confirmDownloadAllPiper() }
         } else null
         voiceGrid.addView(buildSectionHeader(getString(R.string.engine_piper), piperSubtitle, AppColors.enginePiper(requireContext()), piperDownloadAll, getString(R.string.download_all_btn)))
 
@@ -296,7 +313,7 @@ class ProfilesFragment : Fragment() {
                 accent = AppColors.enginePiper(requireContext()), enabled = ready,
                 onClick = when {
                     ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
-                    !downloading -> {{ startPiperDownload(v.id) }}
+                    !downloading -> {{ downloadDelegate.startPiperDownload(v.id) }}
                     else -> null
                 }
             )
@@ -427,209 +444,6 @@ class ProfilesFragment : Fragment() {
             .show()
     }
 
-    // ── Downloads ───────────────────────────────────────────────────────────
-
-    private fun startKokoroDownload() {
-        viewModel.startKokoroDownload()
-        renderVoiceGrid()
-        startDownloadRefresh()
-    }
-
-    private fun startPiperDownload(voiceId: String) {
-        viewModel.startPiperDownload(voiceId)
-        renderVoiceGrid()
-        startDownloadRefresh()
-    }
-
-    private fun confirmDownloadAllPiper() {
-        val ctx = requireContext()
-        val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
-        val remaining = piperEntries.count { !VoiceRegistry.isReady(ctx, it.id) && !c.piperDownloadManager.isDownloading(it.id) }
-        val estimatedMb = piperEntries.filter { !VoiceRegistry.isReady(ctx, it.id) }
-            .sumOf { PiperVoices.byId(it.id)?.sizeMb ?: 40 }
-        AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
-            .setTitle(getString(R.string.download_all_piper_title))
-            .setMessage(getString(R.string.download_all_piper_msg, remaining, estimatedMb))
-            .setPositiveButton(getString(R.string.download_btn)) { _, _ -> downloadAllPiper() }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun downloadAllPiper() {
-        val ctx = requireContext()
-        val piperEntries = VoiceRegistry.byEngine(VoiceRegistry.Engine.PIPER)
-        piperEntries.forEach { v ->
-            if (!VoiceRegistry.isReady(ctx, v.id) && !c.piperDownloadManager.isDownloading(v.id)) {
-                c.piperDownloadManager.downloadVoice(ctx, v.id)
-            }
-        }
-        renderVoiceGrid()
-        startDownloadRefresh()
-    }
-
-    // ── Profile grid (cards) ───────────────────────────────────────────────
-
-    private fun renderProfileGrid() {
-        profileGrid.removeAllViews()
-        val ctx = requireContext()
-        val columns = 3
-        var row: LinearLayout? = null
-
-        profiles.forEachIndexed { index, p ->
-            if (index % columns == 0) {
-                row = LinearLayout(ctx).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).also { it.setMargins(0, 0, 0, 8) }
-                }
-                profileGrid.addView(row)
-            }
-
-            val isActive = p.id == activeProfileId
-            val card = buildProfileCard(p, isActive)
-            row!!.addView(card)
-        }
-
-        val remainder = profiles.size % columns
-        if (remainder != 0) {
-            for (i in remainder until columns) {
-                row!!.addView(android.view.View(ctx).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
-                })
-            }
-        }
-    }
-
-    private fun buildProfileCard(p: VoiceProfile, isActive: Boolean): android.view.View {
-        val ctx = requireContext()
-        val dp = ctx.resources.displayMetrics.density
-        val card = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            setPadding((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt())
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 8 * dp
-                if (isActive) {
-                    setColor(AppColors.cardActiveBg(requireContext()))
-                    setStroke((2 * dp).toInt(), AppColors.accentRose(requireContext()))
-                } else {
-                    setColor(AppColors.cardEnabledBg(requireContext()))
-                    setStroke(1, AppColors.cardBorder(requireContext()))
-                }
-            }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
-                it.setMargins((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
-            }
-            val voiceEntry = VoiceRegistry.byId(p.voiceName)
-            contentDescription = "Profile ${p.name}${if (voiceEntry != null) ", voice ${voiceEntry.displayName}" else ""}${if (isActive) ", active" else ""}. Long press to rename."
-
-            // Ripple touch feedback
-            val rippleAttr = TypedValue()
-            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, rippleAttr, true)
-            foreground = ctx.getDrawable(rippleAttr.resourceId)
-
-            setOnClickListener {
-                viewModel.setActiveProfile(p.id)
-                loadProfileToUI(p)
-                renderProfileGrid()
-                val idx = profiles.indexOfFirst { it.id == p.id }.coerceAtLeast(0)
-                profileSpinner.setSelection(idx)
-            }
-
-            setOnLongClickListener {
-                showRenameDialog(p)
-                true
-            }
-        }
-
-        card.addView(TextView(ctx).apply {
-            text = p.emoji
-            textSize = 24f
-            gravity = android.view.Gravity.CENTER
-        })
-
-        card.addView(TextView(ctx).apply {
-            text = p.name
-            textSize = 11f
-            setTextColor(if (isActive) AppColors.accentRose(requireContext()) else AppColors.textSecondary(requireContext()))
-            gravity = android.view.Gravity.CENTER
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-
-        val voiceEntry = VoiceRegistry.byId(p.voiceName)
-        if (voiceEntry != null) {
-            card.addView(TextView(ctx).apply {
-                text = voiceEntry.displayName
-                textSize = 9f
-                setTextColor(if (isActive) AppColors.textSection(requireContext()) else AppColors.textDisabled(requireContext()))
-                gravity = android.view.Gravity.CENTER
-                maxLines = 1
-            })
-        }
-
-        // Personality hint based on pitch/speed (M13)
-        val hint = personalityHint(p.pitch, p.speed)
-        if (hint.isNotEmpty()) {
-            card.addView(TextView(ctx).apply {
-                text = hint
-                textSize = 8f
-                setTextColor(if (isActive) AppColors.textDimmed(requireContext()) else AppColors.textCardSubtitle(requireContext()))
-                gravity = android.view.Gravity.CENTER
-                maxLines = 1
-                setPadding(0, (2 * dp).toInt(), 0, 0)
-            })
-        }
-
-        if (isActive) {
-            card.addView(android.view.View(ctx).apply {
-                setBackgroundColor(AppColors.accentRose(requireContext()))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
-                ).also { it.setMargins((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), 0) }
-            })
-        }
-
-        return card
-    }
-
-    private fun personalityHint(pitch: Float, speed: Float): String {
-        val pitchDesc = when {
-            pitch >= 1.5f -> "high"
-            pitch <= 0.7f -> "deep"
-            else -> null
-        }
-        val speedDesc = when {
-            speed >= 1.8f -> "fast"
-            speed <= 0.7f -> "slow"
-            else -> null
-        }
-        return listOfNotNull(pitchDesc, speedDesc).joinToString(" · ")
-    }
-
-    private fun showRenameDialog(p: VoiceProfile) {
-        val ctx = context ?: return
-        val et = EditText(ctx).apply {
-            setText(p.name)
-            hint = getString(R.string.profile_name_hint)
-            filters = arrayOf(android.text.InputFilter.LengthFilter(40)) // L6
-            selectAll()
-        }
-        AlertDialog.Builder(ctx)
-            .setTitle(getString(R.string.rename_profile))
-            .setView(et)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val newName = et.text.toString().trim().ifBlank { p.name }
-                viewModel.renameProfile(p.id, newName)
-                setupProfileSpinner()
-                renderProfileGrid()
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
     private var spinnerInitDone = false
 
     private fun setupProfileSpinner() {
@@ -654,34 +468,6 @@ class ProfilesFragment : Fragment() {
         activity?.runOnUiThread {
             if (isAdded) Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
         }
-    }
-
-    // Download listeners — registered once, cleaned up in onDestroyView
-    private val kokoroStateListener: (DownloadState) -> Unit = { state ->
-        activity?.runOnUiThread {
-            if (isAdded) {
-                renderVoiceGridThrottled()
-                if (state == DownloadState.ERROR) {
-                    Toast.makeText(context, getString(R.string.kokoro_download_failed), Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-    private val kokoroProgressListener: (Int) -> Unit = { _ ->
-        activity?.runOnUiThread { if (isAdded) renderVoiceGridThrottled() }
-    }
-    private val piperStateListener: (String, DownloadState) -> Unit = { vid, state ->
-        activity?.runOnUiThread {
-            if (isAdded) {
-                renderVoiceGridThrottled()
-                if (state == DownloadState.ERROR) {
-                    Toast.makeText(context, getString(R.string.download_failed, vid), Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-    private val piperProgressListener: (String, Int) -> Unit = { _, _ ->
-        activity?.runOnUiThread { if (isAdded) renderVoiceGridThrottled() }
     }
 
     private fun setupButtons() {
@@ -710,7 +496,7 @@ class ProfilesFragment : Fragment() {
         btnSave.setOnClickListener {
             val p = readProfileFromUI()
             viewModel.saveProfile(p)
-            renderProfileGrid()
+            ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
             Toast.makeText(context, getString(R.string.saved_profile, p.name), Toast.LENGTH_SHORT).show()
         }
         btnNew.setOnClickListener {
@@ -724,7 +510,7 @@ class ProfilesFragment : Fragment() {
                     val p = viewModel.createProfile(name)
                     loadProfileToUI(p)
                     setupProfileSpinner(); profileSpinner.setSelection(profiles.size - 1)
-                    renderProfileGrid()
+                    ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
                 }.setNegativeButton(getString(R.string.cancel), null).show()
         }
         btnDelete.setOnClickListener {
@@ -734,7 +520,7 @@ class ProfilesFragment : Fragment() {
                     viewModel.deleteCurrentProfile()
                     loadProfileToUI(profiles[0])
                     setupProfileSpinner()
-                    renderProfileGrid()
+                    ProfileGridBuilder.renderGrid(profileGrid, profiles, activeProfileId, profileGridCallbacks)
                 }.setNegativeButton(getString(R.string.cancel), null).show()
         }
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
@@ -767,48 +553,21 @@ class ProfilesFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        startDownloadRefresh()
+        downloadDelegate.startRefresh()
     }
 
     override fun onPause() {
         super.onPause()
-        stopDownloadRefresh()
+        downloadDelegate.stopRefresh()
     }
 
     override fun onDestroyView() {
-        stopDownloadRefresh()
+        downloadDelegate.stopRefresh()
         c.audioPipeline.removeSynthesisErrorListener(synthesisErrorListener)
-        c.voiceDownloadManager.removeStateListener(kokoroStateListener)
-        c.voiceDownloadManager.removeProgressListener(kokoroProgressListener)
-        c.piperDownloadManager.removeStateListener(piperStateListener)
-        c.piperDownloadManager.removeProgressListener(piperProgressListener)
+        c.voiceDownloadManager.removeStateListener(downloadDelegate.kokoroStateListener)
+        c.voiceDownloadManager.removeProgressListener(downloadDelegate.kokoroProgressListener)
+        c.piperDownloadManager.removeStateListener(downloadDelegate.piperStateListener)
+        c.piperDownloadManager.removeProgressListener(downloadDelegate.piperProgressListener)
         super.onDestroyView()
-    }
-
-    private fun startDownloadRefresh() {
-        stopDownloadRefresh()
-        refreshRunnable = object : Runnable {
-            override fun run() {
-                if (!isAdded) return
-                val kokoroDownloading = c.voiceDownloadManager.state == DownloadState.DOWNLOADING
-                val piperDownloading = c.piperDownloadManager.isAnyDownloading()
-                if (kokoroDownloading || piperDownloading) {
-                    renderVoiceGridThrottled()
-                    refreshHandler.postDelayed(this, 1000)
-                } else {
-                    renderVoiceGrid()
-                }
-            }
-        }
-        val kokoroDownloading = c.voiceDownloadManager.state == DownloadState.DOWNLOADING
-        val piperDownloading = c.piperDownloadManager.isAnyDownloading()
-        if (kokoroDownloading || piperDownloading) {
-            refreshHandler.postDelayed(refreshRunnable!!, 1000)
-        }
-    }
-
-    private fun stopDownloadRefresh() {
-        refreshRunnable?.let { refreshHandler.removeCallbacks(it) }
-        refreshRunnable = null
     }
 }

@@ -60,6 +60,7 @@ class ProfilesFragment : Fragment() {
     private var refreshRunnable: Runnable? = null
     private var lastVoiceGridRender = 0L
     private var pendingVoiceGridRender = false
+    private var initialProfileLoaded = false
 
     private lateinit var profileSpinner: Spinner
     private lateinit var txtPreview: EditText
@@ -93,6 +94,10 @@ class ProfilesFragment : Fragment() {
             profiles = list.toMutableList()
             setupProfileSpinner()
             renderProfileGrid()
+            if (!initialProfileLoaded && profiles.isNotEmpty()) {
+                initialProfileLoaded = true
+                loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
+            }
         }
         viewModel.activeProfileId.observe(viewLifecycleOwner) { id ->
             activeProfileId = id
@@ -111,7 +116,6 @@ class ProfilesFragment : Fragment() {
         buildFilterButtons()
         renderVoiceGrid()
         setupButtons()
-        loadProfileToUI(profiles.find { it.id == activeProfileId } ?: profiles[0])
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

@@ -20,6 +20,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
 import androidx.transition.AutoTransition
 import androidx.transition.TransitionManager
@@ -109,6 +110,16 @@ class HomeFragment : Fragment() {
             txtDndEnd.text = getString(R.string.until_time, h)
         })
 
+        // L14: Dark mode toggle
+        val switchDarkMode = v.findViewById<SwitchCompat>(R.id.switch_dark_mode)
+        switchDarkMode.isChecked = prefs.getBoolean("dark_mode", true)
+        switchDarkMode.setOnCheckedChangeListener { _, dark ->
+            prefs.edit().putBoolean("dark_mode", dark).apply()
+            AppCompatDelegate.setDefaultNightMode(
+                if (dark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+            )
+        }
+
         // Listening toggle — delegates to HomeViewModel (M28)
         val switchListening = v.findViewById<SwitchCompat>(R.id.switch_listening)
         val listeningStatus = v.findViewById<TextView>(R.id.listening_status)
@@ -192,11 +203,12 @@ class HomeFragment : Fragment() {
         if (!notif) steps.add("Grant notification access")
 
         if (steps.isEmpty()) {
-            btn.text = "✓ ${getString(R.string.all_permissions_granted)}"
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1e1530.toInt())
-            btn.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
+            btn.text = "\u2713 ${getString(R.string.all_permissions_granted)}"
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(requireContext(), R.color.btn_green_bg))
+            btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
             txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
-            txt.setTextColor(requireContext().getColor(android.R.color.holo_green_dark))
+            txt.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
             // L15: Dismiss onboarding once setup complete
             prefs.edit().putBoolean("onboarding_dismissed", true).apply()
             view?.findViewById<TextView>(R.id.txt_onboarding)?.visibility = View.GONE
@@ -204,8 +216,9 @@ class HomeFragment : Fragment() {
             showGuidance()
         } else {
             btn.text = "Setup: ${steps.first()}"
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFb898d4.toInt())
-            btn.setTextColor(0xFF0a0710.toInt())
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(requireContext(), R.color.green))
+            btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent))
             val status = buildString {
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     append(if (!restricted) "✓ Restricted" else "✗ Restricted")
@@ -216,7 +229,7 @@ class HomeFragment : Fragment() {
                 append(if (notif) "✓ Notifications" else "✗ Notifications")
             }
             txt.text = status
-            txt.setTextColor(requireContext().getColor(android.R.color.holo_orange_dark))
+            txt.setTextColor(ContextCompat.getColor(requireContext(), R.color.accent_dnd))
         }
     }
 
@@ -282,10 +295,10 @@ class HomeFragment : Fragment() {
             listening -> "Listening for: repeat / how long ago? / stop / what time?"
             else -> getString(R.string.listening_starting)
         }
-        tv.setTextColor(ctx.getColor(when {
-            listening -> android.R.color.holo_green_dark
-            enabled && !hasPerm -> android.R.color.holo_orange_dark
-            else -> android.R.color.darker_gray
+        tv.setTextColor(ContextCompat.getColor(ctx, when {
+            listening -> R.color.status_ready
+            enabled && !hasPerm -> R.color.accent_dnd
+            else -> R.color.text_disabled
         }))
 
         // Breathing animation when actively listening

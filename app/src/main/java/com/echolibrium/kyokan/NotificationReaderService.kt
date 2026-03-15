@@ -144,19 +144,13 @@ class NotificationReaderService : NotificationListenerService() {
             var rawText = buildMessage(appName, title, text, readMode)
             if (rawText.isBlank()) return@execute
 
-            // Language detection
+            // Language detection — L26: generic routing for all supported languages
             val appLang = getAppLanguage(pkgName)
             val detectedLang = detectLanguage("$title $text", appLang)
-            val translateEnabled = when (detectedLang) {
-                "fr" -> prefs.getBoolean("translate_fr_enabled", false)
-                else -> prefs.getBoolean("translate_en_enabled", false)
-            }
+            val translateEnabled = prefs.getBoolean("translate_${detectedLang}_enabled", false)
             var effectiveLang = detectedLang
             if (translateEnabled) {
-                val targetLang = when (detectedLang) {
-                    "fr" -> prefs.getString("translate_fr_lang", "") ?: ""
-                    else -> prefs.getString("translate_en_lang", "") ?: ""
-                }
+                val targetLang = prefs.getString("translate_${detectedLang}_lang", "") ?: ""
                 if (targetLang.isNotBlank() && targetLang != detectedLang) {
                     val translated = c.notificationTranslator.translate(rawText, detectedLang, targetLang)
                     if (translated != rawText) rawText = translated
@@ -232,8 +226,8 @@ class NotificationReaderService : NotificationListenerService() {
 
     private fun resolveProfileByLanguage(lang: String, profiles: List<VoiceProfile>): String? {
         if (!prefs.getBoolean("lang_routing_enabled", false)) return null
-        val prefKey = when (lang) { "fr" -> "lang_profile_fr"; else -> "lang_profile_en" }
-        val id = prefs.getString(prefKey, "") ?: ""
+        // L26: Check language-specific profile first, then fall back to generic
+        val id = prefs.getString("lang_profile_$lang", "") ?: ""
         return id.ifEmpty { null }
     }
 

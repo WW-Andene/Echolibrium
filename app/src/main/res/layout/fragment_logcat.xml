@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:background="#110d18">
+    android:orientation="vertical" android:background="@color/bg">
 
     <!-- Header -->
     <LinearLayout
@@ -20,7 +20,7 @@
         <Button android:id="@+id/btn_clear"
             android:layout_width="wrap_content" android:layout_height="36dp"
             android:text="@string/btn_clear" android:textColor="@color/text_secondary" android:textSize="11sp"
-            android:fontFamily="monospace" android:background="#201830"
+            android:fontFamily="monospace" android:background="@color/surface_elevated"
             android:paddingStart="12dp" android:paddingEnd="12dp"
             android:minWidth="0dp" android:minHeight="0dp"/>
     </LinearLayout>
@@ -34,14 +34,14 @@
         <EditText android:id="@+id/et_filter"
             android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1"
             android:hint="@string/filter_hint" android:textColorHint="@color/text_hint"
-            android:textColor="#d4cce0" android:textSize="13sp" android:fontFamily="monospace"
-            android:background="#181222" android:paddingStart="10dp" android:paddingEnd="10dp"
+            android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="monospace"
+            android:background="@color/surface" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:singleLine="true" android:imeOptions="actionDone"
             android:inputType="text"/>
 
         <Spinner android:id="@+id/spinner_level"
             android:layout_width="wrap_content" android:layout_height="36dp"
-            android:layout_marginStart="8dp" android:background="#181222"
+            android:layout_marginStart="8dp" android:background="@color/surface"
             android:popupBackground="#201830"/>
     </LinearLayout>
 
@@ -53,13 +53,13 @@
         <TextView android:id="@+id/chip_app_only"
             android:layout_width="wrap_content" android:layout_height="28dp"
             android:text="@string/chip_app_only" android:textColor="@color/text_dimmed" android:textSize="11sp"
-            android:fontFamily="monospace" android:background="#201830"
+            android:fontFamily="monospace" android:background="@color/surface_elevated"
             android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:layout_marginEnd="8dp"/>
         <TextView android:id="@+id/chip_pipeline"
             android:layout_width="wrap_content" android:layout_height="28dp"
             android:text="@string/chip_pipeline" android:textColor="@color/text_dimmed" android:textSize="11sp"
-            android:fontFamily="monospace" android:background="#201830"
+            android:fontFamily="monospace" android:background="@color/surface_elevated"
             android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:layout_marginEnd="8dp"/>
         <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_autoscroll"
@@ -72,7 +72,7 @@
     </LinearLayout>
 
     <!-- Divider -->
-    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2a2040"/>
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider"/>
 
     <!-- Log output -->
     <ScrollView android:id="@+id/scroll_log"

@@ -160,4 +160,19 @@
     <string name="notif_channel_description">Keeps notification reading active in the background</string>
     <string name="notif_title">Kyōkan</string>
     <string name="notif_text">Reading notifications</string>
+
+    <!-- L13: Content descriptions for accessibility -->
+    <string name="cd_master_switch">Toggle notification reading on or off</string>
+    <string name="cd_read_mode">Select how notifications are read aloud</string>
+    <string name="cd_dnd_toggle">Toggle quiet hours</string>
+    <string name="cd_listening_toggle">Toggle voice command listening</string>
+
+    <!-- L14: Theme -->
+    <string name="section_theme">// APPEARANCE</string>
+    <string name="theme_label">Dark mode</string>
+    <string name="theme_description">Switch between light and dark appearance</string>
+
+    <!-- L26: Dynamic language routing -->
+    <string name="lang_route_label">%s notifications → Voice:</string>
+    <string name="translate_lang_label">Translate %s notifications</string>
 </resources>

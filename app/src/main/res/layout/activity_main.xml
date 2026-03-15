@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:background="#110d18">
+    android:orientation="vertical" android:background="@color/bg">
     <FrameLayout android:id="@+id/fragment_container"
         android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
     <LinearLayout android:id="@+id/bottom_nav"
         android:layout_width="match_parent" android:layout_height="56dp"
-        android:background="#181222" android:orientation="horizontal"
+        android:background="@color/surface" android:orientation="horizontal"
         android:gravity="center_vertical" android:baselineAligned="false">
         <LinearLayout android:id="@+id/nav_home" style="@style/NavTab"
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1">

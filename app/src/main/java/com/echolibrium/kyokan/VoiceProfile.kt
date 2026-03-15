@@ -3,6 +3,7 @@ package com.echolibrium.kyokan
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
  * Voice profile — named container with voice selection, pitch, and speed.
@@ -21,7 +22,8 @@ data class VoiceProfile(
     fun toJson(): JSONObject = JSONObject().apply {
         put("_v", SCHEMA_VERSION)
         put("id", id); put("name", name); put("emoji", emoji)
-        put("voiceName", voiceName); put("pitch", pitch); put("speed", speed)
+        put("voiceName", voiceName)
+        put("pitch", pitch.toDouble()); put("speed", speed.toDouble())
     }
 
     companion object {
@@ -36,14 +38,24 @@ data class VoiceProfile(
             name = j.optString("name", "Profile"),
             emoji = j.optString("emoji", "🎙️"),
             voiceName = j.optString("voiceName", ""),
-            pitch = j.optDouble("pitch", 1.0).toFloat().coerceIn(MIN_PITCH, MAX_PITCH),
-            speed = j.optDouble("speed", 1.0).toFloat().coerceIn(MIN_SPEED, MAX_SPEED)
+            pitch = j.optDouble("pitch", 1.0).roundToFloat().coerceIn(MIN_PITCH, MAX_PITCH),
+            speed = j.optDouble("speed", 1.0).roundToFloat().coerceIn(MIN_SPEED, MAX_SPEED)
         )
+
+        /** Round Double to 2 decimal places then convert to Float — avoids precision loss (L3). */
+        private fun Double.roundToFloat(): Float = ((this * 100).roundToInt() / 100f)
 
         fun saveAll(profiles: List<VoiceProfile>, prefs: android.content.SharedPreferences) {
             val arr = JSONArray(); profiles.forEach { arr.put(it.toJson()) }
-            prefs.edit().putString("voice_profiles", arr.toString()).commit()
+            val json = arr.toString()
+            if (json.length > PREFS_SIZE_WARN_BYTES) {
+                Log.w("VoiceProfile", "voice_profiles JSON is ${json.length} bytes — consider pruning old profiles")
+            }
+            prefs.edit().putString("voice_profiles", json).commit()
         }
+
+        /** L5: Warn threshold for SharedPreferences value size (512KB). */
+        private const val PREFS_SIZE_WARN_BYTES = 512 * 1024
 
         fun loadAll(prefs: android.content.SharedPreferences): MutableList<VoiceProfile> {
             val json = prefs.getString("voice_profiles", null) ?: return mutableListOf()

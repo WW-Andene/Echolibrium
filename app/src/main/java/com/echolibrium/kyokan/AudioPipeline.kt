@@ -30,6 +30,10 @@ class AudioPipeline(
         private const val AUDIO_TRACK_MIN_SAMPLE_RATE_HZ = 4000
         private const val AUDIO_TRACK_MAX_SAMPLE_RATE_HZ = 192000
         private const val CROSSFADE_MS = 40
+        /** L9: Maximum prevTail samples to retain for crossfade (~8KB at 48kHz). */
+        private const val MAX_PREV_TAIL_SAMPLES = 2048
+        /** L10: PCM size threshold (256KB) above which MODE_STREAM is used instead of MODE_STATIC. */
+        private const val STREAM_MODE_THRESHOLD_BYTES = 256 * 1024
     }
 
     data class Item(
@@ -225,6 +229,7 @@ class AudioPipeline(
             AUDIO_TRACK_MIN_SAMPLE_RATE_HZ, AUDIO_TRACK_MAX_SAMPLE_RATE_HZ
         )
         val bufferBytes = pcm.size * 4
+        val useStream = bufferBytes > STREAM_MODE_THRESHOLD_BYTES
 
         val track = try {
             AudioTrack.Builder()
@@ -241,8 +246,8 @@ class AudioPipeline(
                         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                         .build()
                 )
-                .setBufferSizeInBytes(maxOf(bufferBytes, 4096))
-                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(if (useStream) maxOf(safeRate * 4, 4096) else maxOf(bufferBytes, 4096))
+                .setTransferMode(if (useStream) AudioTrack.MODE_STREAM else AudioTrack.MODE_STATIC)
                 .setSessionId(AudioManager.AUDIO_SESSION_ID_GENERATE)
                 .build()
         } catch (e: Exception) {
@@ -253,20 +258,32 @@ class AudioPipeline(
         synchronized(trackLock) { currentTrack = track }
 
         try {
-            track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
-            track.setNotificationMarkerPosition((pcm.size - 1).coerceAtLeast(1))
+            if (useStream) {
+                track.play()
+                var offset = 0
+                val chunkSize = safeRate // ~1 second of audio per chunk
+                while (offset < pcm.size && running) {
+                    val len = minOf(chunkSize, pcm.size - offset)
+                    val written = track.write(pcm, offset, len, AudioTrack.WRITE_BLOCKING)
+                    if (written < 0) { Log.e(TAG, "Stream write error: $written"); break }
+                    offset += written
+                }
+            } else {
+                track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+                track.setNotificationMarkerPosition((pcm.size - 1).coerceAtLeast(1))
 
-            val latch = CountDownLatch(1)
-            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-                override fun onMarkerReached(t: AudioTrack) { latch.countDown() }
-                override fun onPeriodicNotification(t: AudioTrack) {}
-            })
+                val latch = CountDownLatch(1)
+                track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                    override fun onMarkerReached(t: AudioTrack) { latch.countDown() }
+                    override fun onPeriodicNotification(t: AudioTrack) {}
+                })
 
-            track.play()
-            val durationMs = (pcm.size * 1000L / safeRate) + 2000L
-            val timeoutMs = durationMs.coerceAtMost(30_000L)
-            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                Log.w(TAG, "Playback marker timeout after ${timeoutMs}ms")
+                track.play()
+                val durationMs = (pcm.size * 1000L / safeRate) + 2000L
+                val timeoutMs = durationMs.coerceAtMost(30_000L)
+                if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                    Log.w(TAG, "Playback marker timeout after ${timeoutMs}ms")
+                }
             }
         } finally {
             try { track.stop() } catch (_: Exception) {}
@@ -283,7 +300,8 @@ class AudioPipeline(
         val fadeSamples = (sampleRate * CROSSFADE_MS / 1000).coerceAtMost(samples.size / 4)
         if (fadeSamples > 0) {
             val start = (samples.size - fadeSamples).coerceAtLeast(0)
-            prevTail = samples.sliceArray(start until samples.size)
+            val tailSize = (samples.size - start).coerceAtMost(MAX_PREV_TAIL_SAMPLES)
+            prevTail = samples.sliceArray((samples.size - tailSize) until samples.size)
             prevSampleRate = sampleRate
         }
 

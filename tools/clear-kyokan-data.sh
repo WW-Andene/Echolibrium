@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────
-# Clears all Kyōkan/Echolibrium data from an Android device.
+# Clears all Kyōkan data from an Android device.
 # Run via Termux or adb shell.
 #
 # What it removes:

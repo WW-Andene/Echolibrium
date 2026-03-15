@@ -9,9 +9,11 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
+import androidx.preference.PreferenceManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -22,6 +24,12 @@ class MainActivity : AppCompatActivity() {
     private val fragmentCache = mutableMapOf<Int, Fragment>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // L14: Apply saved theme preference before setContentView
+        val darkMode = PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean("dark_mode", true)
+        AppCompatDelegate.setDefaultNightMode(
+            if (darkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
         super.onCreate(savedInstanceState)
         CrashLogger.install(this)
         setContentView(R.layout.activity_main)

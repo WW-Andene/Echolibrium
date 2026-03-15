@@ -59,8 +59,8 @@ class LogcatFragment : Fragment() {
 
     companion object {
         private const val REFRESH_THROTTLE_MS = 200
-        private const val MAX_LINES = 5000
-        private const val TRIM_TO = 4000
+        private const val MAX_LINES = 2000
+        private const val TRIM_TO = 1500
         private val APP_PACKAGE = "com.echolibrium.kyokan"
 
         // Kyōkan pipeline tags for focused debugging
@@ -125,12 +125,16 @@ class LogcatFragment : Fragment() {
         switchAutoScroll.setOnCheckedChangeListener { _, checked -> autoScroll = checked }
 
         // App-only chip
+        val activeColor = requireContext().getColor(R.color.green)
+        val inactiveColor = requireContext().getColor(R.color.nav_inactive)
+        val sectionColor = requireContext().getColor(R.color.text_section)
+
         chipAppOnly.setOnClickListener {
             appOnlyMode = !appOnlyMode
-            chipAppOnly.setTextColor(if (appOnlyMode) Color.parseColor("#b898d4") else Color.parseColor("#7e6e98"))
+            chipAppOnly.setTextColor(if (appOnlyMode) activeColor else inactiveColor)
             if (appOnlyMode) {
                 pipelineMode = false
-                chipPipeline.setTextColor(Color.parseColor("#7e6e98"))
+                chipPipeline.setTextColor(inactiveColor)
             }
             refreshDisplay()
         }
@@ -138,10 +142,10 @@ class LogcatFragment : Fragment() {
         // Pipeline chip
         chipPipeline.setOnClickListener {
             pipelineMode = !pipelineMode
-            chipPipeline.setTextColor(if (pipelineMode) Color.parseColor("#9b7eb8") else Color.parseColor("#7e6e98"))
+            chipPipeline.setTextColor(if (pipelineMode) sectionColor else inactiveColor)
             if (pipelineMode) {
                 appOnlyMode = false
-                chipAppOnly.setTextColor(Color.parseColor("#7e6e98"))
+                chipAppOnly.setTextColor(inactiveColor)
             }
             refreshDisplay()
         }

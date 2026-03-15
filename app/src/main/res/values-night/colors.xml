@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night (dark) theme colors — original Kyōkan palette -->
+    <color name="green">#b898d4</color>
+    <color name="green_dark">#9b7eb8</color>
+    <color name="bg">#110d18</color>
+    <color name="surface">#181222</color>
+    <color name="surface_elevated">#201830</color>
+    <color name="nav_inactive">#7e6e98</color>
+
+    <color name="text_primary">#d4cce0</color>
+    <color name="text_secondary">#b0a4c0</color>
+    <color name="text_hint">#6e5f82</color>
+    <color name="text_muted">#8a7a9e</color>
+    <color name="text_dimmed">#7e6e98</color>
+    <color name="text_section">#9b7eb8</color>
+    <color name="text_section_label">#9070b4</color>
+    <color name="text_disabled">#6e5f82</color>
+
+    <color name="btn_green_bg">#1e1530</color>
+    <color name="btn_red_bg">#2a1520</color>
+    <color name="btn_blue_bg">#1a1530</color>
+    <color name="card_active_bg">#2a1828</color>
+    <color name="card_enabled_bg">#1a1428</color>
+    <color name="card_disabled_bg">#140e1e</color>
+    <color name="card_border">#2a2040</color>
+    <color name="filter_active_bg">#251840</color>
+
+    <color name="divider">#2a2040</color>
+    <color name="row_bg">#201830</color>
+    <color name="input_bg">#2a2040</color>
+
+    <color name="text_on_accent">#0a0710</color>
+    <color name="text_subtitle">#7a6a8e</color>
+</resources>

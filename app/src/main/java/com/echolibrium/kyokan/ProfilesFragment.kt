@@ -29,7 +29,9 @@ class ProfilesFragment : Fragment() {
     private val viewModel: ProfilesViewModel by viewModels()
     private var profiles = mutableListOf<VoiceProfile>()
     private var activeProfileId = ""
-    private var currentProfile = VoiceProfile()
+    /** B-01: Single source of truth — always reads from ViewModel. Survives rotation. */
+    private val currentProfile: VoiceProfile
+        get() = viewModel.currentProfile.value ?: VoiceProfile()
     private var genderFilter = "All"
     private var languageFilter = "All"
     private var lastVoiceGridRender = 0L
@@ -81,6 +83,14 @@ class ProfilesFragment : Fragment() {
         if (s != null) {
             genderFilter = s.getString("genderFilter", "All")
             languageFilter = s.getString("languageFilter", "All")
+            // B-05: Restore in-progress profile edits after process death
+            val savedProfileJson = s.getString("currentProfileJson", null)
+            if (savedProfileJson != null) {
+                try {
+                    val restored = VoiceProfile.fromJson(org.json.JSONObject(savedProfileJson))
+                    viewModel.updateCurrentProfile(restored)
+                } catch (_: Exception) { /* ignore corrupt JSON */ }
+            }
         }
 
         // Observe ViewModel state (M28) — keeps local state in sync
@@ -95,9 +105,6 @@ class ProfilesFragment : Fragment() {
         }
         viewModel.activeProfileId.observe(viewLifecycleOwner) { id ->
             activeProfileId = id
-        }
-        viewModel.currentProfile.observe(viewLifecycleOwner) { profile ->
-            currentProfile = profile
         }
 
         // Initialize download delegate
@@ -120,6 +127,8 @@ class ProfilesFragment : Fragment() {
         outState.putString("genderFilter", genderFilter)
         outState.putString("languageFilter", languageFilter)
         outState.putString("activeProfileId", activeProfileId)
+        // B-05: Save in-progress profile edits so they survive process death
+        outState.putString("currentProfileJson", currentProfile.toJson().toString())
     }
 
     private fun setupCollapsibleSections(v: View) {
@@ -292,7 +301,7 @@ class ProfilesFragment : Fragment() {
                     active = currentProfile.voiceName == v.id,
                     accent = AppColors.engineKokoro(ctx), enabled = kokoroReady,
                     onClick = when {
-                        kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                        kokoroReady -> {{ viewModel.updateCurrentProfile(currentProfile.copy(voiceName = v.id)); renderVoiceGrid() }}
                         !kokoroDownloading -> {{ downloadDelegate.startKokoroDownload() }}
                         else -> null
                     }
@@ -335,7 +344,7 @@ class ProfilesFragment : Fragment() {
                     active = currentProfile.voiceName == v.id,
                     accent = AppColors.enginePiper(ctx), enabled = ready,
                     onClick = when {
-                        ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
+                        ready -> {{ viewModel.updateCurrentProfile(currentProfile.copy(voiceName = v.id)); renderVoiceGrid() }}
                         !downloading -> {{ downloadDelegate.startPiperDownload(v.id) }}
                         else -> null
                     }
@@ -390,7 +399,7 @@ class ProfilesFragment : Fragment() {
      */
     private fun selectCloudVoice(voiceId: String) {
         if (prefs.getBoolean("cloud_privacy_acknowledged", false)) {
-            currentProfile = currentProfile.copy(voiceName = voiceId)
+            viewModel.updateCurrentProfile(currentProfile.copy(voiceName = voiceId))
             renderVoiceGrid()
             return
         }
@@ -399,7 +408,7 @@ class ProfilesFragment : Fragment() {
             .setMessage(getString(R.string.privacy_disclosure))
             .setPositiveButton(getString(R.string.cloud_privacy_accept)) { _, _ ->
                 prefs.edit().putBoolean("cloud_privacy_acknowledged", true).apply()
-                currentProfile = currentProfile.copy(voiceName = voiceId)
+                viewModel.updateCurrentProfile(currentProfile.copy(voiceName = voiceId))
                 renderVoiceGrid()
             }
             .setNegativeButton(getString(R.string.cloud_privacy_decline), null)
@@ -522,7 +531,7 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun loadProfileToUI(p: VoiceProfile) {
-        currentProfile = p
+        viewModel.updateCurrentProfile(p)
         seekPitch.max = 150; seekPitch.progress = ((p.pitch * 100).toInt() - 50).coerceIn(0, 150)
         tvPitch.text = getString(R.string.pitch_label, p.pitch)
         seekSpeed.max = 250; seekSpeed.progress = ((p.speed * 100).toInt() - 50).coerceIn(0, 250)

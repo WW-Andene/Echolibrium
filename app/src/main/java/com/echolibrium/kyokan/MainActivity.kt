@@ -20,11 +20,12 @@ import androidx.preference.PreferenceManager
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val KEY_SELECTED_TAB = "selected_tab_id"
+    }
+
     private val tabIds = intArrayOf(R.id.nav_home, R.id.nav_profiles, R.id.nav_apps, R.id.nav_rules, R.id.nav_logcat)
     private var selectedTabId = R.id.nav_home
-
-    // Cache fragment instances to avoid recreation on every tab click (A3)
-    private val fragmentCache = mutableMapOf<Int, Fragment>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // L14: Apply saved theme preference before setContentView
@@ -49,7 +50,10 @@ class MainActivity : AppCompatActivity() {
         for (id in tabIds) {
             findViewById<View>(id).setOnClickListener { selectTab(id) }
         }
-        if (savedInstanceState == null) selectTab(R.id.nav_home)
+
+        // B-02: Restore selected tab after rotation; B-03: re-select to sync nav + fragment
+        val restoredTabId = savedInstanceState?.getInt(KEY_SELECTED_TAB, R.id.nav_home) ?: R.id.nav_home
+        selectTab(restoredTabId)
 
         // Edge-to-edge: apply status bar insets to fragment container top padding
         val fragmentContainer = findViewById<View>(R.id.fragment_container)
@@ -66,6 +70,11 @@ class MainActivity : AppCompatActivity() {
             v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, bars.bottom)
             insets
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(KEY_SELECTED_TAB, selectedTabId)
     }
 
     private fun selectTab(id: Int) {
@@ -106,23 +115,35 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        val fragment = fragmentCache.getOrPut(id) {
-            when (id) {
-                R.id.nav_home     -> HomeFragment()
-                R.id.nav_profiles -> ProfilesFragment()
-                R.id.nav_apps     -> AppsFragment()
-                R.id.nav_rules    -> RulesFragment()
-                R.id.nav_logcat   -> LogcatFragment()
-                else -> HomeFragment()
-            }
+
+        // B-03: Use FragmentManager tags instead of a manual cache map.
+        // findFragmentByTag() returns the FM-restored instance after rotation,
+        // preventing duplicate fragments and stale reference leaks.
+        val tag = tagForTab(id)
+        val fragment = supportFragmentManager.findFragmentByTag(tag) ?: when (id) {
+            R.id.nav_home     -> HomeFragment()
+            R.id.nav_profiles -> ProfilesFragment()
+            R.id.nav_apps     -> AppsFragment()
+            R.id.nav_rules    -> RulesFragment()
+            R.id.nav_logcat   -> LogcatFragment()
+            else -> HomeFragment()
         }
-        loadFragment(fragment)
+        loadFragment(fragment, tag)
     }
 
-    private fun loadFragment(f: Fragment) =
+    private fun tagForTab(id: Int): String = when (id) {
+        R.id.nav_home     -> "frag_home"
+        R.id.nav_profiles -> "frag_profiles"
+        R.id.nav_apps     -> "frag_apps"
+        R.id.nav_rules    -> "frag_rules"
+        R.id.nav_logcat   -> "frag_logcat"
+        else -> "frag_home"
+    }
+
+    private fun loadFragment(f: Fragment, tag: String) =
         supportFragmentManager.beginTransaction()
             .setCustomAnimations(android.R.anim.fade_in, android.R.anim.fade_out)
-            .replace(R.id.fragment_container, f)
+            .replace(R.id.fragment_container, f, tag)
             .commit()
 
     fun isNotificationAccessGranted(): Boolean {

@@ -10,7 +10,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="#181222"
+        android:background="@color/surface"
         android:padding="16dp"
         android:paddingTop="14dp"
         android:paddingBottom="14dp">
@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textSize="14sp"
-            android:textColor="#d4cce0"
+            android:textColor="@color/text_primary"
             android:fontFamily="sans-serif"/>
         <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/switch_app_enabled"
@@ -34,7 +34,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="#110d18"
+        android:background="@color/row_bg"
         android:padding="16dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"

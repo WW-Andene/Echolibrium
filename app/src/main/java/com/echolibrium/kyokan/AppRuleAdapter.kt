@@ -60,15 +60,20 @@ class AppRuleAdapter(
             onRuleChanged(rule.copy(enabled = checked))
         }
 
-        // Mode spinner
+        // Mode spinner — clear listener BEFORE adapter swap to prevent stale callback fires.
+        // Without this, setting a new adapter triggers the OLD listener (whose skip flag
+        // was already consumed), which fires onRuleChanged with position 0 on every rebind,
+        // corrupting rule readMode to "full" and triggering a Room save per scroll.
+        h.spinnerMode.onItemSelectedListener = null
         h.spinnerMode.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, MODES)
         h.spinnerMode.setSelection(MODE_VALS.indexOf(rule.readMode).coerceAtLeast(0))
         h.spinnerMode.onItemSelectedSkipFirst { pos ->
             onRuleChanged(rule.copy(readMode = MODE_VALS[pos]))
         }
 
-        // Profile spinner
+        // Profile spinner — same pattern: null listener before adapter swap
         val profileNames = listOf("Global") + profiles.map { "${it.emoji} ${it.name}" }
+        h.spinnerProfile.onItemSelectedListener = null
         h.spinnerProfile.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, profileNames)
         val profileIdx = profiles.indexOfFirst { it.id == rule.profileId }
         h.spinnerProfile.setSelection((profileIdx + 1).coerceAtLeast(0))

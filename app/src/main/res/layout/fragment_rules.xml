@@ -7,7 +7,7 @@
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/rules_title" android:textSize="20sp" android:textStyle="bold"
-            android:textColor="@color/green" android:fontFamily="sans-serif" android:layout_marginBottom="14dp"/>
+            android:textColor="@color/primary" android:fontFamily="sans-serif" android:layout_marginBottom="14dp"/>
 
         <!-- Collapsible: Word Rules -->
         <TextView android:id="@+id/label_word_rules" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -25,7 +25,7 @@
                 android:layout_marginBottom="10dp"/>
             <Button android:id="@+id/btn_add_rule" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="@string/btn_add_rule"
-                android:backgroundTint="@color/btn_green_bg" android:textColor="@color/green"
+                android:backgroundTint="@color/btn_primary_bg" android:textColor="@color/primary"
                 android:fontFamily="sans-serif" android:layout_marginBottom="10dp"/>
             <LinearLayout android:id="@+id/rules_container" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:orientation="vertical"/>
@@ -96,7 +96,7 @@
                     android:layout_marginBottom="6dp"/>
                 <SeekBar android:id="@+id/seek_cooldown" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:max="30"
-                    android:progressTint="@color/green" android:thumbTint="@color/green"
+                    android:progressTint="@color/primary" android:thumbTint="@color/primary"
                     android:contentDescription="Notification cooldown per app"/>
             </LinearLayout>
 
@@ -109,7 +109,7 @@
                     android:layout_marginBottom="6dp"/>
                 <SeekBar android:id="@+id/seek_max_queue" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:max="50"
-                    android:progressTint="@color/green" android:thumbTint="@color/green"
+                    android:progressTint="@color/primary" android:thumbTint="@color/primary"
                     android:contentDescription="Maximum notification queue size"/>
             </LinearLayout>
         </LinearLayout>

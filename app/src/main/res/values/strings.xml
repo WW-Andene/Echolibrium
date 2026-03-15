@@ -84,6 +84,7 @@
     <string name="max_queue_label">Max queue size: %d</string>
     <string name="section_lang_profiles">// LANGUAGE PROFILES</string>
     <string name="enable_lang_routing">Enable language routing</string>
+    <string name="translate_to_label">Translate to:</string>
 
     <!-- Logcat fragment -->
     <string name="logcat_title">LOGCAT</string>

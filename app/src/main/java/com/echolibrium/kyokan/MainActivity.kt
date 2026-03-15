@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectTab(id: Int) {
         selectedTabId = id
-        val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.green)
+        val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.primary)
         val inactiveColor = androidx.core.content.ContextCompat.getColor(this, R.color.nav_inactive)
         for (tabId in tabIds) {
             val tab = findViewById<LinearLayout>(tabId)

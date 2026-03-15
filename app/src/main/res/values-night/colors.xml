@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Night (dark) theme colors — original Kyōkan palette -->
-    <color name="green">#b898d4</color>
-    <color name="green_dark">#9b7eb8</color>
+    <!-- ═══ Core brand colors — Night (dark) theme ═══ -->
+    <color name="primary">#b898d4</color>
+    <color name="primary_dark">#9b7eb8</color>
     <color name="bg">#110d18</color>
     <color name="surface">#181222</color>
     <color name="surface_elevated">#201830</color>
     <color name="nav_inactive">#7e6e98</color>
 
+    <!-- ═══ Text colors ═══ -->
     <color name="text_primary">#d4cce0</color>
+    <color name="text_bright">#ddd6e8</color>
     <color name="text_secondary">#b0a4c0</color>
     <color name="text_hint">#6e5f82</color>
     <color name="text_muted">#8a7a9e</color>
@@ -16,8 +18,30 @@
     <color name="text_section">#9b7eb8</color>
     <color name="text_section_label">#9070b4</color>
     <color name="text_disabled">#6e5f82</color>
+    <color name="text_on_accent">#0a0710</color>
+    <color name="text_subtitle">#7a6a8e</color>
+    <color name="text_card_subtitle">#5c3d7a</color>
 
-    <color name="btn_green_bg">#1e1530</color>
+    <!-- ═══ Engine accent colors — brighter for dark backgrounds ═══ -->
+    <color name="engine_orpheus">#ffaa44</color>
+    <color name="engine_kokoro">#00ccff</color>
+    <color name="engine_piper">#88ccff</color>
+    <color name="cloud_status">#886633</color>
+
+    <!-- ═══ Functional accent colors — brighter for dark backgrounds ═══ -->
+    <color name="accent_red">#ff4444</color>
+    <color name="status_ready">#00cc66</color>
+    <color name="status_error">#ff4444</color>
+
+    <!-- ═══ Gender colors — brighter for dark backgrounds ═══ -->
+    <color name="gender_female">#d4a0b8</color>
+    <color name="gender_male">#88aad4</color>
+    <color name="gender_neutral">#b0a4c0</color>
+    <color name="gender_female_dim">#4a2a3e</color>
+    <color name="gender_male_dim">#3a4058</color>
+
+    <!-- ═══ Background variants ═══ -->
+    <color name="btn_primary_bg">#1e1530</color>
     <color name="btn_red_bg">#2a1520</color>
     <color name="btn_blue_bg">#1a1530</color>
     <color name="card_active_bg">#2a1828</color>
@@ -26,10 +50,8 @@
     <color name="card_border">#2a2040</color>
     <color name="filter_active_bg">#251840</color>
 
+    <!-- ═══ Divider & Input ═══ -->
     <color name="divider">#2a2040</color>
     <color name="row_bg">#201830</color>
     <color name="input_bg">#2a2040</color>
-
-    <color name="text_on_accent">#0a0710</color>
-    <color name="text_subtitle">#7a6a8e</color>
 </resources>

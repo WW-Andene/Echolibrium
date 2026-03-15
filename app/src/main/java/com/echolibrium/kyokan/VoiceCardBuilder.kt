@@ -46,7 +46,7 @@ object VoiceCardBuilder {
         if (onDownloadAll != null) {
             titleRow.addView(Button(ctx).apply {
                 text = downloadIcon; textSize = 10f; setTextColor(accent)
-                setBackgroundColor(0xFF181222.toInt())
+                setBackgroundColor(AppColors.surface(ctx))
                 setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
                 minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
                 contentDescription = "Download all $title voices"
@@ -56,7 +56,7 @@ object VoiceCardBuilder {
         container.addView(titleRow)
 
         container.addView(TextView(ctx).apply {
-            text = subtitle; textSize = 10f; setTextColor(0xFF7e6e98.toInt())
+            text = subtitle; textSize = 10f; setTextColor(AppColors.textDimmed(ctx))
             setPadding((14 * dp).toInt(), (2 * dp).toInt(), 0, 0)
         })
 
@@ -84,11 +84,11 @@ object VoiceCardBuilder {
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 10 * dp
                 if (active) {
-                    setColor(0xFF2a1828.toInt())
+                    setColor(AppColors.cardActiveBg(ctx))
                     setStroke((2 * dp).toInt(), accent)
                 } else {
-                    setColor(if (enabled) 0xFF1a1428.toInt() else 0xFF181222.toInt())
-                    setStroke(1, if (enabled) 0xFF2a2040.toInt() else 0xFF201830.toInt())
+                    setColor(if (enabled) AppColors.cardEnabledBg(ctx) else AppColors.surface(ctx))
+                    setStroke(1, if (enabled) AppColors.cardBorder(ctx) else AppColors.inputBg(ctx))
                 }
             }
 
@@ -108,7 +108,7 @@ object VoiceCardBuilder {
                     setColor(if (enabled) {
                         iconColor.and(0x00FFFFFF).or(0x1A000000)
                     } else {
-                        0xFF1a1428.toInt()
+                        AppColors.cardEnabledBg(ctx)
                     })
                 }
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -119,8 +119,8 @@ object VoiceCardBuilder {
                 text = name; textSize = 13f; gravity = Gravity.CENTER
                 setTextColor(when {
                     active  -> accent
-                    enabled -> 0xFFddd6e8.toInt()
-                    else    -> 0xFF8a7a9e.toInt()
+                    enabled -> AppColors.textBright(ctx)
+                    else    -> AppColors.textMuted(ctx)
                 })
                 typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD
                            else android.graphics.Typeface.DEFAULT
@@ -133,7 +133,7 @@ object VoiceCardBuilder {
             if (nationality.isNotBlank()) {
                 addView(TextView(ctx).apply {
                     text = nationality; textSize = 9f; gravity = Gravity.CENTER
-                    setTextColor(if (enabled) 0xFF8a7a9e.toInt() else 0xFF7e6e98.toInt())
+                    setTextColor(if (enabled) AppColors.textMuted(ctx) else AppColors.textDimmed(ctx))
                     setPadding(0, (1 * dp).toInt(), 0, (3 * dp).toInt())
                 })
             }
@@ -200,7 +200,7 @@ object VoiceCardBuilder {
 
     fun emptyLabel(ctx: Context, msg: String): View {
         return TextView(ctx).apply {
-            text = msg; setTextColor(0xFF9b7eb8.toInt()); textSize = 12f
+            text = msg; setTextColor(AppColors.textSection(ctx)); textSize = 12f
             setPadding(6, 8, 0, 8)
         }
     }

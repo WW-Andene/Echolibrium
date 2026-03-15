@@ -125,7 +125,7 @@ class LogcatFragment : Fragment() {
         switchAutoScroll.setOnCheckedChangeListener { _, checked -> autoScroll = checked }
 
         // App-only chip
-        val activeColor = requireContext().getColor(R.color.green)
+        val activeColor = requireContext().getColor(R.color.primary)
         val inactiveColor = requireContext().getColor(R.color.nav_inactive)
         val sectionColor = requireContext().getColor(R.color.text_section)
 

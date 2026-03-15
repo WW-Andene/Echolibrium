@@ -23,30 +23,6 @@ import androidx.transition.TransitionManager
 
 class ProfilesFragment : Fragment() {
 
-    companion object {
-        // Shared UI colors (M14)
-        private const val COLOR_ORPHEUS      = 0xFFffaa44.toInt()
-        private const val COLOR_KOKORO       = 0xFF00ccff.toInt()
-        private const val COLOR_PIPER        = 0xFF88ccff.toInt()
-        private const val COLOR_READY        = 0xFF00cc66.toInt()
-        private const val COLOR_DIMMED       = 0xFF6e5f82.toInt()
-        private const val COLOR_BG_DARK      = 0xFF181222.toInt()
-        private const val COLOR_BG_ACTIVE    = 0xFF251840.toInt()
-        private const val COLOR_TEXT_LIGHT    = 0xFFddd6e8.toInt()
-        private const val COLOR_TEXT_MUTED    = 0xFFb0a4c0.toInt()
-        private const val COLOR_LAVENDER      = 0xFF9b7eb8.toInt()
-        private const val COLOR_ROSE          = 0xFFc48da0.toInt()
-        private const val COLOR_FILTER_ACTIVE = 0xFFb898d4.toInt()
-        private const val COLOR_FEMALE_ACTIVE = 0xFFd4a0b8.toInt()
-        private const val COLOR_MALE_ACTIVE   = 0xFF88aad4.toInt()
-        private const val COLOR_FEMALE_DIM    = 0xFF4a2a3e.toInt()
-        private const val COLOR_MALE_DIM      = 0xFF3a4058.toInt()
-        private const val COLOR_CARD_ACTIVE_BG = 0xFF2a1828.toInt()
-        private const val COLOR_CARD_BORDER    = 0xFF2a2040.toInt()
-        private const val COLOR_INPUT_BG       = 0xFF201830.toInt()
-        private const val COLOR_ERROR          = 0xFFff4444.toInt()
-        private const val COLOR_CLOUD_STATUS   = 0xFF886633.toInt()
-    }
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
     private val c by lazy { requireContext().container }
@@ -185,8 +161,8 @@ class ProfilesFragment : Fragment() {
         val dp = requireContext().resources.displayMetrics.density
         return Button(requireContext()).apply {
             text = label; textSize = 11f
-            setBackgroundColor(if (active) COLOR_BG_ACTIVE else COLOR_BG_DARK)
-            setTextColor(if (active) COLOR_FILTER_ACTIVE else COLOR_DIMMED)
+            setBackgroundColor(if (active) AppColors.filterActiveBg(requireContext()) else AppColors.surface(requireContext()))
+            setTextColor(if (active) AppColors.primary(requireContext()) else AppColors.textDisabled(requireContext()))
             setPadding((16 * dp).toInt(), (12 * dp).toInt(), (16 * dp).toInt(), (12 * dp).toInt())
             minHeight = (48 * dp).toInt(); minimumHeight = (48 * dp).toInt()
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -224,7 +200,7 @@ class ProfilesFragment : Fragment() {
         else
             getString(R.string.orpheus_subtitle_disabled)
         val cloudKeyAction: (() -> Unit) = { showDeepInfraKeyDialog() }
-        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_orpheus), orpheusSubtitle, COLOR_ORPHEUS, cloudKeyAction, getString(R.string.key_btn)))
+        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_orpheus), orpheusSubtitle, AppColors.engineOrpheus(requireContext()), cloudKeyAction, getString(R.string.key_btn)))
 
         addFilteredVoiceCards(VoiceRegistry.cloudEntries) { v ->
             buildVoiceCard(
@@ -232,10 +208,10 @@ class ProfilesFragment : Fragment() {
                 icon = genderIcon(v.gender),
                 iconColor = genderColor(v.gender, cloudEnabled),
                 status = if (cloudEnabled) getString(R.string.cloud_status) else getString(R.string.no_api_key),
-                statusColor = if (cloudEnabled) COLOR_CLOUD_STATUS else COLOR_ERROR,
+                statusColor = if (cloudEnabled) AppColors.cloudStatus(requireContext()) else AppColors.accentRed(requireContext()),
                 voiceId = v.id,
                 active = currentProfile.voiceName == v.id,
-                accent = COLOR_ORPHEUS,
+                accent = AppColors.engineOrpheus(requireContext()),
                 enabled = cloudEnabled,
                 onClick = if (cloudEnabled) {
                     { currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }
@@ -257,19 +233,19 @@ class ProfilesFragment : Fragment() {
         val kokoroDownloadAll: (() -> Unit)? = if (!kokoroReady && !kokoroDownloading) {
             { startKokoroDownload() }
         } else null
-        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_kokoro), kokoroSubtitle, COLOR_KOKORO, kokoroDownloadAll, getString(R.string.download_all_btn)))
+        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_kokoro), kokoroSubtitle, AppColors.engineKokoro(requireContext()), kokoroDownloadAll, getString(R.string.download_all_btn)))
 
         addFilteredVoiceCards(VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO)) { v ->
             val status: String
             val statusColor: Int
             when {
-                kokoroReady -> { status = getString(R.string.ready_status); statusColor = COLOR_READY }
+                kokoroReady -> { status = getString(R.string.ready_status); statusColor = AppColors.statusReady(requireContext()) }
                 kokoroDownloading -> {
                     val pct = c.voiceDownloadManager.progressPercent
                     status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
-                    statusColor = COLOR_KOKORO
+                    statusColor = AppColors.engineKokoro(requireContext())
                 }
-                else -> { status = getString(R.string.tap_to_download); statusColor = COLOR_DIMMED }
+                else -> { status = getString(R.string.tap_to_download); statusColor = AppColors.textDisabled(requireContext()) }
             }
             buildVoiceCard(
                 name = v.displayName,
@@ -277,7 +253,7 @@ class ProfilesFragment : Fragment() {
                 iconColor = genderColor(v.gender, kokoroReady),
                 status = status, statusColor = statusColor,
                 voiceId = v.id, active = currentProfile.voiceName == v.id,
-                accent = COLOR_KOKORO, enabled = kokoroReady,
+                accent = AppColors.engineKokoro(requireContext()), enabled = kokoroReady,
                 onClick = when {
                     kokoroReady -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
                     !kokoroDownloading -> {{ startKokoroDownload() }}
@@ -294,7 +270,7 @@ class ProfilesFragment : Fragment() {
         val piperDownloadAll: (() -> Unit)? = if (piperHasUndownloaded) {
             { confirmDownloadAllPiper() }
         } else null
-        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_piper), piperSubtitle, COLOR_PIPER, piperDownloadAll, getString(R.string.download_all_btn)))
+        voiceGrid.addView(buildSectionHeader(getString(R.string.engine_piper), piperSubtitle, AppColors.enginePiper(requireContext()), piperDownloadAll, getString(R.string.download_all_btn)))
 
         addFilteredVoiceCards(piperEntries) { v ->
             val ready = VoiceRegistry.isReady(ctx, v.id)
@@ -302,13 +278,13 @@ class ProfilesFragment : Fragment() {
             val status: String
             val statusColor: Int
             when {
-                ready -> { status = getString(R.string.ready_status); statusColor = COLOR_READY }
+                ready -> { status = getString(R.string.ready_status); statusColor = AppColors.statusReady(requireContext()) }
                 downloading -> {
                     val pct = c.piperDownloadManager.getProgress(v.id)
                     status = if (pct < 0) getString(R.string.extracting_status) else "$pct%"
-                    statusColor = COLOR_PIPER
+                    statusColor = AppColors.enginePiper(requireContext())
                 }
-                else -> { status = getString(R.string.tap_to_download); statusColor = COLOR_DIMMED }
+                else -> { status = getString(R.string.tap_to_download); statusColor = AppColors.textDisabled(requireContext()) }
             }
             buildVoiceCard(
                 name = v.displayName,
@@ -316,7 +292,7 @@ class ProfilesFragment : Fragment() {
                 iconColor = genderColor(v.gender, ready),
                 status = status, statusColor = statusColor,
                 voiceId = v.id, active = currentProfile.voiceName == v.id,
-                accent = COLOR_PIPER, enabled = ready,
+                accent = AppColors.enginePiper(requireContext()), enabled = ready,
                 onClick = when {
                     ready -> {{ currentProfile = currentProfile.copy(voiceName = v.id); renderVoiceGrid() }}
                     !downloading -> {{ startPiperDownload(v.id) }}
@@ -333,9 +309,9 @@ class ProfilesFragment : Fragment() {
     }
 
     private fun genderColor(gender: String, active: Boolean) = if (active) {
-        when (gender) { "Female" -> COLOR_FEMALE_ACTIVE; "Male" -> COLOR_MALE_ACTIVE; else -> COLOR_TEXT_MUTED }
+        when (gender) { "Female" -> AppColors.genderFemale(requireContext()); "Male" -> AppColors.genderMale(requireContext()); else -> AppColors.textSecondary(requireContext()) }
     } else {
-        when (gender) { "Female" -> COLOR_FEMALE_DIM; "Male" -> COLOR_MALE_DIM; else -> COLOR_DIMMED }
+        when (gender) { "Female" -> AppColors.genderFemaleDim(requireContext()); "Male" -> AppColors.genderMaleDim(requireContext()); else -> AppColors.textDisabled(requireContext()) }
     }
 
     private fun filterVoices(voices: List<VoiceRegistry.VoiceEntry>) = voices.filter { v ->
@@ -406,9 +382,9 @@ class ProfilesFragment : Fragment() {
             setText(currentKey ?: "")
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setPadding(48, 32, 48, 32)
-            setTextColor(COLOR_TEXT_LIGHT)
-            setHintTextColor(COLOR_DIMMED)
-            setBackgroundColor(COLOR_INPUT_BG)
+            setTextColor(AppColors.textBright(requireContext()))
+            setHintTextColor(AppColors.textDisabled(requireContext()))
+            setBackgroundColor(AppColors.inputBg(requireContext()))
         }
 
         AlertDialog.Builder(ctx, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
@@ -510,11 +486,11 @@ class ProfilesFragment : Fragment() {
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 8 * dp
                 if (isActive) {
-                    setColor(COLOR_CARD_ACTIVE_BG)
-                    setStroke((2 * dp).toInt(), COLOR_ROSE)
+                    setColor(AppColors.cardActiveBg(requireContext()))
+                    setStroke((2 * dp).toInt(), AppColors.accentRose(requireContext()))
                 } else {
-                    setColor(0xFF1a1428.toInt())
-                    setStroke(1, COLOR_CARD_BORDER)
+                    setColor(AppColors.cardEnabledBg(requireContext()))
+                    setStroke(1, AppColors.cardBorder(requireContext()))
                 }
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
@@ -546,7 +522,7 @@ class ProfilesFragment : Fragment() {
         card.addView(TextView(ctx).apply {
             text = p.name
             textSize = 11f
-            setTextColor(if (isActive) COLOR_ROSE else COLOR_TEXT_MUTED)
+            setTextColor(if (isActive) AppColors.accentRose(requireContext()) else AppColors.textSecondary(requireContext()))
             gravity = android.view.Gravity.CENTER
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -557,7 +533,7 @@ class ProfilesFragment : Fragment() {
             card.addView(TextView(ctx).apply {
                 text = voiceEntry.displayName
                 textSize = 9f
-                setTextColor(if (isActive) COLOR_LAVENDER else COLOR_DIMMED)
+                setTextColor(if (isActive) AppColors.textSection(requireContext()) else AppColors.textDisabled(requireContext()))
                 gravity = android.view.Gravity.CENTER
                 maxLines = 1
             })
@@ -569,7 +545,7 @@ class ProfilesFragment : Fragment() {
             card.addView(TextView(ctx).apply {
                 text = hint
                 textSize = 8f
-                setTextColor(if (isActive) 0xFF7e6e98.toInt() else 0xFF5c3d7a.toInt())
+                setTextColor(if (isActive) AppColors.textDimmed(requireContext()) else AppColors.textCardSubtitle(requireContext()))
                 gravity = android.view.Gravity.CENTER
                 maxLines = 1
                 setPadding(0, (2 * dp).toInt(), 0, 0)
@@ -578,7 +554,7 @@ class ProfilesFragment : Fragment() {
 
         if (isActive) {
             card.addView(android.view.View(ctx).apply {
-                setBackgroundColor(COLOR_ROSE)
+                setBackgroundColor(AppColors.accentRose(requireContext()))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
                 ).also { it.setMargins((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), 0) }

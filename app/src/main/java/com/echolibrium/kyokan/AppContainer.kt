@@ -18,15 +18,16 @@ class AppContainer(private val appContext: Context) {
 
     val piperDownloadManager: PiperDownloadManager = PiperDownloadManager()
 
-    val sherpaEngine: SherpaEngine = SherpaEngine(voiceDownloadManager, piperDownloadManager)
+    // Heavy objects: native ONNX runtime, audio thread, ML Kit — lazy until first use
+    val sherpaEngine: SherpaEngine by lazy { SherpaEngine(voiceDownloadManager, piperDownloadManager) }
 
-    val audioPipeline: AudioPipeline = AudioPipeline(cloudTtsEngine, sherpaEngine)
+    val audioPipeline: AudioPipeline by lazy { AudioPipeline(cloudTtsEngine, sherpaEngine) }
 
-    val notificationTranslator: NotificationTranslator = NotificationTranslator()
+    val notificationTranslator: NotificationTranslator by lazy { NotificationTranslator() }
 
     val voiceCommandHandler: VoiceCommandHandler = VoiceCommandHandler()
 
-    val voiceCommandListener: VoiceCommandListener = VoiceCommandListener(voiceCommandHandler)
+    val voiceCommandListener: VoiceCommandListener by lazy { VoiceCommandListener(voiceCommandHandler) }
 }
 
 /** Extension to retrieve the container from any Context. */

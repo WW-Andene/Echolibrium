@@ -46,7 +46,7 @@ object VoiceRegistry {
         val apiVoiceName: String
     ) {
         val genderIcon get() = if (gender == "Female") "♀" else "♂"
-        val genderColor get() = if (gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
+        @Deprecated("Unused — views use AppColors.genderColor() instead") val genderColor get() = if (gender == "Female") 0xFFd4a0b8.toInt() else 0xFF88aad4.toInt()
     }
 
     val CLOUD_VOICES = listOf(

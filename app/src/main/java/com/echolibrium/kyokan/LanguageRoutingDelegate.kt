@@ -164,7 +164,7 @@ class LanguageRoutingDelegate(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(2) }
-            text = "Translate to:"
+            text = context.getString(R.string.translate_to_label)
             setTextColor(ContextCompat.getColor(context, R.color.text_muted))
             textSize = 11f
             setPadding(dp(8), 0, 0, 0)

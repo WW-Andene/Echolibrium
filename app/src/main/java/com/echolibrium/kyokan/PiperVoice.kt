@@ -26,6 +26,7 @@ data class PiperVoice(
         "Male"   -> "♂"
         else     -> "◆"
     }
+    @Deprecated("Unused — views use AppColors.genderColor() instead")
     val genderColor get() = when (gender) {
         "Female" -> 0xFFd4a0b8.toInt()
         "Male"   -> 0xFF88aad4.toInt()

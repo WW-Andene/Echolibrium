@@ -10,7 +10,7 @@
         android:padding="12dp">
         <TextView
             android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-            android:text="@string/logcat_title" android:textColor="@color/green" android:textSize="18sp"
+            android:text="@string/logcat_title" android:textColor="@color/primary" android:textSize="18sp"
             android:fontFamily="monospace" android:letterSpacing="0.15"
             android:textStyle="bold"/>
         <TextView android:id="@+id/tv_line_count"

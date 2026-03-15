@@ -205,7 +205,7 @@ class HomeFragment : Fragment() {
         if (steps.isEmpty()) {
             btn.text = "\u2713 ${getString(R.string.all_permissions_granted)}"
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(requireContext(), R.color.btn_green_bg))
+                ContextCompat.getColor(requireContext(), R.color.btn_primary_bg))
             btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
             txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
             txt.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
@@ -217,7 +217,7 @@ class HomeFragment : Fragment() {
         } else {
             btn.text = "Setup: ${steps.first()}"
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(requireContext(), R.color.green))
+                ContextCompat.getColor(requireContext(), R.color.primary))
             btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent))
             val status = buildString {
                 if (android.os.Build.VERSION.SDK_INT >= 33) {

@@ -6,7 +6,7 @@
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/voice_profiles" android:textSize="20sp" android:textStyle="bold"
-            android:textColor="@color/green" android:fontFamily="sans-serif" android:layout_marginBottom="14dp"/>
+            android:textColor="@color/primary" android:fontFamily="sans-serif" android:layout_marginBottom="14dp"/>
 
         <!-- Profile grid -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -21,7 +21,7 @@
             android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="16dp">
             <Button android:id="@+id/btn_new_profile" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="@string/btn_new"
-                android:backgroundTint="@color/btn_green_bg" android:textColor="@color/green"
+                android:backgroundTint="@color/btn_primary_bg" android:textColor="@color/primary"
                 android:fontFamily="sans-serif" android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btn_delete" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="@string/btn_delete"
@@ -60,13 +60,13 @@
                 android:layout_height="wrap_content" android:text="Pitch: 1.00"
                 android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_pitch" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="@color/green" android:thumbTint="@color/green" android:layout_marginBottom="14dp"
+                android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary" android:layout_marginBottom="14dp"
                 android:contentDescription="Voice pitch" android:labelFor="@id/tv_pitch"/>
             <TextView android:id="@+id/tv_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Speed: 1.00"
                 android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="12sp" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_speed" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="@color/green" android:thumbTint="@color/green"
+                android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary"
                 android:contentDescription="Voice speed" android:labelFor="@id/tv_speed"/>
         </LinearLayout>
 
@@ -83,7 +83,7 @@
             android:orientation="horizontal" android:layout_marginBottom="24dp">
             <Button android:id="@+id/btn_test" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_test"
-                android:backgroundTint="@color/btn_green_bg" android:textColor="@color/green"
+                android:backgroundTint="@color/btn_primary_bg" android:textColor="@color/primary"
                 android:fontFamily="sans-serif" android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_save"

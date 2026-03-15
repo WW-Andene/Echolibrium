@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Core app colors — Light theme (L14) -->
-    <color name="green">#7844a0</color>
-    <color name="green_dark">#5e3080</color>
+    <!-- ═══ Core brand colors — Light theme ═══ -->
+    <color name="primary">#7844a0</color>
+    <color name="primary_dark">#5e3080</color>
     <color name="bg">#f5f0eb</color>
     <color name="surface">#ede5dc</color>
     <color name="surface_elevated">#ffffff</color>
     <color name="nav_inactive">#9070b4</color>
     <color name="ic_launcher_background">#f5f0eb</color>
 
-    <!-- Text colors — light theme -->
+    <!-- ═══ Text colors ═══ -->
     <color name="text_primary">#1a1520</color>
+    <color name="text_bright">#1a1520</color>
     <color name="text_secondary">#4a3d5e</color>
     <color name="text_hint">#9070b4</color>
     <color name="text_muted">#7a6a8e</color>
@@ -18,8 +19,17 @@
     <color name="text_section">#7844a0</color>
     <color name="text_section_label">#7844a0</color>
     <color name="text_disabled">#b0a4c0</color>
+    <color name="text_on_accent">#ffffff</color>
+    <color name="text_subtitle">#7a6a8e</color>
+    <color name="text_card_subtitle">#5e3080</color>
 
-    <!-- Accent colors — functional, same in both themes -->
+    <!-- ═══ Engine accent colors ═══ -->
+    <color name="engine_orpheus">#e08800</color>
+    <color name="engine_kokoro">#0099cc</color>
+    <color name="engine_piper">#4488cc</color>
+    <color name="cloud_status">#886633</color>
+
+    <!-- ═══ Functional accent colors ═══ -->
     <color name="accent_orange">#e08800</color>
     <color name="accent_cyan">#0099cc</color>
     <color name="accent_blue">#4488cc</color>
@@ -28,17 +38,19 @@
     <color name="accent_save">#5555cc</color>
     <color name="accent_rose">#a05868</color>
 
-    <!-- Gender colors — warm tones -->
+    <!-- ═══ Gender colors ═══ -->
     <color name="gender_female">#b06888</color>
     <color name="gender_male">#5588bb</color>
     <color name="gender_neutral">#7a6a8e</color>
+    <color name="gender_female_dim">#9a7888</color>
+    <color name="gender_male_dim">#7a8aa0</color>
 
-    <!-- Status colors — functional -->
+    <!-- ═══ Status colors ═══ -->
     <color name="status_ready">#008844</color>
     <color name="status_error">#cc2222</color>
 
-    <!-- Background variants — light theme -->
-    <color name="btn_green_bg">#e8ddf5</color>
+    <!-- ═══ Background variants ═══ -->
+    <color name="btn_primary_bg">#e8ddf5</color>
     <color name="btn_red_bg">#fce8e8</color>
     <color name="btn_blue_bg">#e0e8f8</color>
     <color name="card_active_bg">#f0e0f0</color>
@@ -47,12 +59,8 @@
     <color name="card_border">#d4c8e0</color>
     <color name="filter_active_bg">#e8ddf5</color>
 
-    <!-- Divider -->
+    <!-- ═══ Divider & Input ═══ -->
     <color name="divider">#d4c8e0</color>
     <color name="row_bg">#ede5dc</color>
     <color name="input_bg">#e0d8e8</color>
-
-    <!-- Additional theme-aware colors -->
-    <color name="text_on_accent">#ffffff</color>
-    <color name="text_subtitle">#7a6a8e</color>
 </resources>

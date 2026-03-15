@@ -1,6 +1,9 @@
 package com.echolibrium.kyokan
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.content.Context
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -93,7 +96,30 @@ object VoiceCardBuilder {
             }
 
             contentDescription = "$name voice, ${if (icon == "♀") "female" else if (icon == "♂") "male" else "unknown gender"}, $status${if (active) ", selected" else ""}"
-            if (onClick != null) setOnClickListener { onClick() }
+
+            // Ripple touch feedback
+            val rippleAttr = TypedValue()
+            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, rippleAttr, true)
+            foreground = ctx.getDrawable(rippleAttr.resourceId)
+
+            if (onClick != null) setOnClickListener { v ->
+                // Brief scale pulse on selection
+                AnimatorSet().apply {
+                    playSequentially(
+                        ObjectAnimator.ofFloat(v, "scaleX", 1f, 0.95f).apply { duration = 80 },
+                        ObjectAnimator.ofFloat(v, "scaleX", 0.95f, 1f).apply { duration = 120 }
+                    )
+                    start()
+                }
+                AnimatorSet().apply {
+                    playSequentially(
+                        ObjectAnimator.ofFloat(v, "scaleY", 1f, 0.95f).apply { duration = 80 },
+                        ObjectAnimator.ofFloat(v, "scaleY", 0.95f, 1f).apply { duration = 120 }
+                    )
+                    start()
+                }
+                onClick()
+            }
 
             // Circular avatar with gender icon
             val avatarSize = (36 * dp).toInt()

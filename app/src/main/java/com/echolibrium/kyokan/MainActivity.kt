@@ -1,5 +1,7 @@
 package com.echolibrium.kyokan
 
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.content.ComponentName
 import android.os.Bundle
 import android.provider.Settings
@@ -48,16 +50,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTab(id: Int) {
+        val previousTabId = selectedTabId
         selectedTabId = id
-        val activeColor = androidx.core.content.ContextCompat.getColor(this, R.color.primary)
-        val inactiveColor = androidx.core.content.ContextCompat.getColor(this, R.color.nav_inactive)
+        val activeColor = AppColors.primary(this)
+        val inactiveColor = AppColors.navInactive(this)
         for (tabId in tabIds) {
             val tab = findViewById<LinearLayout>(tabId)
-            val color = if (tabId == id) activeColor else inactiveColor
-            for (i in 0 until tab.childCount) {
-                when (val child = tab.getChildAt(i)) {
-                    is ImageView -> child.setColorFilter(color)
-                    is TextView  -> child.setTextColor(color)
+            val fromColor: Int
+            val toColor: Int
+            when {
+                tabId == id && tabId != previousTabId -> { fromColor = inactiveColor; toColor = activeColor }
+                tabId == previousTabId && tabId != id -> { fromColor = activeColor; toColor = inactiveColor }
+                tabId == id -> { fromColor = activeColor; toColor = activeColor }
+                else -> { fromColor = inactiveColor; toColor = inactiveColor }
+            }
+            if (fromColor != toColor) {
+                ValueAnimator.ofObject(ArgbEvaluator(), fromColor, toColor).apply {
+                    duration = 200
+                    addUpdateListener { anim ->
+                        val color = anim.animatedValue as Int
+                        for (i in 0 until tab.childCount) {
+                            when (val child = tab.getChildAt(i)) {
+                                is ImageView -> child.setColorFilter(color)
+                                is TextView -> child.setTextColor(color)
+                            }
+                        }
+                    }
+                    start()
+                }
+            } else {
+                for (i in 0 until tab.childCount) {
+                    when (val child = tab.getChildAt(i)) {
+                        is ImageView -> child.setColorFilter(toColor)
+                        is TextView -> child.setTextColor(toColor)
+                    }
                 }
             }
         }

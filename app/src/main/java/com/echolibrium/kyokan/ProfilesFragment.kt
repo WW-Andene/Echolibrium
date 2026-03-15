@@ -2,6 +2,7 @@ package com.echolibrium.kyokan
 
 import android.os.Bundle
 import android.text.InputType
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -498,6 +499,11 @@ class ProfilesFragment : Fragment() {
             }
             val voiceEntry = VoiceRegistry.byId(p.voiceName)
             contentDescription = "Profile ${p.name}${if (voiceEntry != null) ", voice ${voiceEntry.displayName}" else ""}${if (isActive) ", active" else ""}. Long press to rename."
+
+            // Ripple touch feedback
+            val rippleAttr = TypedValue()
+            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, rippleAttr, true)
+            foreground = ctx.getDrawable(rippleAttr.resourceId)
 
             setOnClickListener {
                 viewModel.setActiveProfile(p.id)

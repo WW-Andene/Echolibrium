@@ -91,23 +91,23 @@
 
 ## CATEGORY B — STATE MANAGEMENT & DATA INTEGRITY
 
-### B-01 🔴 Dual source of truth for current profile (Fragment vs ViewModel)
+### B-01 🔴 ~~Dual source of truth for current profile (Fragment vs ViewModel)~~ ✅ FIXED
 **File:** `ProfilesFragment.kt:28,33` + `ProfilesViewModel.kt`  
 **Finding:** `ProfilesFragment` maintains `var currentProfile = VoiceProfile()` as a local mutable variable AND observes `viewModel.currentProfile` via LiveData. Voice card clicks modify only the fragment's local `currentProfile` (e.g., `currentProfile = currentProfile.copy(voiceName = v.id)`), but this change is NOT propagated to the ViewModel until the user explicitly clicks "Save". If the fragment is recreated (rotation, process death), all unsaved voice/pitch/speed changes are silently lost. The ViewModel observer in `onViewCreated` then overwrites the fragment's `currentProfile` with the ViewModel's stale version.  
 **Impact:** User loses unsaved profile edits on any configuration change. The two states can diverge silently.  
-**Fix:** Either (a) route all `currentProfile` mutations through the ViewModel (single source of truth), or (b) save the full `currentProfile` state in `onSaveInstanceState`.
+**Fix applied:** Replaced fragment-local `var currentProfile` with a read-only `val` getter delegating to `viewModel.currentProfile.value`. All 4 mutation sites (Kokoro voice click, Piper voice click, cloud voice select, loadProfileToUI) now route through `viewModel.updateCurrentProfile()`. ViewModel survives rotation natively. Commit `e50bba2`.
 
-### B-02 🔴 MainActivity does not restore selected tab after rotation
+### B-02 🔴 ~~MainActivity does not restore selected tab after rotation~~ ✅ FIXED
 **File:** `MainActivity.kt:39-40`  
 **Finding:** `if (savedInstanceState == null) selectTab(R.id.nav_home)` — on rotation, `savedInstanceState` is non-null, so `selectTab` is never called. The `selectedTabId` field resets to `R.id.nav_home` (the default). FragmentManager restores the last visible fragment, but the bottom nav indicators are never updated — all tabs show inactive color, and `selectedTabId` is wrong (says Home when user may be on Rules tab).  
 **Impact:** After rotation: bottom nav shows no active tab (all inactive color), or shows Home as active while displaying a different fragment. Tab state is broken.  
-**Fix:** Save `selectedTabId` in `onSaveInstanceState`, restore it in `onCreate`, and call `selectTab(restoredTabId)` even when `savedInstanceState != null`.
+**Fix applied:** Added `onSaveInstanceState()` that persists `selectedTabId` to Bundle. `onCreate` now always calls `selectTab(restoredTabId)` — both on fresh start (defaults to Home) and on rotation (restores saved tab). Bottom nav indicators and fragment are always in sync. Commit `e50bba2`.
 
-### B-03 🔴 Fragment cache in MainActivity holds stale references after recreation
+### B-03 🔴 ~~Fragment cache in MainActivity holds stale references after recreation~~ ✅ FIXED
 **File:** `MainActivity.kt:18`  
 **Finding:** `private val fragmentCache = mutableMapOf<Int, Fragment>()` — this map is a property of the Activity instance. After rotation, a new Activity is created with an empty cache. The old cache (and its fragment references) are lost. However, FragmentManager independently restores fragments. The cache and FragmentManager are out of sync. When the user taps a tab, a NEW fragment is created (cache miss), but the FragmentManager may still have the OLD restored fragment attached. The `replace()` call will work but the old restored fragment is now leaked (still in the FragmentManager's back state).  
 **Impact:** Fragment duplication, potential memory leak, inconsistent state.  
-**Fix:** Use `FragmentManager.findFragmentByTag()` with tags instead of a manual cache. Or use the Navigation component.
+**Fix applied:** Replaced `fragmentCache` map with `FragmentManager.findFragmentByTag()`. Each tab now has a stable string tag (e.g., `"frag_home"`, `"frag_profiles"`). `selectTab()` calls `findFragmentByTag(tag)` first — if the FM has a restored instance from rotation, it reuses it. Only creates a new fragment on cache miss. `loadFragment()` now passes the tag to `replace(containerId, fragment, tag)`. Eliminates stale references, duplication, and leaks. Commit `e50bba2`.
 
 ### B-04 🟠 VoiceProfile.saveAll and AppRule.saveAll use commit() blocking UI thread
 **File:** `VoiceProfile.kt:38`, `AppRule.kt:14`  
@@ -115,11 +115,11 @@
 **Impact:** UI freeze during save operations, especially on slower devices.  
 **Fix:** Replace `commit()` with `apply()` for async writes. Both methods are called from UI contexts where the immediate return value of `commit()` is never checked.
 
-### B-05 🟠 ProfilesFragment.onSaveInstanceState does not save currentProfile edits
+### B-05 🟠 ~~ProfilesFragment.onSaveInstanceState does not save currentProfile edits~~ ✅ FIXED
 **File:** `ProfilesFragment.kt:85-89`  
 **Finding:** `onSaveInstanceState` saves `genderFilter`, `languageFilter`, and `activeProfileId`, but NOT the in-progress `currentProfile` (which may have unsaved voice, pitch, speed changes). After rotation, the profile reverts to the last saved state.  
 **Impact:** Unsaved edits silently lost on rotation.  
-**Fix:** Serialize `currentProfile` to the Bundle (it's a data class, can be JSON-encoded easily).
+**Fix applied:** `onSaveInstanceState` now serializes `currentProfile.toJson().toString()` to the Bundle under key `"currentProfileJson"`. `onViewCreated` restores it via `VoiceProfile.fromJson()` and feeds it back to the ViewModel with `viewModel.updateCurrentProfile(restored)`. Survives both rotation and process death. Commit `e50bba2`.
 
 ### B-06 🟠 Silent data loss on JSON parse failure
 **File:** `VoiceProfile.kt:50-55`, `AppRule.kt:21-27`  
@@ -240,11 +240,11 @@
 
 ## CATEGORY E — VISUAL DESIGN & TOKENS
 
-### E-01 🔴 item_app_rule.xml uses hardcoded dark-only colors — completely broken in light mode
+### E-01 🔴 ~~item_app_rule.xml uses hardcoded dark-only colors — completely broken in light mode~~ ✅ FIXED
 **File:** `app/src/main/res/layout/item_app_rule.xml`  
 **Finding:** The layout hardcodes `android:background="#181222"` (dark purple), `android:textColor="#d4cce0"` (light purple text), and `android:background="#110d18"` (darker purple). These are dark theme colors baked into the layout. In light mode (`bg=#f5f0eb`), these items will appear as dark rectangles with light text on a cream background — visually broken.  
 **Impact:** Apps tab is completely broken in light mode. Every app rule row has wrong colors.  
-**Fix:** Replace all hardcoded colors with theme-aware resources: `@color/surface`, `@color/text_primary`, `@color/row_bg`.
+**Fix applied:** Replaced all 3 hardcoded colors with theme-aware resources: `#181222` → `@color/surface`, `#d4cce0` → `@color/text_primary`, `#110d18` → `@color/row_bg`. These all have proper light (`values/colors.xml`) and dark (`values-night/colors.xml`) variants already defined. Apps tab now renders correctly in both themes. Commit `e50bba2`.
 
 ### E-02 🟠 Six accent colors missing from dark theme (values-night/colors.xml)
 **File:** `res/values/colors.xml` vs `res/values-night/colors.xml`  
@@ -622,21 +622,22 @@ The majority of issues trace to **three root causes**:
 | 3 | Delete dead `url` variable in CloudTtsEngine.synthesize | A-01 | 1 line |
 | 4 | Remove `@Deprecated genderColor` from 3 voice classes | I-04 | 3 deletions |
 | 5 | Delete unused `addVoiceRows()` in VoiceCardBuilder | I-02 | 20 lines |
-| 6 | Replace hardcoded colors in item_app_rule.xml with @color refs | E-01 | 6 lines |
+| 6 | ~~Replace hardcoded colors in item_app_rule.xml with @color refs~~ ✅ | E-01 | 6 lines |
 | 7 | Add missing accent colors to values-night/colors.xml | E-02 | 6 lines |
 | 8 | Use existing string resources instead of hardcoded strings in NotificationRulesDelegate | L-01 partial | 4 lines |
-| 9 | Save/restore selectedTabId in MainActivity | B-02 | 10 lines |
+| 9 | ~~Save/restore selectedTabId in MainActivity~~ ✅ | B-02 | 10 lines |
 | 10 | Add `@Volatile` to SherpaEngine.lastSampleRate | D-06 | 1 line |
 
 ---
 
 ## PRIORITY ROADMAP
 
-### Phase 0 — Critical Fixes (do immediately)
-- B-01: Fix dual source of truth for currentProfile
-- B-02: Restore selected tab after rotation
-- B-03: Fix fragment cache lifecycle
-- E-01: Fix hardcoded colors in item_app_rule.xml
+### Phase 0 — Critical Fixes (do immediately) ✅ COMPLETE
+- ~~B-01: Fix dual source of truth for currentProfile~~ ✅ `e50bba2`
+- ~~B-02: Restore selected tab after rotation~~ ✅ `e50bba2`
+- ~~B-03: Fix fragment cache lifecycle~~ ✅ `e50bba2`
+- ~~E-01: Fix hardcoded colors in item_app_rule.xml~~ ✅ `e50bba2`
+- ~~B-05: Save in-progress profile edits~~ ✅ `e50bba2` (bonus — resolved alongside B-01)
 
 ### Phase 1 — High-Priority Bug Fixes
 - E-02: Add missing dark theme accent colors
@@ -690,6 +691,119 @@ Cross-cutting patterns: 3
 Root causes identified: 3
 Quick wins identified: 10
 ```
+
+---
+
+## IMPLEMENTATION LOG
+
+### Phase 0 — Critical Fixes ✅ COMPLETE
+
+**Date:** 2026-03-15  
+**Commit:** `e50bba2`  
+**Branch:** `claude/phase0-fixes`  
+**Files modified:** 3 (`MainActivity.kt`, `ProfilesFragment.kt`, `item_app_rule.xml`)  
+**Net change:** +58 lines, −28 lines  
+
+#### B-01 🔴 → ✅ Dual source of truth for currentProfile
+
+**Problem:** `ProfilesFragment` had a local `var currentProfile` AND observed `viewModel.currentProfile` via LiveData. Voice card clicks mutated the local copy only. On rotation, the ViewModel's stale version overwrote unsaved edits.
+
+**Solution chosen:** Option (a) from the audit — route all mutations through ViewModel.
+
+**Changes in `ProfilesFragment.kt`:**
+1. Replaced `private var currentProfile = VoiceProfile()` with a read-only computed property:
+   ```kotlin
+   private val currentProfile: VoiceProfile
+       get() = viewModel.currentProfile.value ?: VoiceProfile()
+   ```
+2. Removed the `viewModel.currentProfile.observe()` block (redundant — getter reads live).
+3. Replaced all 4 direct assignment sites with `viewModel.updateCurrentProfile(...)`:
+   - `loadProfileToUI()` — was `currentProfile = p`
+   - Kokoro voice card click lambda — was `currentProfile = currentProfile.copy(voiceName = v.id)`
+   - Piper voice card click lambda — same pattern
+   - `selectCloudVoice()` — two paths (consent given / consent dialog accept)
+
+**Why this approach:** The ViewModel already existed with `updateCurrentProfile()`. Making it the single owner required zero new infrastructure — only redirecting writes. The read-only getter ensures the fragment can never diverge from the ViewModel.
+
+#### B-02 🔴 → ✅ Tab state lost on rotation
+
+**Problem:** `selectTab()` was only called when `savedInstanceState == null` (fresh launch). After rotation, `selectedTabId` reset to default `R.id.nav_home`, and bottom nav showed all tabs inactive.
+
+**Changes in `MainActivity.kt`:**
+1. Added `companion object { private const val KEY_SELECTED_TAB = "selected_tab_id" }`
+2. Added `onSaveInstanceState()` persisting `selectedTabId`
+3. Changed `onCreate` logic from `if (savedInstanceState == null) selectTab(R.id.nav_home)` to always calling:
+   ```kotlin
+   val restoredTabId = savedInstanceState?.getInt(KEY_SELECTED_TAB, R.id.nav_home) ?: R.id.nav_home
+   selectTab(restoredTabId)
+   ```
+
+**Why this approach:** Minimal change, maximum correctness. The `selectTab()` method already handles both nav indicator tinting and fragment loading, so calling it on every `onCreate` synchronizes both.
+
+#### B-03 🔴 → ✅ Fragment cache holds stale references
+
+**Problem:** `fragmentCache` was a `MutableMap<Int, Fragment>` on the Activity. After rotation, new Activity = empty map. FragmentManager restores old fragments independently. Cache misses create duplicates; old restored fragments leak.
+
+**Changes in `MainActivity.kt`:**
+1. Removed `private val fragmentCache = mutableMapOf<Int, Fragment>()`
+2. Added `tagForTab(id: Int): String` mapping tab IDs to stable string tags (`"frag_home"`, `"frag_profiles"`, etc.)
+3. Changed `selectTab()` fragment lookup from `fragmentCache.getOrPut(id) { ... }` to:
+   ```kotlin
+   val tag = tagForTab(id)
+   val fragment = supportFragmentManager.findFragmentByTag(tag) ?: when (id) { ... }
+   loadFragment(fragment, tag)
+   ```
+4. Changed `loadFragment()` signature to accept a tag, passes it to `.replace(containerId, fragment, tag)`
+
+**Why this approach:** `findFragmentByTag()` is the standard Android pattern for surviving rotation. It finds the FragmentManager-restored instance if one exists, preventing duplication. Tags are stable across Activity recreation.
+
+#### E-01 🔴 → ✅ Hardcoded dark colors in item_app_rule.xml
+
+**Problem:** Three hardcoded hex colors (`#181222`, `#d4cce0`, `#110d18`) made the Apps tab's rule rows dark-themed regardless of system theme. In light mode: dark purple rectangles with light text on cream background.
+
+**Changes in `item_app_rule.xml`:**
+1. `android:background="#181222"` → `android:background="@color/surface"`
+2. `android:textColor="#d4cce0"` → `android:textColor="@color/text_primary"`
+3. `android:background="#110d18"` → `android:background="@color/row_bg"`
+
+**Why these specific resources:** All three already had correct light/dark variants:
+- `surface`: light `#ede5dc` / dark `#1a1428`
+- `text_primary`: light `#1a1520` / dark `#d4cce0`
+- `row_bg`: light `#ede5dc` / dark `#201830`
+
+The dark values are visually close to the original hardcoded colors, so dark mode appearance is preserved while light mode is now correct.
+
+#### B-05 🟠 → ✅ Save in-progress profile edits (bonus)
+
+**Problem:** `onSaveInstanceState` saved filters and activeProfileId but not the working `currentProfile`. Process death silently reverted unsaved voice/pitch/speed edits.
+
+**Changes in `ProfilesFragment.kt`:**
+1. Added to `onSaveInstanceState`:
+   ```kotlin
+   outState.putString("currentProfileJson", currentProfile.toJson().toString())
+   ```
+2. Added to `onViewCreated` (inside `if (s != null)` block):
+   ```kotlin
+   val savedProfileJson = s.getString("currentProfileJson", null)
+   if (savedProfileJson != null) {
+       val restored = VoiceProfile.fromJson(org.json.JSONObject(savedProfileJson))
+       viewModel.updateCurrentProfile(restored)
+   }
+   ```
+
+**Why JSON serialization:** `VoiceProfile` already has `toJson()`/`fromJson()` methods. Using them avoids Parcelable boilerplate. The JSON string is small (~200 bytes) and well within Bundle size limits.
+
+---
+
+### Remaining Critical/High Findings After Phase 0
+
+| Severity | Before | Resolved | Remaining |
+|----------|--------|----------|-----------|
+| 🔴 CRITICAL | 4 | 4 (B-01, B-02, B-03, E-01) | **0** |
+| 🟠 HIGH | 24 | 1 (B-05) | **23** |
+| 🟡 MEDIUM | 34 | 0 | 34 |
+| 🟢 LOW | 16 | 0 | 16 |
+| **TOTAL** | **78** | **5** | **73** |
 
 ---
 

@@ -28,7 +28,7 @@ object VoiceCardBuilder {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lp.setMargins(0, (14 * dp).toInt(), 0, (10 * dp).toInt()); layoutParams = lp
+            lp.topMargin = (14 * dp).toInt(); lp.bottomMargin = (10 * dp).toInt(); layoutParams = lp
         }
 
         val titleRow = LinearLayout(ctx).apply {
@@ -38,7 +38,7 @@ object VoiceCardBuilder {
         titleRow.addView(View(ctx).apply {
             setBackgroundColor(accent)
             layoutParams = LinearLayout.LayoutParams(4, (36 * dp).toInt()).also {
-                it.setMargins(0, 0, (10 * dp).toInt(), 0)
+                it.marginEnd = (10 * dp).toInt()
             }
         })
         titleRow.addView(TextView(ctx).apply {
@@ -50,7 +50,7 @@ object VoiceCardBuilder {
             titleRow.addView(Button(ctx).apply {
                 text = downloadIcon; textSize = 10f; setTextColor(accent)
                 setBackgroundColor(AppColors.surface(ctx))
-                setPadding((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
+                setPaddingRelative((12 * dp).toInt(), (4 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
                 minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
                 contentDescription = "Download all $title voices"
                 setOnClickListener { onDownloadAll() }
@@ -60,7 +60,7 @@ object VoiceCardBuilder {
 
         container.addView(TextView(ctx).apply {
             text = subtitle; textSize = 10f; setTextColor(AppColors.textDimmed(ctx))
-            setPadding((14 * dp).toInt(), (2 * dp).toInt(), 0, 0)
+            setPaddingRelative((14 * dp).toInt(), (2 * dp).toInt(), 0, 0)
         })
 
         return container
@@ -79,9 +79,10 @@ object VoiceCardBuilder {
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding((10 * dp).toInt(), (14 * dp).toInt(), (10 * dp).toInt(), (10 * dp).toInt())
+            setPaddingRelative((10 * dp).toInt(), (14 * dp).toInt(), (10 * dp).toInt(), (10 * dp).toInt())
             val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.setMargins((2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt())
+            lp.marginStart = (2 * dp).toInt(); lp.topMargin = (2 * dp).toInt()
+            lp.marginEnd = (2 * dp).toInt(); lp.bottomMargin = (2 * dp).toInt()
             layoutParams = lp
 
             background = android.graphics.drawable.GradientDrawable().apply {
@@ -129,7 +130,7 @@ object VoiceCardBuilder {
                 text = icon; textSize = 18f; gravity = Gravity.CENTER
                 setTextColor(iconColor)
                 layoutParams = LinearLayout.LayoutParams(avatarSize, avatarSize).also {
-                    it.setMargins(0, 0, 0, (6 * dp).toInt())
+                    it.bottomMargin = (6 * dp).toInt()
                 }
                 background = android.graphics.drawable.GradientDrawable().apply {
                     shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -192,7 +193,7 @@ object VoiceCardBuilder {
                     setBackgroundColor(accent)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
-                    ).also { it.setMargins((8 * dp).toInt(), (6 * dp).toInt(), (8 * dp).toInt(), 0) }
+                    ).also { it.marginStart = (8 * dp).toInt(); it.topMargin = (6 * dp).toInt(); it.marginEnd = (8 * dp).toInt() }
                 })
             }
 
@@ -222,7 +223,7 @@ object VoiceCardBuilder {
     fun emptyLabel(ctx: Context, msg: String): View {
         return TextView(ctx).apply {
             text = msg; setTextColor(AppColors.textSection(ctx)); textSize = 12f
-            setPadding(6, 8, 0, 8)
+            setPaddingRelative(6, 8, 0, 8)
         }
     }
 }

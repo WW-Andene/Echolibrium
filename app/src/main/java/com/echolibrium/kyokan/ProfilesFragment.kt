@@ -194,15 +194,14 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
     }
 
     private fun filterBtn(label: String, active: Boolean, onClick: () -> Unit): Button {
-        val dp = requireContext().resources.displayMetrics.density
-        return Button(requireContext()).apply {
+        val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
+        return Button(android.view.ContextThemeWrapper(ctx, R.style.KyokanFilterChip), null, 0).apply {
             text = label; textSize = 11f
-            setBackgroundColor(if (active) AppColors.filterActiveBg(requireContext()) else AppColors.surface(requireContext()))
-            setTextColor(if (active) AppColors.primary(requireContext()) else AppColors.textDisabled(requireContext()))
-            setPadding((16 * dp).toInt(), (12 * dp).toInt(), (16 * dp).toInt(), (12 * dp).toInt())
-            minHeight = (48 * dp).toInt(); minimumHeight = (48 * dp).toInt()
+            setBackgroundColor(if (active) AppColors.filterActiveBg(ctx) else AppColors.surface(ctx))
+            setTextColor(if (active) AppColors.primary(ctx) else AppColors.textDisabled(ctx))
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, (6 * dp).toInt(), 0); layoutParams = lp
+            lp.marginEnd = (6 * dp).toInt(); layoutParams = lp
             contentDescription = "Filter: $label${if (active) ", selected" else ""}"
             setOnClickListener { onClick() }
         }

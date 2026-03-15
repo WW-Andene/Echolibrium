@@ -44,4 +44,14 @@
         <item name="android:backgroundTint">@color/primary</item>
         <item name="android:textColor">@color/text_on_accent</item>
     </style>
+    <!-- L-05: Filter chip / toggle button style -->
+    <style name="KyokanFilterChip">
+        <item name="android:textSize">@dimen/text_label</item>
+        <item name="android:minHeight">@dimen/touch_target_min</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
 </resources>

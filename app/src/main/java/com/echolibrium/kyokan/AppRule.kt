@@ -9,19 +9,23 @@ data class AppRule(
     val appLabel: String,
     val enabled: Boolean = true,
     val readMode: String = "full",
-    val profileId: String = ""
+    val profileId: String = "",
+    /** C-04: Force local TTS — never send this app's notifications to cloud. */
+    val forceLocal: Boolean = false
 ) {
     fun toJson() = JSONObject().apply {
         put("_v", SCHEMA_VERSION)
         put("packageName", packageName); put("appLabel", appLabel)
         put("enabled", enabled); put("readMode", readMode); put("profileId", profileId)
+        put("forceLocal", forceLocal)
     }
     companion object {
         private const val SCHEMA_VERSION = 1
 
         fun fromJson(j: JSONObject) = AppRule(
             j.optString("packageName"), j.optString("appLabel"),
-            j.optBoolean("enabled", true), j.optString("readMode", "full"), j.optString("profileId", "")
+            j.optBoolean("enabled", true), j.optString("readMode", "full"), j.optString("profileId", ""),
+            j.optBoolean("forceLocal", false)
         )
         fun saveAll(rules: List<AppRule>, prefs: android.content.SharedPreferences) {
             val arr = JSONArray(); rules.forEach { arr.put(it.toJson()) }

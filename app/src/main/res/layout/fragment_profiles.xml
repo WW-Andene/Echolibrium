@@ -2,11 +2,11 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:padding="20dp">
+        android:orientation="vertical" android:padding="@dimen/spacing_xl">
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="@string/voice_profiles" android:textSize="20sp" android:textStyle="bold"
-            android:textColor="@color/primary" android:fontFamily="sans-serif" android:layout_marginBottom="14dp"/>
+            android:text="@string/voice_profiles" android:textSize="@dimen/text_title" android:textStyle="bold"
+            android:textColor="@color/primary" android:fontFamily="sans-serif" android:layout_marginBottom="@dimen/spacing_md_lg"/>
 
         <!-- Profile grid -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -15,17 +15,16 @@
         <!-- Grid of profile cards (built dynamically) -->
         <LinearLayout android:id="@+id/profile_grid" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="@dimen/spacing_sm"/>
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="16dp">
+            android:orientation="horizontal" android:gravity="end" android:layout_marginBottom="@dimen/spacing_lg">
             <Button android:id="@+id/btn_new_profile" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="@string/btn_new"
-                android:backgroundTint="@color/btn_primary_bg" android:textColor="@color/primary"
-                android:fontFamily="sans-serif" android:layout_marginEnd="8dp"/>
+                style="@style/KyokanButton" android:layout_marginEnd="@dimen/spacing_sm"/>
             <Button android:id="@+id/btn_delete" android:layout_width="wrap_content"
                 android:layout_height="wrap_content" android:text="@string/btn_delete"
-                android:backgroundTint="@color/btn_red_bg" android:textColor="@color/accent_red" android:fontFamily="sans-serif"/>
+                style="@style/KyokanButton.Danger"/>
         </LinearLayout>
 
         <!-- Hidden spinner kept for compatibility -->
@@ -41,13 +40,13 @@
             android:layout_marginBottom="6dp"/>
         <LinearLayout android:id="@+id/nation_filter_row" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="horizontal"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="@dimen/spacing_sm"/>
 
         <androidx.recyclerview.widget.RecyclerView android:id="@+id/voice_grid"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:nestedScrollingEnabled="false"
-            android:layout_marginBottom="16dp"/>
+            android:layout_marginBottom="@dimen/spacing_lg"/>
 
         <!-- Pitch & Speed -->
         <TextView android:id="@+id/label_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -56,17 +55,17 @@
             android:nextFocusDown="@+id/txt_preview"
             android:contentDescription="@string/section_pitch_speed"/>
         <LinearLayout android:id="@+id/section_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="@color/surface" android:padding="16dp"
-            android:layout_marginBottom="14dp" android:visibility="gone">
+            android:orientation="vertical" android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:id="@+id/tv_pitch" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Pitch: 1.00"
-                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="12sp" android:layout_marginBottom="6dp"/>
+                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="@dimen/text_caption" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_pitch" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary" android:layout_marginBottom="14dp"
+                android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary" android:layout_marginBottom="@dimen/spacing_md_lg"
                 android:contentDescription="Voice pitch" android:labelFor="@id/tv_pitch"/>
             <TextView android:id="@+id/tv_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Speed: 1.00"
-                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="12sp" android:layout_marginBottom="6dp"/>
+                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="@dimen/text_caption" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary"
                 android:contentDescription="Voice speed" android:labelFor="@id/tv_speed"/>
@@ -77,16 +76,15 @@
             android:text="@string/section_preview" style="@style/SectionLabel"/>
         <EditText android:id="@+id/txt_preview" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:background="@color/surface"
-            android:textColor="@color/text_primary" android:fontFamily="sans-serif" android:textSize="13sp"
-            android:padding="12dp" android:layout_marginBottom="10dp"
+            android:textColor="@color/text_primary" android:fontFamily="sans-serif" android:textSize="@dimen/text_body_sm"
+            android:padding="@dimen/spacing_md" android:layout_marginBottom="10dp"
             android:text="@string/preview_text"
             android:inputType="textMultiLine" android:minLines="2"/>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="24dp">
+            android:orientation="horizontal" android:layout_marginBottom="@dimen/spacing_xxl">
             <Button android:id="@+id/btn_test" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_test"
-                android:backgroundTint="@color/btn_primary_bg" android:textColor="@color/primary"
-                android:fontFamily="sans-serif" android:layout_marginEnd="8dp"/>
+                style="@style/KyokanButton" android:layout_marginEnd="@dimen/spacing_sm"/>
             <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_save"
                 android:backgroundTint="@color/btn_blue_bg" android:textColor="@color/accent_save" android:fontFamily="sans-serif"/>
@@ -94,8 +92,7 @@
 
         <Button android:id="@+id/btn_stop" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="@string/btn_stop_speaking"
-            android:backgroundTint="@color/btn_red_bg" android:textColor="@color/accent_red"
-            android:fontFamily="sans-serif" android:layout_marginBottom="24dp"/>
+            style="@style/KyokanButton.Danger" android:layout_marginBottom="@dimen/spacing_xxl"/>
 
     </LinearLayout>
 </ScrollView>

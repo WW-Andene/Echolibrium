@@ -95,18 +95,18 @@ class HomeFragment : Fragment() {
 
         val dndStart = prefs.getInt("dnd_start", 22)
         seekDndStart.max = 23; seekDndStart.progress = dndStart
-        txtDndStart.text = getString(R.string.silence_from, dndStart)
+        txtDndStart.text = getString(R.string.silence_from, formatHour(dndStart))
         seekDndStart.setOnSeekBarChangeListener(onSeekBarChange { h ->
             prefs.edit().putInt("dnd_start", h).apply()
-            txtDndStart.text = getString(R.string.silence_from, h)
+            txtDndStart.text = getString(R.string.silence_from, formatHour(h))
         })
 
         val dndEnd = prefs.getInt("dnd_end", 8)
         seekDndEnd.max = 23; seekDndEnd.progress = dndEnd
-        txtDndEnd.text = getString(R.string.until_time, dndEnd)
+        txtDndEnd.text = getString(R.string.until_time, formatHour(dndEnd))
         seekDndEnd.setOnSeekBarChangeListener(onSeekBarChange { h ->
             prefs.edit().putInt("dnd_end", h).apply()
-            txtDndEnd.text = getString(R.string.until_time, h)
+            txtDndEnd.text = getString(R.string.until_time, formatHour(h))
         })
 
         // L14: Dark mode toggle
@@ -206,7 +206,7 @@ class HomeFragment : Fragment() {
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
                 ContextCompat.getColor(requireContext(), R.color.btn_primary_bg))
             btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
-            txt.text = "Restricted ✓  Battery ✓  Notifications ✓"
+            txt.text = getString(R.string.status_all_granted)
             txt.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_ready))
             // L15: Dismiss onboarding once setup complete
             prefs.edit().putBoolean("onboarding_dismissed", true).apply()
@@ -214,18 +214,18 @@ class HomeFragment : Fragment() {
             // Post-setup guidance (M22)
             showGuidance()
         } else {
-            btn.text = "Setup: ${steps.first()}"
+            btn.text = getString(R.string.setup_label, steps.first())
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
                 ContextCompat.getColor(requireContext(), R.color.primary))
             btn.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent))
             val status = buildString {
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    append(if (!restricted) "✓ Restricted" else "✗ Restricted")
+                    append(getString(if (!restricted) R.string.status_restricted_ok else R.string.status_restricted_fail))
                     append("  ·  ")
                 }
-                append(if (battery) "✓ Battery" else "✗ Battery")
+                append(getString(if (battery) R.string.status_battery_ok else R.string.status_battery_fail))
                 append("  ·  ")
-                append(if (notif) "✓ Notifications" else "✗ Notifications")
+                append(getString(if (notif) R.string.status_notif_ok else R.string.status_notif_fail))
             }
             txt.text = status
             txt.setTextColor(ContextCompat.getColor(requireContext(), R.color.accent_dnd))
@@ -264,17 +264,20 @@ class HomeFragment : Fragment() {
         val guidance = view?.findViewById<TextView>(R.id.txt_guidance) ?: return
         val hasVoice = viewModel.isVoiceReady()
         val hasProfile = VoiceProfile.loadAll(prefs).any { it.voiceName.isNotBlank() }
+        val hasRules = AppRule.loadAll(prefs).isNotEmpty()
 
         val tips = mutableListOf<String>()
-        if (!hasVoice) tips.add("→ Head to Voices to download a voice model")
-        if (!hasProfile) tips.add("→ Set up a voice profile in the Voices tab")
-        if (AppRule.loadAll(prefs).isEmpty()) tips.add("→ Configure per-app rules in the Apps tab")
+        if (!hasVoice) tips.add(getString(R.string.guidance_download_voice))
+        if (!hasProfile) tips.add(getString(R.string.guidance_setup_profile))
+        if (!hasRules) tips.add(getString(R.string.guidance_configure_apps))
 
         if (tips.isNotEmpty()) {
-            guidance.text = "What's next?\n${tips.joinToString("\n")}"
+            guidance.text = "${getString(R.string.guidance_title)}\n${tips.joinToString("\n")}"
             guidance.visibility = View.VISIBLE
         } else {
-            guidance.visibility = View.GONE
+            // F-05: Show contextual tip for returning users instead of hiding
+            guidance.text = getString(R.string.guidance_all_set)
+            guidance.visibility = View.VISIBLE
         }
     }
 
@@ -289,9 +292,8 @@ class HomeFragment : Fragment() {
         tv.text = when {
             !enabled -> getString(R.string.listening_off)
             !hasPerm -> getString(R.string.listening_mic_needed)
-            listening && wake.isNotBlank() ->
-                "Listening: say \"$wake\" + command: repeat / how long ago? / stop / what time?"
-            listening -> "Listening for: repeat / how long ago? / stop / what time?"
+            listening && wake.isNotBlank() -> getString(R.string.listening_status_wake, wake)
+            listening -> getString(R.string.listening_status_active)
             else -> getString(R.string.listening_starting)
         }
         tv.setTextColor(ContextCompat.getColor(ctx, when {
@@ -315,6 +317,15 @@ class HomeFragment : Fragment() {
             breathAnimator = null
             tv.alpha = 1f
         }
+    }
+
+    /** A-05: Locale-aware hour formatting — US users see "10:00 PM", others see native format. */
+    private fun formatHour(hour: Int): String {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, hour)
+            set(java.util.Calendar.MINUTE, 0)
+        }
+        return java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(cal.time)
     }
 
 }

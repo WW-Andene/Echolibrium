@@ -73,7 +73,16 @@ class AudioPipeline(
     private fun notifySynthesisError(voiceId: String, reason: String) {
         val snapshot = synchronized(listenersLock) { synthesisErrorListeners.toList() }
         mainHandler.post { snapshot.forEach { it(voiceId, reason) } }
+        // F-06: Log for background visibility
+        Log.w(TAG, "Synthesis error for $voiceId: $reason")
+        lastError = reason
     }
+
+    /** F-06: Last synthesis error — visible via TtsAliveService notification update. */
+    @Volatile var lastError: String? = null
+        private set
+
+    fun clearError() { lastError = null }
 
     // Crossfade state
     private var prevTail: FloatArray? = null

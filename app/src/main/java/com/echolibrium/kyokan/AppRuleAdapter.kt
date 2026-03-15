@@ -36,6 +36,7 @@ class AppRuleAdapter(
         val layoutOptions: View = v.findViewById(R.id.layout_options)
         val spinnerMode: Spinner = v.findViewById(R.id.spinner_mode)
         val spinnerProfile: Spinner = v.findViewById(R.id.spinner_profile)
+        val switchForceLocal: SwitchCompat = v.findViewById(R.id.switch_force_local)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -74,6 +75,13 @@ class AppRuleAdapter(
         h.spinnerProfile.onItemSelectedSkipFirst { pos ->
             val pid = if (pos == 0) "" else profiles.getOrNull(pos - 1)?.id ?: ""
             onRuleChanged(rule.copy(profileId = pid))
+        }
+
+        // C-04: Force local TTS toggle
+        h.switchForceLocal.setOnCheckedChangeListener(null)
+        h.switchForceLocal.isChecked = rule.forceLocal
+        h.switchForceLocal.setOnCheckedChangeListener { _, checked ->
+            onRuleChanged(rule.copy(forceLocal = checked))
         }
     }
 }

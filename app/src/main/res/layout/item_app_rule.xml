@@ -11,15 +11,15 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:background="@color/surface"
-        android:padding="16dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp">
+        android:padding="@dimen/spacing_lg"
+        android:paddingTop="@dimen/spacing_md_lg"
+        android:paddingBottom="@dimen/spacing_md_lg">
         <TextView
             android:id="@+id/tv_app_label"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="14sp"
+            android:textSize="@dimen/text_body"
             android:textColor="@color/text_primary"
             android:fontFamily="sans-serif"/>
         <androidx.appcompat.widget.SwitchCompat
@@ -35,9 +35,9 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:background="@color/row_bg"
-        android:padding="16dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
+        android:padding="@dimen/spacing_lg"
+        android:paddingTop="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_sm"
         android:visibility="gone">
         <Spinner
             android:id="@+id/spinner_mode"
@@ -49,5 +49,12 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"/>
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_force_local"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/local_only"
+            android:textSize="@dimen/text_micro"
+            android:paddingStart="@dimen/spacing_sm"/>
     </LinearLayout>
 </LinearLayout>

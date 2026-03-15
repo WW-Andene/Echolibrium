@@ -3,11 +3,11 @@
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="@color/bg">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:padding="20dp">
+        android:orientation="vertical" android:padding="@dimen/spacing_xl">
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="@string/rules_title" android:textSize="20sp" android:textStyle="bold"
-            android:textColor="@color/primary" android:fontFamily="sans-serif" android:layout_marginBottom="14dp"/>
+            android:text="@string/rules_title" android:textSize="@dimen/text_title" android:textStyle="bold"
+            android:textColor="@color/primary" android:fontFamily="sans-serif" android:layout_marginBottom="@dimen/spacing_md_lg"/>
 
         <!-- Collapsible: Word Rules -->
         <TextView android:id="@+id/label_word_rules" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -17,16 +17,15 @@
             android:contentDescription="@string/section_word_rules"/>
         <LinearLayout android:id="@+id/section_word_rules" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="16dp"
-            android:layout_marginBottom="14dp" android:visibility="gone">
+            android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/word_rules_description"
-                android:textSize="12sp" android:textColor="@color/text_section" android:fontFamily="sans-serif"
+                android:textSize="@dimen/text_caption" android:textColor="@color/text_section" android:fontFamily="sans-serif"
                 android:layout_marginBottom="10dp"/>
             <Button android:id="@+id/btn_add_rule" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="@string/btn_add_rule"
-                android:backgroundTint="@color/btn_primary_bg" android:textColor="@color/primary"
-                android:fontFamily="sans-serif" android:layout_marginBottom="10dp"/>
+                style="@style/KyokanButton" android:layout_marginBottom="10dp"/>
             <LinearLayout android:id="@+id/rules_container" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:orientation="vertical"/>
         </LinearLayout>
@@ -40,59 +39,59 @@
             android:contentDescription="@string/section_notif_rules"/>
         <LinearLayout android:id="@+id/section_notif_rules" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="16dp"
-            android:layout_marginBottom="14dp" android:visibility="gone">
+            android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/notif_rules_description"
-                android:textSize="12sp" android:textColor="@color/text_section" android:fontFamily="sans-serif"
-                android:layout_marginBottom="12dp"/>
+                android:textSize="@dimen/text_caption" android:textColor="@color/text_section" android:fontFamily="sans-serif"
+                android:layout_marginBottom="@dimen/spacing_md"/>
 
             <!-- Read only once -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                android:orientation="horizontal" android:padding="@dimen/spacing_sm" android:layout_marginBottom="@dimen/spacing_xs">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:text="@string/read_once"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_once"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
             <!-- Skip swiped -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                android:orientation="horizontal" android:padding="@dimen/spacing_sm" android:layout_marginBottom="@dimen/spacing_xs">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:text="@string/skip_swiped"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_skip_swiped"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
             <!-- Stop on swipe -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                android:orientation="horizontal" android:padding="@dimen/spacing_sm" android:layout_marginBottom="@dimen/spacing_xs">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:text="@string/stop_on_swipe"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_stop_on_swipe"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
             <!-- Read ongoing -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="4dp">
+                android:orientation="horizontal" android:padding="@dimen/spacing_sm" android:layout_marginBottom="@dimen/spacing_xs">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:text="@string/read_ongoing"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_ongoing"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
 
             <!-- Cooldown -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="vertical" android:padding="8dp" android:layout_marginBottom="4dp">
+                android:orientation="vertical" android:padding="@dimen/spacing_sm" android:layout_marginBottom="@dimen/spacing_xs">
                 <TextView android:id="@+id/txt_cooldown" android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="Cooldown per app: 3s"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"
                     android:layout_marginBottom="6dp"/>
                 <SeekBar android:id="@+id/seek_cooldown" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:max="30"
@@ -102,10 +101,10 @@
 
             <!-- Max queue size -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="vertical" android:padding="8dp">
+                android:orientation="vertical" android:padding="@dimen/spacing_sm">
                 <TextView android:id="@+id/txt_max_queue" android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="Max queue size: 10"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"
                     android:layout_marginBottom="6dp"/>
                 <SeekBar android:id="@+id/seek_max_queue" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:max="50"
@@ -122,19 +121,19 @@
             android:contentDescription="@string/section_lang_profiles"/>
         <LinearLayout android:id="@+id/section_lang_profiles" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="16dp"
-            android:layout_marginBottom="14dp" android:visibility="gone">
+            android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Route notifications to different voice profiles by detected language. When enabled, the app auto-detects language and uses the mapped profile."
-                android:textSize="12sp" android:textColor="@color/text_section" android:fontFamily="sans-serif"
-                android:layout_marginBottom="12dp"/>
+                android:textSize="@dimen/text_caption" android:textColor="@color/text_section" android:fontFamily="sans-serif"
+                android:layout_marginBottom="@dimen/spacing_md"/>
 
             <!-- Enable toggle -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:padding="8dp" android:layout_marginBottom="10dp">
+                android:orientation="horizontal" android:padding="@dimen/spacing_sm" android:layout_marginBottom="10dp">
                 <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:text="@string/enable_lang_routing"
-                    android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="sans-serif"/>
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_lang_routing"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"/>
             </LinearLayout>
@@ -142,23 +141,23 @@
             <!-- L26: Dynamic voice routing per language -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Voice routing"
-                android:textColor="@color/text_section" android:textSize="11sp" android:fontFamily="sans-serif"
-                android:layout_marginBottom="8dp"/>
+                android:textColor="@color/text_section" android:textSize="@dimen/text_label" android:fontFamily="sans-serif"
+                android:layout_marginBottom="@dimen/spacing_sm"/>
             <LinearLayout android:id="@+id/voice_routing_container" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:orientation="vertical"
-                android:layout_marginBottom="12dp"/>
+                android:layout_marginBottom="@dimen/spacing_md"/>
 
             <!-- Translation (works independently of routing) -->
             <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="@color/divider" android:layout_marginBottom="12dp"/>
+                android:background="@color/divider" android:layout_marginBottom="@dimen/spacing_md"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Translation"
-                android:textColor="@color/text_section" android:textSize="11sp" android:fontFamily="sans-serif"
-                android:layout_marginBottom="4dp"/>
+                android:textColor="@color/text_section" android:textSize="@dimen/text_label" android:fontFamily="sans-serif"
+                android:layout_marginBottom="@dimen/spacing_xs"/>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Translate notifications before speaking. Works with or without voice routing above."
-                android:textSize="11sp" android:textColor="@color/text_dimmed" android:fontFamily="sans-serif"
+                android:textSize="@dimen/text_label" android:textColor="@color/text_dimmed" android:fontFamily="sans-serif"
                 android:layout_marginBottom="10dp"/>
 
             <!-- L26: Dynamic translation routes -->

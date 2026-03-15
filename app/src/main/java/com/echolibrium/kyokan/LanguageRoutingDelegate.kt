@@ -98,7 +98,7 @@ class LanguageRoutingDelegate(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(6) }
             setBackgroundColor(ContextCompat.getColor(context, R.color.surface_elevated))
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPaddingRelative(dp(8), dp(8), dp(8), dp(8))
         }
         parent.addView(spinner)
         profileSpinners[langCode] = spinner
@@ -144,7 +144,7 @@ class LanguageRoutingDelegate(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(4) }
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPaddingRelative(dp(8), dp(8), dp(8), dp(8))
         }
         val switchLabel = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -166,7 +166,7 @@ class LanguageRoutingDelegate(
             text = context.getString(R.string.translate_to_label)
             setTextColor(ContextCompat.getColor(context, R.color.text_muted))
             textSize = 11f
-            setPadding(dp(8), 0, 0, 0)
+            setPaddingRelative(dp(8), 0, 0, 0)
             typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
             visibility = View.GONE
         }
@@ -178,7 +178,7 @@ class LanguageRoutingDelegate(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(4) }
             setBackgroundColor(ContextCompat.getColor(context, R.color.surface_elevated))
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPaddingRelative(dp(8), dp(8), dp(8), dp(8))
             visibility = View.GONE
         }
         parent.addView(spinner)

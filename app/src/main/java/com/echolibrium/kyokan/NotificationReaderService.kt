@@ -170,6 +170,13 @@ class NotificationReaderService : NotificationListenerService() {
                 ?: activeId
             val profile = profiles.find { it.id == profileId } ?: VoiceProfile()
 
+            // C-04: Force local TTS for privacy-sensitive apps
+            val effectiveVoiceId = if (rule?.forceLocal == true && VoiceRegistry.isCloud(profile.voiceName)) {
+                KokoroVoices.default().id
+            } else {
+                profile.voiceName
+            }
+
             lastSpokenText = rawText
             lastNotificationTime = now
 
@@ -177,7 +184,7 @@ class NotificationReaderService : NotificationListenerService() {
 
             c.audioPipeline.enqueue(AudioPipeline.Item(
                 text     = rawText,
-                voiceId  = profile.voiceName,
+                voiceId  = effectiveVoiceId,
                 pitch    = profile.pitch,
                 speed    = profile.speed,
                 language = effectiveLang

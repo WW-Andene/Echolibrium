@@ -211,7 +211,7 @@ class LogcatFragment : Fragment() {
             } catch (e: Exception) {
                 if (running) {
                     handler.post {
-                        tvLog.text = "Failed to start logcat: ${e.message}"
+                        tvLog.text = getString(R.string.logcat_failed, e.message ?: "")
                     }
                 }
             }

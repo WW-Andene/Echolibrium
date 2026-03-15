@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.ServiceCompat
 
@@ -44,15 +46,39 @@ class TtsAliveService : Service() {
         }
     }
 
+    // F-06: Periodically check for synthesis errors and update notification
+    private val handler = Handler(Looper.getMainLooper())
+    private var lastShownError: String? = null
+    private val errorCheckRunnable = object : Runnable {
+        override fun run() {
+            if (!isRunning) return
+            val pipeline = try { container.audioPipeline } catch (_: Exception) { null }
+            val error = pipeline?.lastError
+            if (error != lastShownError) {
+                lastShownError = error
+                val nm = getSystemService(NotificationManager::class.java)
+                nm.notify(NOTIFICATION_ID, buildNotification(error))
+                // Clear error after showing for 30s
+                if (error != null) {
+                    handler.postDelayed({ pipeline?.clearError() }, 30_000)
+                }
+            }
+            handler.postDelayed(this, 5_000)
+        }
+    }
+    private var isRunning = false
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        isRunning = true
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
             buildNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         )
+        handler.postDelayed(errorCheckRunnable, 5_000)
         Log.d(TAG, "TTS alive service started")
     }
 
@@ -61,6 +87,8 @@ class TtsAliveService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
+        handler.removeCallbacksAndMessages(null)
         Log.d(TAG, "TTS alive service stopped")
         super.onDestroy()
     }
@@ -81,17 +109,20 @@ class TtsAliveService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(error: String? = null): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
 
+        // F-06: Show last synthesis error in notification text
+        val contentText = if (error != null) "\u26a0 $error" else getString(R.string.notif_text)
+
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.notif_title))
-                .setContentText(getString(R.string.notif_text))
+                .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_voice)
                 .setContentIntent(openIntent)
                 .setOngoing(true)
@@ -100,7 +131,7 @@ class TtsAliveService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle(getString(R.string.notif_title))
-                .setContentText(getString(R.string.notif_text))
+                .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_voice)
                 .setContentIntent(openIntent)
                 .setOngoing(true)

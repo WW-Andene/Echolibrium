@@ -40,7 +40,7 @@ object ProfileGridBuilder {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).also { it.setMargins(0, 0, 0, 8) }
+                    ).also { it.bottomMargin = 8 }
                 }
                 target.addView(row)
             }
@@ -66,7 +66,7 @@ object ProfileGridBuilder {
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt())
+            setPaddingRelative((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt())
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 8 * dp
                 if (isActive) {
@@ -78,7 +78,7 @@ object ProfileGridBuilder {
                 }
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also {
-                it.setMargins((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
+                it.marginStart = (4 * dp).toInt(); it.marginEnd = (4 * dp).toInt()
             }
 
             val voiceEntry = VoiceRegistry.byId(p.voiceName)
@@ -133,7 +133,7 @@ object ProfileGridBuilder {
                 setBackgroundColor(AppColors.accentRose(ctx))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt()
-                ).also { it.setMargins((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), 0) }
+                ).also { it.marginStart = (12 * dp).toInt(); it.topMargin = (8 * dp).toInt(); it.marginEnd = (12 * dp).toInt() }
             })
         }
 

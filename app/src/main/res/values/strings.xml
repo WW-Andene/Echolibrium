@@ -16,8 +16,8 @@
     <string name="always_read_app_name">Always read app name</string>
     <string name="section_dnd">Quiet hours</string>
     <string name="enable_quiet_hours">Enable quiet hours</string>
-    <string name="silence_from">Silence from: %02d:00</string>
-    <string name="until_time">Until: %02d:00</string>
+    <string name="silence_from">Silence from: %s</string>
+    <string name="until_time">Until: %s</string>
     <string name="section_listening">Voice commands</string>
     <string name="activate_listening">Activate listening</string>
     <string name="listening_description">Process and read incoming notifications</string>
@@ -157,7 +157,7 @@
     <string name="deepinfra_key_full_message">Enter your DeepInfra API key to enable cloud voices (Orpheus).\n\n%s</string>
 
     <!-- L15: Onboarding -->
-    <string name="onboarding_welcome">Kyōkan reads your notifications aloud using natural TTS voices.\n\n1. Complete the setup below to grant permissions\n2. Go to Voices to download a voice model\n3. Configure per-app rules in the Apps tab\n\nTap the setup button to get started.</string>
+    <string name="onboarding_welcome">Welcome to Kyōkan!\n\nThree quick steps to start:\n\n\u2460 Complete the setup below to grant permissions\n\u2461 Go to Profiles to download a voice model\n\u2462 Configure per-app rules in the Apps tab\n\nTap the setup button to get started.</string>
 
     <!-- TTS alive notification -->
     <string name="notif_channel_name">Notification Reader Active</string>
@@ -206,8 +206,31 @@
         <item>link</item>
     </string-array>
 
+    <!-- C-04: Force local TTS -->
+    <string name="local_only">Local</string>
+
     <!-- F-01: Unsaved changes dialog -->
     <string name="unsaved_changes_title">Unsaved changes</string>
     <string name="unsaved_changes_message">You have unsaved voice profile changes. Discard them?</string>
     <string name="discard">Discard</string>
+
+    <!-- F-05: Post-setup guidance -->
+    <string name="guidance_title">Next steps:</string>
+    <string name="guidance_download_voice">• Download a voice model in the Profiles tab</string>
+    <string name="guidance_setup_profile">• Set up a voice profile with your preferred settings</string>
+    <string name="guidance_configure_apps">• Configure per-app rules in the Apps tab</string>
+    <string name="guidance_all_set">Tip: You can customize voices per app in the Apps tab, or add word replacements in Rules.</string>
+
+    <!-- N-01: Externalized status strings -->
+    <string name="status_restricted_ok">✓ Restricted</string>
+    <string name="status_restricted_fail">✗ Restricted</string>
+    <string name="status_battery_ok">✓ Battery</string>
+    <string name="status_battery_fail">✗ Battery</string>
+    <string name="status_notif_ok">✓ Notifications</string>
+    <string name="status_notif_fail">✗ Notifications</string>
+    <string name="status_all_granted">Restricted ✓  Battery ✓  Notifications ✓</string>
+    <string name="setup_label">Setup: %s</string>
+    <string name="logcat_failed">Failed to start logcat: %s</string>
+    <string name="listening_status_wake">Listening: say \"%1$s\" + command: repeat / how long ago? / stop / what time?</string>
+    <string name="listening_status_active">Listening for: repeat / how long ago? / stop / what time?</string>
 </resources>

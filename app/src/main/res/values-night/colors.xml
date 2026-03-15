@@ -12,12 +12,12 @@
     <color name="text_primary">#d4cce0</color>
     <color name="text_bright">#ddd6e8</color>
     <color name="text_secondary">#b0a4c0</color>
-    <color name="text_hint">#6e5f82</color>
+    <color name="text_hint">#8a7aa0</color>
     <color name="text_muted">#8a7a9e</color>
     <color name="text_dimmed">#7e6e98</color>
     <color name="text_section">#9b7eb8</color>
     <color name="text_section_label">#9070b4</color>
-    <color name="text_disabled">#6e5f82</color>
+    <color name="text_disabled">#8a7aa0</color>
     <color name="text_on_accent">#0a0710</color>
     <color name="text_subtitle">#7a6a8e</color>
     <color name="text_card_subtitle">#5c3d7a</color>

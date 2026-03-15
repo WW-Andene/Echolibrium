@@ -154,11 +154,24 @@ object VoiceCardBuilder {
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
 
-            // Nationality / language tag
-            val nationality = entry?.nationality ?: ""
-            if (nationality.isNotBlank()) {
+            // Flag + language tag (more visual than plain nationality text)
+            val flag = when (entry?.nationality) {
+                "American" -> "🇺🇸"
+                "British" -> "🇬🇧"
+                "French" -> "🇫🇷"
+                else -> ""
+            }
+            val langShort = when (entry?.language) {
+                "English (US)" -> "EN"
+                "English (UK)" -> "EN"
+                "English" -> "EN"
+                "French" -> "FR"
+                else -> entry?.language?.take(2)?.uppercase() ?: ""
+            }
+            val tagText = if (flag.isNotBlank()) "$flag $langShort" else langShort
+            if (tagText.isNotBlank()) {
                 addView(TextView(ctx).apply {
-                    text = nationality; textSize = 9f; gravity = Gravity.CENTER
+                    text = tagText; textSize = 10f; gravity = Gravity.CENTER
                     setTextColor(if (enabled) AppColors.textMuted(ctx) else AppColors.textDimmed(ctx))
                     setPadding(0, (1 * dp).toInt(), 0, (3 * dp).toInt())
                 })

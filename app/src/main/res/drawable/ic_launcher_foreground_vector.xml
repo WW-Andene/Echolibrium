@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Kyōkan adaptive icon foreground — waveform bars signature.
+    Brief §LOGO: "Waveform as the signature. Fill the canvas."
+    
+    Safe zone: 66dp visible out of 108dp total (adaptive icon mask).
+    All bars fit within the 66×66dp center zone.
+    Rose-magenta gradient (#e06088 → #c04870) matching the Brief's accent.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Waveform bars — bell-curve envelope, 9 bars -->
+    <!-- Center at x=54, spread across safe zone -->
+    <!-- Heights follow the envelope: edge=short, center=tall -->
+
+    <!-- Bar 1 (leftmost) -->
+    <path android:fillColor="#e06088"
+        android:pathData="M30,50 L30,58 Q30,59 31,59 L33,59 Q34,59 34,58 L34,50 Q34,49 33,49 L31,49 Q30,49 30,50 Z" />
+
+    <!-- Bar 2 -->
+    <path android:fillColor="#e06088"
+        android:pathData="M37,44 L37,64 Q37,65 38,65 L40,65 Q41,65 41,64 L41,44 Q41,43 40,43 L38,43 Q37,43 37,44 Z" />
+
+    <!-- Bar 3 -->
+    <path android:fillColor="#d8587c"
+        android:pathData="M44,38 L44,70 Q44,71 45,71 L47,71 Q48,71 48,70 L48,38 Q48,37 47,37 L45,37 Q44,37 44,38 Z" />
+
+    <!-- Bar 4 -->
+    <path android:fillColor="#d05074"
+        android:pathData="M51,33 L51,75 Q51,76 52,76 L54,76 Q55,76 55,75 L55,33 Q55,32 54,32 L52,32 Q51,32 51,33 Z" />
+
+    <!-- Bar 5 (center, tallest) -->
+    <path android:fillColor="#c8486c"
+        android:pathData="M58,30 L58,78 Q58,79 59,79 L61,79 Q62,79 62,78 L62,30 Q62,29 61,29 L59,29 Q58,29 58,30 Z" />
+
+    <!-- Bar 6 -->
+    <path android:fillColor="#d05074"
+        android:pathData="M65,33 L65,75 Q65,76 66,76 L68,76 Q69,76 69,75 L69,33 Q69,32 68,32 L66,32 Q65,32 65,33 Z" />
+
+    <!-- Bar 7 -->
+    <path android:fillColor="#d8587c"
+        android:pathData="M72,38 L72,70 Q72,71 73,71 L75,71 Q76,71 76,70 L76,38 Q76,37 75,37 L73,37 Q72,37 72,38 Z" />
+
+    <!-- Bar 8 -->
+    <path android:fillColor="#e06088"
+        android:pathData="M79,44 L79,64 Q79,65 80,65 L82,65 Q83,65 83,64 L83,44 Q83,43 82,43 L80,43 Q79,43 79,44 Z" />
+
+    <!-- Bar 9 (rightmost) -->
+    <path android:fillColor="#e06088"
+        android:pathData="M86,50 L86,58 Q86,59 87,59 L89,59 Q90,59 90,58 L90,50 Q90,49 89,49 L87,49 Q86,49 86,50 Z" />
+</vector>

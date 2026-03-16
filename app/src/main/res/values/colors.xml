@@ -12,7 +12,7 @@
     <color name="surface">#f0e8e2</color>      <!-- warm parchment -->
     <color name="surface_elevated">#fff8f4</color> <!-- near-white with warmth -->
     <color name="nav_inactive">#8878a0</color>
-    <color name="ic_launcher_background">#f8f2ee</color>
+    <color name="ic_launcher_background">#0d0a1c</color> <!-- Brief: deep violet-midnight -->
 
     <!-- ═══ Text colors — chromatic, not pure gray ═══ -->
     <color name="text_primary">#1a1220</color>   <!-- deep violet-black -->

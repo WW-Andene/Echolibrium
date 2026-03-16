@@ -161,9 +161,8 @@ class HomeFragment : Fragment() {
 
         // Brief §SIGNATURE: Waveform syncs with listening state
         val waveform = v.findViewById<WaveformView>(R.id.waveform)
-        // Set initial hue from active engine color (rose-magenta default = 345)
-        waveform.hue = 345f
-        waveform.hueEnd = 360f
+        // Engine-aware hue — updated in updateWaveformHue()
+        updateWaveformHue(waveform)
 
         // Listening toggle — delegates to HomeViewModel (M28)
         val switchListening = v.findViewById<SwitchCompat>(R.id.switch_listening)
@@ -200,7 +199,27 @@ class HomeFragment : Fragment() {
         view?.let {
             updateSetup(it.findViewById(R.id.btn_setup), it.findViewById(R.id.txt_setup_status))
             updateListeningStatus(it.findViewById(R.id.listening_status))
+            // Refresh waveform hue in case active profile changed on Voices tab
+            it.findViewById<WaveformView>(R.id.waveform)?.let { w -> updateWaveformHue(w) }
         }
+    }
+
+    /**
+     * Brief §SIGNATURE: Waveform hue follows the active voice's engine.
+     * Orpheus (cloud) = 345° rose-magenta, Kokoro = 175° teal, Piper = 230° blue.
+     */
+    private fun updateWaveformHue(waveform: WaveformView) {
+        val activeId = repo.activeProfileId
+        val profiles = repo.getProfiles()
+        val voiceName = profiles.find { it.id == activeId }?.voiceName ?: ""
+        val engine = VoiceRegistry.engineFor(voiceName)
+        waveform.hue = when (engine) {
+            VoiceRegistry.Engine.CLOUD  -> 345f
+            VoiceRegistry.Engine.KOKORO -> 175f
+            VoiceRegistry.Engine.PIPER  -> 230f
+            else -> 345f
+        }
+        waveform.hueEnd = waveform.hue + 15f
     }
 
     override fun onDestroyView() {

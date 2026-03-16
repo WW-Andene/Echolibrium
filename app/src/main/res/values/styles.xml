@@ -23,7 +23,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textSize">9sp</item>
         <item name="android:textColor">@color/text_section_label</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/outfit_medium</item>
         <item name="android:letterSpacing">0.08</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:layout_marginBottom">6dp</item>
@@ -42,7 +42,7 @@
     </style>
     <style name="NavTabLabel">
         <item name="android:textSize">9sp</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/outfit_medium</item>
         <item name="android:letterSpacing">0.04</item>
         <item name="android:textColor">@color/nav_inactive</item>
     </style>
@@ -53,7 +53,7 @@
     <style name="KyokanButton">
         <item name="android:backgroundTint">@color/btn_primary_bg</item>
         <item name="android:textColor">@color/primary</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/outfit_medium</item>
         <item name="android:textSize">13sp</item>
         <item name="android:letterSpacing">0.02</item>
         <item name="android:minHeight">@dimen/touch_target_min</item>
@@ -78,7 +78,7 @@
         <item name="android:paddingEnd">18dp</item>
         <item name="android:paddingTop">12dp</item>
         <item name="android:paddingBottom">12dp</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/outfit_medium</item>
         <item name="android:letterSpacing">0.02</item>
     </style>
 
@@ -88,7 +88,7 @@
     <!-- Used for the app name on the home screen -->
     <style name="DisplayTitle">
         <item name="android:textSize">30sp</item>
-        <item name="android:fontFamily">serif</item>
+        <item name="android:fontFamily">@font/cormorant_garamond_light</item>
         <item name="android:textStyle">normal</item>
         <item name="android:letterSpacing">0.06</item>
         <item name="android:textColor">@color/text_primary</item>
@@ -97,7 +97,7 @@
     <!-- Page title — used for Voices, Apps, Rules screen headers -->
     <style name="PageTitle">
         <item name="android:textSize">@dimen/text_title</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/outfit_medium</item>
         <item name="android:textStyle">normal</item>
         <item name="android:letterSpacing">-0.01</item>
         <item name="android:textColor">@color/primary</item>
@@ -107,7 +107,7 @@
     <!-- Subtitle under the display title -->
     <style name="DisplaySubtitle">
         <item name="android:textSize">@dimen/text_micro</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/outfit_medium</item>
         <item name="android:letterSpacing">0.08</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:textColor">@color/text_muted</item>

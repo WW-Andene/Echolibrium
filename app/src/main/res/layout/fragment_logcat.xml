@@ -11,16 +11,16 @@
         <TextView
             android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
             android:text="@string/logcat_title" android:textColor="@color/primary" android:textSize="@dimen/text_heading"
-            android:fontFamily="monospace" android:letterSpacing="0.1"
+            android:fontFamily="@font/jetbrains_mono" android:letterSpacing="0.1"
             android:textStyle="bold"/>
         <TextView android:id="@+id/tv_line_count"
             android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:textColor="@color/log_verbose" android:textSize="@dimen/text_label" android:fontFamily="monospace"
+            android:textColor="@color/log_verbose" android:textSize="@dimen/text_label" android:fontFamily="@font/jetbrains_mono"
             android:layout_marginEnd="@dimen/spacing_md"/>
         <Button android:id="@+id/btn_clear"
             android:layout_width="wrap_content" android:layout_height="36dp"
             android:text="@string/btn_clear" android:textColor="@color/text_secondary" android:textSize="@dimen/text_label"
-            android:fontFamily="monospace" android:background="@drawable/bg_card"
+            android:fontFamily="@font/jetbrains_mono" android:background="@drawable/bg_card"
             android:paddingStart="@dimen/spacing_md" android:paddingEnd="@dimen/spacing_md"
             android:minWidth="0dp" android:minHeight="0dp"/>
     </LinearLayout>
@@ -34,7 +34,7 @@
         <EditText android:id="@+id/et_filter"
             android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1"
             android:hint="@string/filter_hint" android:textColorHint="@color/text_hint"
-            android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="monospace"
+            android:textColor="@color/text_primary" android:textSize="@dimen/text_body_sm" android:fontFamily="@font/jetbrains_mono"
             android:background="@drawable/bg_input" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:singleLine="true" android:imeOptions="actionDone"
             android:inputType="text"/>
@@ -53,13 +53,13 @@
         <TextView android:id="@+id/chip_app_only"
             android:layout_width="wrap_content" android:layout_height="28dp"
             android:text="@string/chip_app_only" android:textColor="@color/text_dimmed" android:textSize="@dimen/text_label"
-            android:fontFamily="monospace" android:background="@drawable/bg_card"
+            android:fontFamily="@font/jetbrains_mono" android:background="@drawable/bg_card"
             android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:layout_marginEnd="@dimen/spacing_sm"/>
         <TextView android:id="@+id/chip_pipeline"
             android:layout_width="wrap_content" android:layout_height="28dp"
             android:text="@string/chip_pipeline" android:textColor="@color/text_dimmed" android:textSize="@dimen/text_label"
-            android:fontFamily="monospace" android:background="@drawable/bg_card"
+            android:fontFamily="@font/jetbrains_mono" android:background="@drawable/bg_card"
             android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"
             android:layout_marginEnd="@dimen/spacing_sm"/>
         <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_autoscroll"
@@ -68,7 +68,7 @@
         <TextView
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="@string/auto_scroll" android:textColor="@color/text_muted" android:textSize="@dimen/text_label"
-            android:fontFamily="monospace" android:layout_marginStart="@dimen/spacing_xs"/>
+            android:fontFamily="@font/jetbrains_mono" android:layout_marginStart="@dimen/spacing_xs"/>
     </LinearLayout>
 
     <!-- Divider -->
@@ -80,7 +80,7 @@
         android:fillViewport="true">
         <TextView android:id="@+id/tv_log"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="@color/log_debug" android:textSize="@dimen/text_label" android:fontFamily="monospace"
+            android:textColor="@color/log_debug" android:textSize="@dimen/text_label" android:fontFamily="@font/jetbrains_mono"
             android:lineSpacingExtra="2dp" android:padding="@dimen/spacing_md"
             android:textIsSelectable="true"/>
     </ScrollView>

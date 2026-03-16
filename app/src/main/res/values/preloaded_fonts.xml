@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Brief §TYPOGRAPHY font family:
+    - Cormorant Garamond Light/Regular/Italic (display)
+    - Outfit Regular/Medium/SemiBold/Bold (body + UI)
+    - JetBrains Mono Regular/Medium (data + code)
+-->
+<resources>
+    <array name="preloaded_fonts" translatable="false">
+        <item>@font/cormorant_garamond_light</item>
+        <item>@font/cormorant_garamond</item>
+        <item>@font/cormorant_garamond_italic</item>
+        <item>@font/outfit</item>
+        <item>@font/outfit_medium</item>
+        <item>@font/outfit_semibold</item>
+        <item>@font/outfit_bold</item>
+        <item>@font/jetbrains_mono</item>
+        <item>@font/jetbrains_mono_medium</item>
+    </array>
+</resources>

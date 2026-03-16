@@ -110,6 +110,10 @@
     <string name="theme_label">Mode sombre</string>
     <string name="theme_description">Basculer entre l\'apparence claire et sombre</string>
 
+    <!-- F-01: Developer mode -->
+    <string name="dev_mode_enabled">Mode développeur activé — onglet Journal visible</string>
+    <string name="dev_mode_disabled">Mode développeur désactivé — onglet Journal masqué</string>
+
     <!-- Data -->
     <string name="section_data">Données</string>
     <string name="export_data">Exporter</string>

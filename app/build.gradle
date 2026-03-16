@@ -65,6 +65,12 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
+    // O-04: Room schema export for migration testing
+    kapt {
+        arguments {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
+    }
     // Do not compress model files — they are extracted to filesystem at runtime
     aaptOptions { noCompress "onnx", "ort", "bin", "txt", "dict", "tab" }
     // AAB (Android App Bundle) — Play Store serves only needed ABI per device

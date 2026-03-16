@@ -75,8 +75,19 @@ class HomeFragment : Fragment() {
         inflater.inflate(R.layout.fragment_home, container, false)
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        v.findViewById<TextView>(R.id.txt_version).text =
-            "v${BuildConfig.VERSION_NAME}  ·  Kokoro + Piper + Orpheus"
+        val txtVersion = v.findViewById<TextView>(R.id.txt_version)
+        txtVersion.text = "v${BuildConfig.VERSION_NAME}  ·  Kokoro + Piper + Orpheus"
+
+        // F-01: Long-press version text to toggle developer mode (shows/hides Logcat tab)
+        txtVersion.setOnLongClickListener {
+            val ctx = context ?: return@setOnLongClickListener false
+            val devMode = !repo.getBoolean("developer_mode", false)
+            repo.putBoolean("developer_mode", devMode)
+            val msg = if (devMode) getString(R.string.dev_mode_enabled) else getString(R.string.dev_mode_disabled)
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+            (activity as? MainActivity)?.updateLogcatTabVisibility()
+            true
+        }
 
         val btnSetup      = v.findViewById<Button>(R.id.btn_setup)
         val txtSetup      = v.findViewById<TextView>(R.id.txt_setup_status)

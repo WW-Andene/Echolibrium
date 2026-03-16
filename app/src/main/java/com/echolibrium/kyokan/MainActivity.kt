@@ -75,6 +75,9 @@ class MainActivity : AppCompatActivity() {
         val restoredTabId = savedInstanceState?.getInt(KEY_SELECTED_TAB, R.id.nav_home) ?: R.id.nav_home
         selectTab(restoredTabId)
 
+        // F-01: Hide Logcat tab unless developer mode is enabled
+        updateLogcatTabVisibility()
+
         // Edge-to-edge: apply status bar insets to fragment container top padding
         val fragmentContainer = findViewById<View>(R.id.fragment_container)
         ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
@@ -185,5 +188,19 @@ class MainActivity : AppCompatActivity() {
         val cn = ComponentName(this, NotificationReaderService::class.java)
         val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
         return !TextUtils.isEmpty(flat) && flat.contains(cn.flattenToString())
+    }
+
+    /**
+     * F-01: Hide the Logcat tab from consumer navigation by default.
+     * Shown only when developer_mode is enabled (long-press version text in Home).
+     */
+    fun updateLogcatTabVisibility() {
+        val devMode = container.repo.getBoolean("developer_mode", false)
+        val logcatTab = findViewById<View>(R.id.nav_logcat)
+        logcatTab.visibility = if (devMode) View.VISIBLE else View.GONE
+        // If logcat was selected but dev mode got disabled, switch to home
+        if (!devMode && selectedTabId == R.id.nav_logcat) {
+            selectTab(R.id.nav_home)
+        }
     }
 }

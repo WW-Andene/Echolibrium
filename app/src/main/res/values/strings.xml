@@ -184,6 +184,10 @@
     <string name="theme_label">Dark mode</string>
     <string name="theme_description">Switch between light and dark appearance</string>
 
+    <!-- F-01: Developer mode -->
+    <string name="dev_mode_enabled">Developer mode enabled — Log tab visible</string>
+    <string name="dev_mode_disabled">Developer mode disabled — Log tab hidden</string>
+
     <!-- B-10: Data export/import -->
     <string name="section_data">Data</string>
     <string name="export_data">Export</string>

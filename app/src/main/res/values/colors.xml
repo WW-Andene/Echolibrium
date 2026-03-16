@@ -1,75 +1,80 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- ═══ Core brand colors — Light theme ═══ -->
-    <color name="primary">#7844a0</color>
-    <color name="primary_dark">#5e3080</color>
-    <color name="bg">#f5f0eb</color>
-    <color name="surface">#ede5dc</color>
-    <color name="surface_elevated">#ffffff</color>
-    <color name="nav_inactive">#9070b4</color>
-    <color name="ic_launcher_background">#f5f0eb</color>
+    <!--
+        ART DIRECTION BRIEF: Light mode is the "warm daytime" counterpart.
+        Warm cream backgrounds (not white), rose-magenta accent preserved,
+        text carries subtle violet hue. Same identity, different time of day.
+    -->
+    <color name="primary">#c04870</color>      <!-- rose-magenta, slightly deeper for light bg -->
+    <color name="primary_dark">#a03860</color>
+    <color name="bg">#f8f2ee</color>           <!-- warm cream, NOT white -->
+    <color name="surface">#f0e8e2</color>      <!-- warm parchment -->
+    <color name="surface_elevated">#fff8f4</color> <!-- near-white with warmth -->
+    <color name="nav_inactive">#8878a0</color>
+    <color name="ic_launcher_background">#f8f2ee</color>
 
-    <!-- ═══ Text colors ═══ -->
-    <color name="text_primary">#1a1520</color>
-    <color name="text_bright">#1a1520</color>
-    <color name="text_secondary">#4a3d5e</color>
-    <color name="text_hint">#9070b4</color>
-    <color name="text_muted">#7a6a8e</color>
-    <color name="text_dimmed">#9070b4</color>
-    <color name="text_section">#7844a0</color>
-    <color name="text_section_label">#7844a0</color>
-    <color name="text_disabled">#756590</color><!-- G-01: was #b0a4c0 (2.08:1 FAIL) → now 4.61:1 PASS -->
-    <color name="text_on_accent">#ffffff</color>
-    <color name="text_subtitle">#7a6a8e</color>
-    <color name="text_card_subtitle">#5e3080</color>
+    <!-- ═══ Text colors — chromatic, not pure gray ═══ -->
+    <color name="text_primary">#1a1220</color>   <!-- deep violet-black -->
+    <color name="text_bright">#1a1220</color>
+    <color name="text_secondary">#4a3860</color> <!-- violet-tinged mid -->
+    <color name="text_hint">#8878a0</color>
+    <color name="text_muted">#7868a0</color>
+    <color name="text_dimmed">#8878a0</color>
+    <color name="text_section">#c04870</color>   <!-- accent rose for sections -->
+    <color name="text_section_label">#c04870</color>
+    <color name="text_disabled">#8878a0</color>
+    <color name="text_on_accent">#fff8f4</color> <!-- light text on dark accent -->
+    <color name="text_subtitle">#7868a0</color>
+    <color name="text_card_subtitle">#a03860</color>
 
-    <!-- ═══ Engine accent colors ═══ -->
-    <color name="engine_orpheus">#e08800</color>
-    <color name="engine_kokoro">#0099cc</color>
-    <color name="engine_piper">#4488cc</color>
-    <color name="cloud_status">#886633</color>
+    <!-- ═══ Engine accent colors — Brief palette ═══ -->
+    <color name="engine_orpheus">#b87830</color> <!-- warm amber, darker for light bg -->
+    <color name="engine_kokoro">#208878</color>  <!-- teal, darker for light bg -->
+    <color name="engine_piper">#4870b0</color>   <!-- cool blue, darker for light bg -->
+    <color name="cloud_status">#a08030</color>
 
     <!-- ═══ Functional accent colors ═══ -->
-    <color name="accent_orange">#e08800</color>
-    <color name="accent_cyan">#0099cc</color>
-    <color name="accent_blue">#4488cc</color>
-    <color name="accent_red">#cc2222</color>
-    <color name="accent_dnd">#cc8800</color>
-    <color name="accent_save">#5555cc</color>
-    <color name="accent_rose">#a05868</color>
+    <color name="accent_orange">#b87830</color>
+    <color name="accent_cyan">#208878</color>
+    <color name="accent_blue">#4870b0</color>
+    <color name="accent_red">#b04028</color>     <!-- warm red, not alarming -->
+    <color name="accent_dnd">#a88030</color>     <!-- warm gold -->
+    <color name="accent_save">#4870b0</color>
+    <color name="accent_rose">#c04870</color>
 
     <!-- ═══ Gender colors ═══ -->
-    <color name="gender_female">#b06888</color>
-    <color name="gender_male">#5588bb</color>
-    <color name="gender_neutral">#7a6a8e</color>
-    <color name="gender_female_dim">#9a7888</color>
-    <color name="gender_male_dim">#7a8aa0</color>
+    <color name="gender_female">#c04870</color>
+    <color name="gender_male">#4870b0</color>
+    <color name="gender_neutral">#7868a0</color>
+    <color name="gender_female_dim">#e8c8d8</color>
+    <color name="gender_male_dim">#c8d0e0</color>
 
     <!-- ═══ Status colors ═══ -->
-    <color name="status_ready">#008844</color>
-    <color name="status_error">#cc2222</color>
+    <color name="status_ready">#208868</color>   <!-- jade -->
+    <color name="status_error">#b04028</color>   <!-- warm red -->
 
-    <!-- ═══ Background variants ═══ -->
-    <color name="btn_primary_bg">#e8ddf5</color>
-    <color name="btn_red_bg">#fce8e8</color>
-    <color name="btn_blue_bg">#e0e8f8</color>
-    <color name="card_active_bg">#f0e0f0</color>
-    <color name="card_enabled_bg">#eee5f5</color>
-    <color name="card_disabled_bg">#f0ece5</color>
-    <color name="card_border">#d4c8e0</color>
-    <color name="filter_active_bg">#e8ddf5</color>
+    <!-- ═══ Background variants — warm tints ═══ -->
+    <color name="btn_primary_bg">#f0dce4</color> <!-- rose-tinted cream -->
+    <color name="btn_red_bg">#f8e0d8</color>     <!-- warm error tint -->
+    <color name="btn_blue_bg">#dce0f0</color>    <!-- cool blue tint -->
+    <color name="card_active_bg">#f0d8e4</color> <!-- rose-active -->
+    <color name="card_enabled_bg">#ece2e8</color> <!-- warm lavender -->
+    <color name="card_disabled_bg">#f0ece8</color>
+    <color name="card_border">#d8c8d8</color>    <!-- warm violet border -->
+    <color name="filter_active_bg">#f0dce8</color>
 
-    <!-- ═══ Logcat level colors ═══ -->
-    <color name="log_verbose">#6a5e80</color>
-    <color name="log_debug">#5a4e70</color>
-    <color name="log_info">#7844a0</color>
-    <color name="log_warn">#cc9900</color>
-    <color name="log_error">#cc2222</color>
-    <color name="log_fatal">#cc0000</color>
-    <color name="log_tag">#a05868</color>
+    <!-- ═══ Logcat level colors — calibrated warm ═══ -->
+    <color name="log_verbose">#8878a0</color>
+    <color name="log_debug">#4a3860</color>
+    <color name="log_info">#c04870</color>       <!-- accent rose -->
+    <color name="log_warn">#a88030</color>       <!-- warm gold -->
+    <color name="log_error">#b04028</color>      <!-- warm red -->
+    <color name="log_fatal">#a02018</color>
+    <color name="log_tag">#c04870</color>        <!-- accent rose -->
 
     <!-- ═══ Divider & Input ═══ -->
-    <color name="divider">#d4c8e0</color>
-    <color name="row_bg">#ede5dc</color>
-    <color name="input_bg">#e0d8e8</color>
+    <color name="divider">#d8c8d8</color>
+    <color name="row_bg">#f0e8e2</color>
+    <color name="input_bg">#e8dce0</color>
 </resources>

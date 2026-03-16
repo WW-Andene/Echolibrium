@@ -1,21 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+        ═══ Kyōkan Design Identity Styles ═══
+        Art Direction Brief: "Neon rain on dark water"
+        Typography: Cormorant Garamond (display) + Outfit (body) + JetBrains Mono (data)
+        Note: Until custom fonts are bundled, sans-serif-light serves as display fallback
+              and sans-serif as body fallback. The letterSpacing and textSize values from
+              the Brief are applied regardless — they improve hierarchy immediately.
+    -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/primary</item>
         <item name="android:windowBackground">@color/bg</item>
     </style>
+
+    <!-- ═══ TYPOGRAPHY (Brief §TYPOGRAPHY) ═══ -->
+
+    <!-- Section labels: ALL-CAPS, tracked, 9sp — the app's structural voice -->
     <style name="SectionLabel">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:textSize">10sp</item>
+        <item name="android:textSize">9sp</item>
         <item name="android:textColor">@color/text_section_label</item>
-        <item name="android:fontFamily">sans-serif</item>
-        <item name="android:letterSpacing">0.2</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
         <item name="android:layout_marginBottom">6dp</item>
-        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:layout_marginTop">6dp</item>
     </style>
+
+    <!-- ═══ NAVIGATION ═══ -->
     <style name="NavTab">
         <item name="android:orientation">vertical</item>
         <item name="android:gravity">center</item>
@@ -26,32 +41,44 @@
         <item name="android:paddingBottom">6dp</item>
     </style>
     <style name="NavTabLabel">
-        <item name="android:textSize">12sp</item>
+        <item name="android:textSize">9sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.04</item>
+        <item name="android:textColor">@color/nav_inactive</item>
     </style>
-    <!-- L12: Standardized button styles -->
+
+    <!-- ═══ BUTTONS (Brief §BUTTONS) ═══ -->
+
+    <!-- Primary: accent-tinted surface, accent text, rounded 8dp -->
     <style name="KyokanButton">
         <item name="android:backgroundTint">@color/btn_primary_bg</item>
         <item name="android:textColor">@color/primary</item>
-        <item name="android:fontFamily">sans-serif</item>
-        <item name="android:textSize">@dimen/text_body_sm</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:letterSpacing">0.02</item>
         <item name="android:minHeight">@dimen/touch_target_min</item>
+        <item name="cornerRadius">@dimen/corner_radius_input</item>
     </style>
+    <!-- Danger: error-tinted surface -->
     <style name="KyokanButton.Danger">
         <item name="android:backgroundTint">@color/btn_red_bg</item>
         <item name="android:textColor">@color/accent_red</item>
     </style>
+    <!-- Accent: filled primary -->
     <style name="KyokanButton.Accent">
         <item name="android:backgroundTint">@color/primary</item>
         <item name="android:textColor">@color/text_on_accent</item>
     </style>
-    <!-- L-05: Filter chip / toggle button style -->
+
+    <!-- ═══ FILTER CHIPS (Brief §SHAPE — pill radius) ═══ -->
     <style name="KyokanFilterChip">
-        <item name="android:textSize">@dimen/text_label</item>
+        <item name="android:textSize">11sp</item>
         <item name="android:minHeight">@dimen/touch_target_min</item>
-        <item name="android:paddingStart">16dp</item>
-        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
         <item name="android:paddingTop">12dp</item>
         <item name="android:paddingBottom">12dp</item>
-        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.02</item>
     </style>
 </resources>

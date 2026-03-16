@@ -1,38 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- L11: Type scale system — consistent hierarchy across the app -->
-    <dimen name="text_title">20sp</dimen>      <!-- Screen titles -->
-    <dimen name="text_heading">16sp</dimen>     <!-- Section headings -->
-    <dimen name="text_body">14sp</dimen>        <!-- Primary body text -->
-    <dimen name="text_body_sm">13sp</dimen>     <!-- Secondary body text -->
-    <dimen name="text_caption">12sp</dimen>     <!-- Captions, subtitles -->
-    <dimen name="text_label">11sp</dimen>       <!-- Labels, filter buttons -->
-    <dimen name="text_micro">10sp</dimen>       <!-- Section labels, status -->
+    <!-- Type scale — 1.250 Major Third ratio from 15sp base (Brief §SCALE) -->
+    <!-- Scale: 10 · 12 · 15 · 19 · 24 · 30 · 37 · 47 -->
+    <dimen name="text_title">24sp</dimen>      <!-- Screen titles — step 5 -->
+    <dimen name="text_heading">19sp</dimen>     <!-- Section headings — step 4 -->
+    <dimen name="text_body">15sp</dimen>        <!-- Primary body — BASE -->
+    <dimen name="text_body_sm">13sp</dimen>     <!-- Secondary body (between steps) -->
+    <dimen name="text_caption">12sp</dimen>     <!-- Captions — step 2 -->
+    <dimen name="text_label">11sp</dimen>       <!-- Labels (between steps) -->
+    <dimen name="text_micro">10sp</dimen>       <!-- Section labels — step 1 -->
     <dimen name="text_tiny">9sp</dimen>         <!-- Voice card secondary info -->
     <dimen name="text_mini">8sp</dimen>         <!-- Personality hints -->
 
     <!-- Touch targets (M24: WCAG 48dp minimum) -->
     <dimen name="touch_target_min">48dp</dimen>
 
-    <!-- Spacing -->
-    <dimen name="spacing_xs">4dp</dimen>
-    <dimen name="spacing_sm">8dp</dimen>
-    <dimen name="spacing_md">12dp</dimen>
-    <dimen name="spacing_md_lg">14dp</dimen>
-    <dimen name="spacing_lg">16dp</dimen>
-    <dimen name="spacing_xl">20dp</dimen>
-    <dimen name="spacing_xxl">24dp</dimen>
+    <!-- Spacing — 6dp non-standard base (Brief §TOKENS) -->
+    <dimen name="spacing_xs">3dp</dimen>
+    <dimen name="spacing_sm">6dp</dimen>      <!-- base unit -->
+    <dimen name="spacing_md">12dp</dimen>     <!-- 2× base -->
+    <dimen name="spacing_md_lg">15dp</dimen>  <!-- 2.5× base -->
+    <dimen name="spacing_lg">18dp</dimen>     <!-- 3× base -->
+    <dimen name="spacing_xl">24dp</dimen>     <!-- 4× base -->
+    <dimen name="spacing_xxl">36dp</dimen>    <!-- 6× base -->
 
-    <!-- E-03: Corner radius design tokens -->
-    <dimen name="corner_radius_card">10dp</dimen>
-    <dimen name="corner_radius_profile_card">8dp</dimen>
-    <dimen name="corner_radius_chip">20dp</dimen>
-    <dimen name="corner_radius_input">4dp</dimen>
+    <!-- Corner radius — varies by component (Brief §SHAPE) -->
+    <dimen name="corner_radius_card">16dp</dimen>       <!-- cards, containers -->
+    <dimen name="corner_radius_profile_card">14dp</dimen> <!-- voice cards -->
+    <dimen name="corner_radius_chip">100dp</dimen>       <!-- pills, badges -->
+    <dimen name="corner_radius_input">8dp</dimen>        <!-- inputs, buttons -->
 
-    <!-- E-03: Card dimension tokens -->
-    <dimen name="card_padding_h">10dp</dimen>
-    <dimen name="card_padding_v">14dp</dimen>
-    <dimen name="card_margin">2dp</dimen>
-    <dimen name="avatar_size">36dp</dimen>
-    <dimen name="active_bar_height">2dp</dimen>
+    <!-- Card dimensions -->
+    <dimen name="card_padding_h">12dp</dimen>  <!-- 2× base -->
+    <dimen name="card_padding_v">15dp</dimen>  <!-- 2.5× base -->
+    <dimen name="card_margin">3dp</dimen>
+    <dimen name="avatar_size">36dp</dimen>     <!-- 6× base -->
+    <dimen name="active_bar_height">3dp</dimen>
 </resources>

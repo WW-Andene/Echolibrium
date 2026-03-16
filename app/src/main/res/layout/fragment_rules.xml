@@ -17,7 +17,7 @@
             android:contentDescription="@string/section_word_rules"/>
         <LinearLayout android:id="@+id/section_word_rules" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:background="@drawable/bg_section" android:padding="@dimen/spacing_lg"
             android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/word_rules_description"
@@ -39,7 +39,7 @@
             android:contentDescription="@string/section_notif_rules"/>
         <LinearLayout android:id="@+id/section_notif_rules" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:background="@drawable/bg_section" android:padding="@dimen/spacing_lg"
             android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/notif_rules_description"
@@ -121,7 +121,7 @@
             android:contentDescription="@string/section_lang_profiles"/>
         <LinearLayout android:id="@+id/section_lang_profiles" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:orientation="vertical"
-            android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:background="@drawable/bg_section" android:padding="@dimen/spacing_lg"
             android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/lang_routing_description"

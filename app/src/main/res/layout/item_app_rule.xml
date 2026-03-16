@@ -10,7 +10,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="@color/surface"
+        android:background="@drawable/bg_card"
         android:padding="@dimen/spacing_lg"
         android:paddingTop="@dimen/spacing_md_lg"
         android:paddingBottom="@dimen/spacing_md_lg">
@@ -34,7 +34,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="@color/row_bg"
+        android:background="@drawable/bg_section"
         android:padding="@dimen/spacing_lg"
         android:paddingTop="@dimen/spacing_sm"
         android:paddingBottom="@dimen/spacing_sm"

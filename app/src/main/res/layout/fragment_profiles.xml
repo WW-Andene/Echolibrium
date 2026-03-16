@@ -63,7 +63,7 @@
             android:nextFocusDown="@+id/txt_preview"
             android:contentDescription="@string/section_pitch_speed"/>
         <LinearLayout android:id="@+id/section_pitch_speed" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:background="@color/surface" android:padding="@dimen/spacing_lg"
+            android:orientation="vertical" android:background="@drawable/bg_section" android:padding="@dimen/spacing_lg"
             android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:id="@+id/tv_pitch" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Pitch: 1.00"
@@ -83,7 +83,7 @@
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/section_preview" style="@style/SectionLabel"/>
         <EditText android:id="@+id/txt_preview" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:background="@color/surface"
+            android:layout_height="wrap_content" android:background="@drawable/bg_input"
             android:textColor="@color/text_primary" android:fontFamily="sans-serif" android:textSize="@dimen/text_body_sm"
             android:padding="@dimen/spacing_md" android:layout_marginBottom="10dp"
             android:text="@string/preview_text"

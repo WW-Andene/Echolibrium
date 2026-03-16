@@ -17,7 +17,7 @@
     <EditText android:id="@+id/et_search" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:hint="@string/search_apps"
         android:textSize="@dimen/text_body" android:textColor="@color/text_primary" android:textColorHint="@color/text_hint"
-        android:background="@color/surface" android:padding="@dimen/spacing_md" android:fontFamily="sans-serif"
+        android:background="@drawable/bg_input" android:padding="@dimen/spacing_md" android:fontFamily="sans-serif"
         android:inputType="text" android:layout_marginBottom="@dimen/spacing_sm"/>
 
     <!-- Select/Deselect All -->

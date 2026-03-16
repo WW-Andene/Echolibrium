@@ -73,7 +73,7 @@ class AppsFragment : Fragment() {
             val idx = rules.indexOfFirst { it.packageName == rule.packageName }
             if (idx >= 0) rules[idx] = rules[idx].copy(enabled = enabled)
         }
-        repo.saveAppRules(rules)
+        repo.saveAppRulesAsync(rules)  // B-02: async to avoid main-thread jank
         submitList()
     }
 
@@ -117,7 +117,7 @@ class AppsFragment : Fragment() {
                 if (rules.isEmpty()) {
                     Toast.makeText(ctx, getString(R.string.no_user_apps), Toast.LENGTH_SHORT).show()
                 }
-                repo.saveAppRules(rules)
+                repo.saveAppRulesAsync(rules)  // B-02: async to avoid main-thread jank
                 submitList()
                 btn.isEnabled = true
                 btn.text = getString(R.string.reload_apps)
@@ -133,6 +133,6 @@ class AppsFragment : Fragment() {
     private fun updateRule(updated: AppRule) {
         val idx = rules.indexOfFirst { it.packageName == updated.packageName }
         if (idx >= 0) rules[idx] = updated else rules.add(updated)
-        repo.saveAppRules(rules)
+        repo.saveAppRulesAsync(rules)  // B-02: async to avoid main-thread jank
     }
 }

@@ -618,7 +618,17 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
     )
 
     private fun attachSeek(s: SeekBar, onChange: (Int) -> Unit) {
-        s.setOnSeekBarChangeListener(onSeekBarChange(onChange))
+        s.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    onChange(progress)
+                    // B-01: Sync to ViewModel so onSaveInstanceState captures current slider values
+                    viewModel.updateCurrentProfile(readProfileFromUI())
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
     }
 
     override fun onResume() {

@@ -93,6 +93,22 @@ class SettingsRepository(
         notifyChanged("app_rules")
     }
 
+    /**
+     * B-02: Async variant of saveAppRules — runs Room transaction on a background thread.
+     * Prevents main-thread jank when saving 200+ app rules.
+     * Callback fires on the main thread after save completes.
+     */
+    fun saveAppRulesAsync(rules: List<AppRule>, onComplete: () -> Unit = {}) {
+        Thread({
+            db.runInTransaction {
+                appRuleDao.deleteAll()
+                appRuleDao.insertAll(rules)
+            }
+            notifyChanged("app_rules")
+            android.os.Handler(android.os.Looper.getMainLooper()).post(onComplete)
+        }, "SaveAppRules").start()
+    }
+
     // ── Word Rules (Room) ───────────────────────────────────────────────────
 
     fun getWordRules(): List<WordRule> = wordRuleDao.getAll()
@@ -144,18 +160,18 @@ class SettingsRepository(
         obj.put("_version", 1)
         obj.put("_exported", System.currentTimeMillis())
 
-        // Structured data from Room
+        // Structured data from Room — B-03: put as native JSONArray (not toString())
         val profilesArr = JSONArray()
         getProfiles().forEach { profilesArr.put(it.toJson()) }
-        obj.put("voice_profiles", profilesArr.toString())
+        obj.put("voice_profiles", profilesArr)
 
         val rulesArr = JSONArray()
         getAppRules().forEach { rulesArr.put(it.toJson()) }
-        obj.put("app_rules", rulesArr.toString())
+        obj.put("app_rules", rulesArr)
 
         val wordArr = JSONArray()
         getWordRules().forEach { wordArr.put(org.json.JSONObject().apply { put("find", it.find); put("replace", it.replace) }) }
-        obj.put("wording_rules", wordArr.toString())
+        obj.put("wording_rules", wordArr)
 
         // Simple settings from SharedPreferences
         for (key in spExportKeys) {
@@ -171,22 +187,25 @@ class SettingsRepository(
             if (version < 1) return false
 
             // Import structured data — all-or-nothing within a transaction
+            // B-03: Handle both String (old export format) and JSONArray (new format)
             db.runInTransaction {
-                json.optString("voice_profiles", "").takeIf { it.isNotBlank() }?.let { raw ->
+                optJsonArrayString(json, "voice_profiles")?.let { raw ->
                     val profiles = VoiceProfile.parseJsonArray(raw)
+                        .filter { it.id.isNotBlank() }  // B-04: filter invalid entries
                     if (profiles.isNotEmpty()) {
                         profileDao.deleteAll()
                         profileDao.insertAll(profiles)
                     }
                 }
-                json.optString("app_rules", "").takeIf { it.isNotBlank() }?.let { raw ->
+                optJsonArrayString(json, "app_rules")?.let { raw ->
                     val rules = AppRule.parseJsonArray(raw)
+                        .filter { it.packageName.isNotBlank() }  // B-04: filter invalid entries
                     if (rules.isNotEmpty()) {
                         appRuleDao.deleteAll()
                         appRuleDao.insertAll(rules)
                     }
                 }
-                json.optString("wording_rules", "").takeIf { it.isNotBlank() }?.let { raw ->
+                optJsonArrayString(json, "wording_rules")?.let { raw ->
                     val arr = JSONArray(raw)
                     val rules = (0 until arr.length()).mapNotNull { i ->
                         try {
@@ -220,6 +239,19 @@ class SettingsRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
             false
+        }
+    }
+
+    /**
+     * B-03: Extract a JSON array string from an import object, handling both
+     * new format (native JSONArray) and old format (double-encoded String).
+     */
+    private fun optJsonArrayString(json: org.json.JSONObject, key: String): String? {
+        val raw = json.opt(key) ?: return null
+        return when (raw) {
+            is org.json.JSONArray -> raw.toString()
+            is String -> raw.takeIf { it.isNotBlank() }
+            else -> null
         }
     }
 

@@ -81,7 +81,10 @@ class WordRulesDelegate(
                 }
 
             val ruleNum = idx + 1
-            val etFind = editText(context.getString(R.string.find_hint), find) { rules[idx] = it to rules[idx].second }
+            val capturedIdx = idx  // B-05: capture index for stable closure reference
+            val etFind = editText(context.getString(R.string.find_hint), find) {
+                if (capturedIdx < rules.size) rules[capturedIdx] = it to rules[capturedIdx].second
+            }
             etFind.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
             etFind.contentDescription = "Rule $ruleNum find text"
 
@@ -90,7 +93,9 @@ class WordRulesDelegate(
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
-            val etReplace = editText(context.getString(R.string.replace_hint), replace) { rules[idx] = rules[idx].first to it }
+            val etReplace = editText(context.getString(R.string.replace_hint), replace) {
+                if (capturedIdx < rules.size) rules[capturedIdx] = rules[capturedIdx].first to it
+            }
             etReplace.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
             etReplace.contentDescription = "Rule $ruleNum replace text"
 

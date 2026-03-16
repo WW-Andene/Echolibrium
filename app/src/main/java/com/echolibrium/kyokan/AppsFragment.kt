@@ -91,8 +91,10 @@ class AppsFragment : Fragment() {
         btn.isEnabled = false
         btn.text = getString(R.string.loading)
 
-        Thread {
-            val pm = requireContext().packageManager
+        val ctx = requireContext()  // D-05: capture before thread — requireContext() is main-thread only
+        Thread({
+            if (!isAdded) return@Thread
+            val pm = ctx.packageManager
             val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             val resolveInfos = try {
                 pm.queryIntentActivities(launcherIntent, 0)
@@ -113,14 +115,14 @@ class AppsFragment : Fragment() {
                 if (!isAdded) return@runOnUiThread
                 rules.addAll(newRules)
                 if (rules.isEmpty()) {
-                    Toast.makeText(requireContext(), getString(R.string.no_user_apps), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, getString(R.string.no_user_apps), Toast.LENGTH_SHORT).show()
                 }
                 repo.saveAppRules(rules)
                 submitList()
                 btn.isEnabled = true
                 btn.text = getString(R.string.reload_apps)
             }
-        }.start()
+        }, "LoadInstalledApps").start()
     }
 
     override fun onDestroyView() {

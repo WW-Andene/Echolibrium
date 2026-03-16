@@ -10,8 +10,9 @@ import androidx.recyclerview.widget.RecyclerView
 /**
  * RecyclerView adapter for the voice grid (Phase 3.3 — H5 fix).
  *
- * Replaces the old removeAllViews() + rebuild pattern that recreated 52+ cards
- * every 500ms during downloads. Uses DiffUtil to only update changed items.
+ * D-02: Lambdas are NOT stored per-item — they live at the adapter level.
+ * This lets DiffUtil compare only data fields, reducing rebinds from ~52 to ~2
+ * during downloads. Callbacks resolve state at click time, preventing stale closures.
  *
  * Three view types:
  *   HEADER  — engine section header (spans full grid width)
@@ -22,7 +23,9 @@ import androidx.recyclerview.widget.RecyclerView
  */
 class VoiceGridAdapter(
     private val cardBuilder: VoiceCardBuilder,
-    private val onPreview: ((voiceId: String, name: String) -> Unit)?
+    private val onPreview: ((voiceId: String, name: String) -> Unit)?,
+    private val onCardClicked: ((voiceId: String) -> Unit)?,
+    private val onHeaderAction: ((engineTitle: String) -> Unit)?
 ) : ListAdapter<VoiceGridItem, VoiceGridAdapter.ViewHolder>(DIFF) {
 
     companion object {
@@ -65,19 +68,27 @@ class VoiceGridAdapter(
 
         when (val item = getItem(position)) {
             is VoiceGridItem.Header -> {
+                // D-02: Resolve header action at bind time via adapter callback
+                val action = if (item.actionVisible && onHeaderAction != null) {
+                    { onHeaderAction.invoke(item.title) }
+                } else null
                 val view = VoiceCardBuilder.buildSectionHeader(
                     ctx, item.title, item.subtitle, item.accent,
-                    item.onAction, item.actionLabel
+                    action, item.actionLabel
                 )
                 holder.container.addView(view)
             }
             is VoiceGridItem.Card -> {
                 val preview = if (item.enabled) onPreview else null
+                // D-02: Resolve card click at bind time via adapter callback
+                val click = if (item.clickable && onCardClicked != null) {
+                    { onCardClicked.invoke(item.voiceId) }
+                } else null
                 val view = VoiceCardBuilder.buildVoiceCard(
                     ctx, item.name, item.icon, item.iconColor,
                     item.status, item.statusColor,
                     item.voiceId, item.active, item.accent,
-                    item.enabled, item.onClick, preview
+                    item.enabled, click, preview
                 )
                 holder.container.addView(view)
             }
@@ -91,7 +102,8 @@ class VoiceGridAdapter(
 
 /**
  * Sealed class representing items in the voice grid.
- * Data classes enable proper DiffUtil comparison.
+ * D-02: No lambda fields — data classes use pure data for DiffUtil comparison.
+ * Click actions are resolved at bind time via adapter-level callbacks.
  */
 sealed class VoiceGridItem {
     data class Header(
@@ -99,11 +111,8 @@ sealed class VoiceGridItem {
         val subtitle: String,
         val accent: Int,
         val actionLabel: String = "",
-        val onAction: (() -> Unit)? = null
+        val actionVisible: Boolean = false
     ) : VoiceGridItem()
-    // Note: onAction IS included in data class equals() — new lambda instances every
-    // render means DiffUtil rebinds headers each time. Acceptable cost: only 3 headers
-    // in the grid. Stale lambdas capturing old state are worse than rebinding.
 
     data class Card(
         val voiceId: String,
@@ -115,13 +124,8 @@ sealed class VoiceGridItem {
         val active: Boolean,
         val accent: Int,
         val enabled: Boolean,
-        val onClick: (() -> Unit)? = null
+        val clickable: Boolean = false
     ) : VoiceGridItem()
-    // Note: onClick IS included in data class equals() — new lambda instances every
-    // render means DiffUtil rebinds all cards each time. This is intentional: the D-05
-    // optimization to exclude lambdas from equals caused stale onClick handlers —
-    // tapping a card would run a closure capturing old state. Rebinding ~52 cards
-    // is cheap; stale state is not.
 
     data class Empty(
         val engine: String,

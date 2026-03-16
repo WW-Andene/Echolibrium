@@ -162,7 +162,13 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         tvSpeed         = v.findViewById(R.id.tv_speed)
 
         // Set up voice grid RecyclerView with 3-column grid
-        voiceGridAdapter = VoiceGridAdapter(VoiceCardBuilder) { vid, vname -> previewVoice(vid, vname) }
+        // D-02: Callbacks resolve at click time — no per-item lambdas, no stale closures
+        voiceGridAdapter = VoiceGridAdapter(
+            cardBuilder = VoiceCardBuilder,
+            onPreview = { vid, vname -> previewVoice(vid, vname) },
+            onCardClicked = { voiceId -> handleCardClick(voiceId) },
+            onHeaderAction = { engineTitle -> handleHeaderAction(engineTitle) }
+        )
         val gridLayoutManager = androidx.recyclerview.widget.GridLayoutManager(requireContext(), 3)
         gridLayoutManager.spanSizeLookup = object : androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
             override fun getSpanSize(position: Int): Int {
@@ -174,6 +180,9 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         }
         voiceGrid.layoutManager = gridLayoutManager
         voiceGrid.adapter = voiceGridAdapter
+        // D-01: Increase view cache to reduce rebinds when RecyclerView is inside ScrollView
+        // (all items are materialized, but cached views skip onBindViewHolder on relayout)
+        voiceGrid.setItemViewCacheSize(20)
     }
 
     private fun buildFilterButtons() {
@@ -237,7 +246,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
                        else getString(R.string.orpheus_subtitle_disabled),
             accent = AppColors.engineOrpheus(ctx),
             actionLabel = getString(R.string.key_btn),
-            onAction = { showDeepInfraKeyDialog() }
+            actionVisible = true
         ))
         val filteredCloud = filterVoices(VoiceRegistry.cloudEntries)
         if (filteredCloud.isEmpty()) {
@@ -251,7 +260,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
                     statusColor = if (cloudEnabled) AppColors.cloudStatus(ctx) else AppColors.accentRed(ctx),
                     active = currentProfile.voiceName == v.id,
                     accent = AppColors.engineOrpheus(ctx), enabled = cloudEnabled,
-                    onClick = if (cloudEnabled) {{ selectCloudVoice(v.id) }} else {{ showDeepInfraKeyDialog() }}
+                    clickable = true  // D-02: always clickable — action resolved at click time
                 ))
             }
         }
@@ -269,7 +278,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             },
             accent = AppColors.engineKokoro(ctx),
             actionLabel = getString(R.string.download_all_btn),
-            onAction = if (!kokoroReady && !kokoroDownloading) {{ downloadDelegate.startKokoroDownload() }} else null
+            actionVisible = !kokoroReady && !kokoroDownloading
         ))
         val filteredKokoro = filterVoices(VoiceRegistry.byEngine(VoiceRegistry.Engine.KOKORO))
         if (filteredKokoro.isEmpty()) {
@@ -292,11 +301,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
                     status = status, statusColor = statusColor,
                     active = currentProfile.voiceName == v.id,
                     accent = AppColors.engineKokoro(ctx), enabled = kokoroReady,
-                    onClick = when {
-                        kokoroReady -> {{ viewModel.updateCurrentProfile(currentProfile.copy(voiceName = v.id)); renderVoiceGrid() }}
-                        !kokoroDownloading -> {{ downloadDelegate.startKokoroDownload() }}
-                        else -> null
-                    }
+                    clickable = kokoroReady || !kokoroDownloading  // D-02: clickable if ready or downloadable
                 ))
             }
         }
@@ -310,7 +315,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             subtitle = getString(R.string.piper_subtitle, piperReadyCount, piperEntries.size),
             accent = AppColors.enginePiper(ctx),
             actionLabel = getString(R.string.download_all_btn),
-            onAction = if (piperHasUndownloaded) {{ downloadDelegate.confirmDownloadAllPiper() }} else null
+            actionVisible = piperHasUndownloaded
         ))
         val filteredPiper = filterVoices(piperEntries)
         if (filteredPiper.isEmpty()) {
@@ -335,11 +340,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
                     status = status, statusColor = statusColor,
                     active = currentProfile.voiceName == v.id,
                     accent = AppColors.enginePiper(ctx), enabled = ready,
-                    onClick = when {
-                        ready -> {{ viewModel.updateCurrentProfile(currentProfile.copy(voiceName = v.id)); renderVoiceGrid() }}
-                        !downloading -> {{ downloadDelegate.startPiperDownload(v.id) }}
-                        else -> null
-                    }
+                    clickable = ready || !downloading  // D-02: clickable if ready or downloadable
                 ))
             }
         }
@@ -353,6 +354,48 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
     }
 
     // ── Voice grid helpers ──────────────────────────────────────────────────
+
+    /**
+     * D-02: Adapter-level card click handler — resolves current state at click time.
+     * Replaces per-item lambdas that caused stale closures and defeated DiffUtil.
+     */
+    private fun handleCardClick(voiceId: String) {
+        val ctx = requireContext()
+        val entry = VoiceRegistry.byId(voiceId) ?: return
+        when (entry.engine) {
+            VoiceRegistry.Engine.CLOUD -> {
+                if (c.cloudTtsEngine.isEnabled()) selectCloudVoice(voiceId)
+                else showDeepInfraKeyDialog()
+            }
+            VoiceRegistry.Engine.KOKORO -> {
+                if (c.voiceDownloadManager.isModelReady(ctx)) {
+                    viewModel.updateCurrentProfile(currentProfile.copy(voiceName = voiceId))
+                    renderVoiceGrid()
+                } else if (c.voiceDownloadManager.state != DownloadState.DOWNLOADING) {
+                    downloadDelegate.startKokoroDownload()
+                }
+            }
+            VoiceRegistry.Engine.PIPER -> {
+                if (VoiceRegistry.isReady(ctx, voiceId)) {
+                    viewModel.updateCurrentProfile(currentProfile.copy(voiceName = voiceId))
+                    renderVoiceGrid()
+                } else if (!c.piperDownloadManager.isDownloading(voiceId)) {
+                    downloadDelegate.startPiperDownload(voiceId)
+                }
+            }
+        }
+    }
+
+    /**
+     * D-02: Adapter-level header action handler — resolves by engine title.
+     */
+    private fun handleHeaderAction(engineTitle: String) {
+        when (engineTitle) {
+            getString(R.string.engine_orpheus) -> showDeepInfraKeyDialog()
+            getString(R.string.engine_kokoro) -> downloadDelegate.startKokoroDownload()
+            getString(R.string.engine_piper) -> downloadDelegate.confirmDownloadAllPiper()
+        }
+    }
 
     private fun genderIcon(gender: String) = when (gender) {
         "Female" -> "♀"; "Male" -> "♂"; else -> "◆"

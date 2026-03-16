@@ -61,7 +61,7 @@ class LogcatFragment : Fragment() {
     private val ssb = SpannableStringBuilder()
 
     companion object {
-        private const val REFRESH_THROTTLE_MS = 200
+        private const val REFRESH_THROTTLE_MS = 500  // D-03: was 200 — reduces GC pressure from span allocation
         private const val MAX_LINES = 2000
         private const val TRIM_TO = 1500
         private val APP_PACKAGE = "com.echolibrium.kyokan"
@@ -296,7 +296,7 @@ class LogcatFragment : Fragment() {
 
         ssb.clear()
         ssb.clearSpans()
-        val displayLines = if (filtered.size > 500) filtered.takeLast(500) else filtered
+        val displayLines = if (filtered.size > 200) filtered.takeLast(200) else filtered  // D-03: was 500
 
         for (logLine in displayLines) {
             val start = ssb.length

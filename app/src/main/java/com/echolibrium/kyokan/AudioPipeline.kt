@@ -350,33 +350,34 @@ class AudioPipeline(
     private fun applyCrossfade(samples: FloatArray, sampleRate: Int): FloatArray {
         val tail = prevTail
         val tailRate = prevSampleRate
-        val result = samples.copyOf()
 
         val fadeSamples = (sampleRate * CROSSFADE_MS / 1000).coerceAtMost(samples.size / 4)
 
         // A-03: Apply previous crossfade BEFORE saving new tail to avoid compounding artifacts
+        // D-04: Work in-place — samples array is not referenced after synthesis, no copy needed
         if (tail != null && tailRate == sampleRate && tail.isNotEmpty()) {
-            val crossLen = minOf(tail.size, fadeSamples, result.size)
+            val crossLen = minOf(tail.size, fadeSamples, samples.size)
             for (i in 0 until crossLen) {
                 val t = i.toFloat() / crossLen
-                result[i] = tail[tail.size - crossLen + i] * (1f - t) + result[i] * t
+                samples[i] = tail[tail.size - crossLen + i] * (1f - t) + samples[i] * t
             }
         } else if (tail == null) {
-            val fadeIn = (sampleRate * 0.005f).toInt().coerceAtMost(result.size)
+            val fadeIn = (sampleRate * 0.005f).toInt().coerceAtMost(samples.size)
             for (i in 0 until fadeIn) {
-                result[i] *= i.toFloat() / fadeIn
+                samples[i] *= i.toFloat() / fadeIn
             }
         }
 
         // Save tail for next crossfade after applying current one
+        // Tail is from the END of the array — untouched by crossfade (which affects the beginning)
         if (fadeSamples > 0) {
             val start = (samples.size - fadeSamples).coerceAtLeast(0)
             val tailSize = (samples.size - start).coerceAtMost(MAX_PREV_TAIL_SAMPLES)
-            prevTail = result.sliceArray((result.size - tailSize) until result.size)
+            prevTail = samples.sliceArray((samples.size - tailSize) until samples.size)
             prevSampleRate = sampleRate
         }
 
-        return result
+        return samples
     }
 
     private fun stopCurrentPlayback() {

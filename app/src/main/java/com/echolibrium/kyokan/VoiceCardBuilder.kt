@@ -213,7 +213,7 @@ object VoiceCardBuilder {
                         text = ctx.getString(R.string.synthesizing_preview)
                         isEnabled = false
                         onPreview(voiceId, name)
-                        postDelayed({ text = originalText; isEnabled = true }, 10_000)
+                        postDelayed({ text = originalText; isEnabled = true }, 3_000)  // A-05: was 10_000
                     }
                 })
             }

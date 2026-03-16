@@ -28,7 +28,7 @@ class SherpaEngine(
 
     companion object {
         private const val TAG = "SherpaEngine"
-        private const val MAX_PIPER_CACHE = 1
+        private const val MAX_PIPER_CACHE = 3  // D-06: was 1 — avoids 500ms-2s reload when alternating voices
     }
 
     // Separate locks for Kokoro and Piper to avoid cross-engine blocking (E2)

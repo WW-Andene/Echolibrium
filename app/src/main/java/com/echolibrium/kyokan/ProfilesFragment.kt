@@ -169,6 +169,10 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         waveformPreview = v.findViewById(R.id.waveform_preview)
         waveformPreview.isActive = false  // starts inactive, activates on test play
         waveformPreview.barCount = 20     // smaller than home waveform
+        // Brief §LOADING: Flatlined waveform as loading skeleton
+        v.findViewById<WaveformView>(R.id.waveform_loading)?.apply {
+            isActive = false; barCount = 28
+        }
         voiceGrid       = v.findViewById(R.id.voice_grid)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
@@ -251,8 +255,9 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
 
     private fun renderVoiceGrid() {
         lastVoiceGridRender = System.currentTimeMillis()
-        // E-04: Hide loading placeholder after first render
+        // E-04 + Brief §LOADING: Hide loading skeleton after first render
         view?.findViewById<View>(R.id.txt_loading_voices)?.visibility = View.GONE
+        view?.findViewById<View>(R.id.waveform_loading)?.visibility = View.GONE
         val ctx = requireContext()
         val items = mutableListOf<VoiceGridItem>()
 

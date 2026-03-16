@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ═══ Core brand colors — Night (dark) theme ═══ -->
+    <!--
+        ═══ Core brand colors — Night (dark) theme ═══
+
+        E-01 DESIGN NOTE: The dark theme intentionally shifts from the light theme's
+        warm earth tones (cream #f5f0eb, parchment #ede5dc) to cool purple tones
+        (deep violet #140f1e, dark plum #1a1428). This creates a "warm day → cool
+        night" aesthetic contrast — an intentional personality shift, not an oversight.
+
+        To align dark mode with the light theme's warmth instead, replace:
+          bg:               #140f1e → #1a1510 (warm dark brown)
+          surface:          #1a1428 → #221c14 (warm dark surface)
+          surface_elevated: #221a32 → #2a2218 (warm elevated)
+    -->
     <color name="primary">#b898d4</color>
     <color name="primary_dark">#9b7eb8</color>
     <color name="bg">#140f1e</color>

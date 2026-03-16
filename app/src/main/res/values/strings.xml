@@ -4,7 +4,7 @@
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
-    <string name="nav_voices">Profiles</string>
+    <string name="nav_voices">Voices</string>
     <string name="nav_apps">Apps</string>
     <string name="nav_rules">Rules</string>
     <string name="nav_log">Log</string>
@@ -171,6 +171,7 @@
     <string name="notif_channel_description">Keeps notification reading active in the background</string>
     <string name="notif_title">Kyōkan</string>
     <string name="notif_text">Reading notifications</string>
+    <string name="notif_downloading">Downloading voice model…</string>
 
     <!-- L13: Content descriptions for accessibility -->
     <string name="cd_master_switch">Toggle notification reading on or off</string>

@@ -34,7 +34,8 @@ class CloudTtsEngine {
         private const val PREF_DAILY_CHARS_DATE = "cloud_tts_daily_date"
     }
 
-    val VOICES = setOf("tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe")
+    /** I-02: Derive valid voice names from VoiceRegistry — single source of truth. */
+    val VOICES: Set<String> get() = VoiceRegistry.CLOUD_VOICES.map { it.apiVoiceName }.toSet()
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)

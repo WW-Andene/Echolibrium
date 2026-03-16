@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [VoiceProfile::class, AppRule::class, WordRule::class],
     version = 1,
-    exportSchema = false
+    exportSchema = true  // O-04: Generate schema JSON for migration testing
 )
 abstract class KyokanDatabase : RoomDatabase() {
 

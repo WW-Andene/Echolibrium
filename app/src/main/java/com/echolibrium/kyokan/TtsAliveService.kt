@@ -47,17 +47,28 @@ class TtsAliveService : Service() {
     }
 
     // F-06: Periodically check for synthesis errors and update notification
+    // F-05: Also check download state and show progress
     private val handler = Handler(Looper.getMainLooper())
     private var lastShownError: String? = null
+    private var lastDownloadState = false
     private val errorCheckRunnable = object : Runnable {
         override fun run() {
             if (!isRunning) return
             val pipeline = try { container.audioPipeline } catch (_: Exception) { null }
             val error = pipeline?.lastError
-            if (error != lastShownError) {
+
+            // F-05: Check if any voice model is downloading
+            val c = try { container } catch (_: Exception) { null }
+            val downloading = c != null && (
+                c.voiceDownloadManager.state == DownloadState.DOWNLOADING ||
+                c.piperDownloadManager.isAnyDownloading()
+            )
+
+            if (error != lastShownError || downloading != lastDownloadState) {
                 lastShownError = error
+                lastDownloadState = downloading
                 val nm = getSystemService(NotificationManager::class.java)
-                nm.notify(NOTIFICATION_ID, buildNotification(error))
+                nm.notify(NOTIFICATION_ID, buildNotification(error, downloading))
                 // Clear error after showing for 30s
                 if (error != null) {
                     handler.postDelayed({ pipeline?.clearError() }, 30_000)
@@ -109,7 +120,7 @@ class TtsAliveService : Service() {
         }
     }
 
-    private fun buildNotification(error: String? = null): Notification {
+    private fun buildNotification(error: String? = null, downloading: Boolean = false): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -117,7 +128,12 @@ class TtsAliveService : Service() {
         )
 
         // F-06: Show last synthesis error in notification text
-        val contentText = if (error != null) "\u26a0 $error" else getString(R.string.notif_text)
+        // F-05: Show download progress when active
+        val contentText = when {
+            error != null -> "\u26a0 $error"
+            downloading -> getString(R.string.notif_downloading)
+            else -> getString(R.string.notif_text)
+        }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)

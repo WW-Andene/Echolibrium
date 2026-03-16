@@ -2,7 +2,7 @@
 <resources>
     <!-- Navigation -->
     <string name="nav_home">Accueil</string>
-    <string name="nav_voices">Profils</string>
+    <string name="nav_voices">Voix</string>
     <string name="nav_apps">Apps</string>
     <string name="nav_rules">Règles</string>
     <string name="nav_log">Journal</string>
@@ -177,6 +177,7 @@
     <!-- Notification channel -->
     <string name="notif_title">Kyōkan</string>
     <string name="notif_text">Lecture des notifications</string>
+    <string name="notif_downloading">Téléchargement du modèle vocal…</string>
     <string name="notif_channel_name">Lecteur de notifications actif</string>
     <string name="notif_channel_description">Maintient la lecture des notifications en arrière-plan</string>
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:background="@color/bg" android:padding="@dimen/spacing_xxl">
+    android:orientation="vertical" android:background="@android:color/transparent" android:padding="@dimen/spacing_xxl">
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/app_rules_title" style="@style/PageTitle"/>
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

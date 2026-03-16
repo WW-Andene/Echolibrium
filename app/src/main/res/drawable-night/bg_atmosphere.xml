@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Brief §ATMOSPHERE: "Neon rain on dark water"
+    Aurora bands as subtle radial gradients over the void base.
+    Light mode uses plain bg color — atmosphere is dark-mode identity.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- L1: Void base -->
+    <item>
+        <color android:color="@color/bg" />
+    </item>
+
+    <!-- L2: Aurora band — top-left, violet-rose -->
+    <item android:gravity="top|start"
+          android:top="-80dp" android:start="-60dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="320dp"
+                android:startColor="#0C50306A"
+                android:endColor="#00000000" />
+            <size android:width="500dp" android:height="380dp" />
+        </shape>
+    </item>
+
+    <!-- L3: Aurora band — top-right, cool cyan -->
+    <item android:gravity="top|end"
+          android:top="40dp" android:end="-40dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="260dp"
+                android:startColor="#08205868"
+                android:endColor="#00000000" />
+            <size android:width="420dp" android:height="320dp" />
+        </shape>
+    </item>
+
+    <!-- L4: Aurora band — center, deep violet -->
+    <item android:gravity="center_horizontal|top"
+          android:top="60dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="280dp"
+                android:startColor="#08402870"
+                android:endColor="#00000000" />
+            <size android:width="450dp" android:height="350dp" />
+        </shape>
+    </item>
+
+    <!-- L5: Subtle warm glow at bottom — neon reflection hint -->
+    <item android:gravity="bottom|center_horizontal"
+          android:bottom="-120dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="300dp"
+                android:startColor="#06603048"
+                android:endColor="#00000000" />
+            <size android:width="500dp" android:height="300dp" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light mode: warm cream base with subtle warm vignette — not flat -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <color android:color="@color/bg" />
+    </item>
+    <!-- Subtle warm vignette at edges -->
+    <item android:gravity="fill">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="600dp"
+                android:startColor="#00000000"
+                android:centerColor="#00000000"
+                android:endColor="#08C0A090" />
+            <size android:width="800dp" android:height="1200dp" />
+        </shape>
+    </item>
+</layer-list>

@@ -81,4 +81,35 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">0.02</item>
     </style>
+
+    <!-- ═══ PAGE TITLES (Brief §TYPOGRAPHY — display treatment) ═══ -->
+
+    <!-- Display title — large serif (or serif-fallback), light weight, tracked -->
+    <!-- Used for the app name on the home screen -->
+    <style name="DisplayTitle">
+        <item name="android:textSize">30sp</item>
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <!-- Page title — used for Voices, Apps, Rules screen headers -->
+    <style name="PageTitle">
+        <item name="android:textSize">@dimen/text_title</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:textColor">@color/primary</item>
+        <item name="android:layout_marginBottom">@dimen/spacing_lg</item>
+    </style>
+
+    <!-- Subtitle under the display title -->
+    <style name="DisplaySubtitle">
+        <item name="android:textSize">@dimen/text_micro</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/text_muted</item>
+    </style>
 </resources>

@@ -10,8 +10,8 @@
         android:padding="@dimen/spacing_md">
         <TextView
             android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-            android:text="@string/logcat_title" android:textColor="@color/primary" android:textSize="18sp"
-            android:fontFamily="monospace" android:letterSpacing="0.15"
+            android:text="@string/logcat_title" android:textColor="@color/primary" android:textSize="@dimen/text_heading"
+            android:fontFamily="monospace" android:letterSpacing="0.1"
             android:textStyle="bold"/>
         <TextView android:id="@+id/tv_line_count"
             android:layout_width="wrap_content" android:layout_height="wrap_content"

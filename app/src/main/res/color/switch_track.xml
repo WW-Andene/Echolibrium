@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brief: Track uses active surface tint when checked -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/filter_active_bg" android:state_checked="true" />
+    <item android:color="@color/divider" />
+</selector>

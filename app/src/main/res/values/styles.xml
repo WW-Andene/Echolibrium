@@ -13,6 +13,14 @@
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/primary</item>
         <item name="android:windowBackground">@color/bg</item>
+        <!-- Brief §BUTTONS: Switches use accent rose when checked -->
+        <item name="switchStyle">@style/KyokanSwitch</item>
+    </style>
+
+    <!-- Switch — accent thumb/track when on -->
+    <style name="KyokanSwitch" parent="Widget.AppCompat.CompoundButton.Switch">
+        <item name="thumbTint">@color/switch_thumb</item>
+        <item name="trackTint">@color/switch_track</item>
     </style>
 
     <!-- ═══ TYPOGRAPHY (Brief §TYPOGRAPHY) ═══ -->

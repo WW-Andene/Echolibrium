@@ -228,7 +228,17 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         val dp = ctx.resources.displayMetrics.density
         return Button(android.view.ContextThemeWrapper(ctx, R.style.KyokanFilterChip), null, 0).apply {
             text = label; textSize = 11f
-            setBackgroundColor(if (active) AppColors.filterActiveBg(ctx) else AppColors.surface(ctx))
+            // Brief §SHAPE: Pill chips with accent border when active
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 100f * dp  // pill
+                if (active) {
+                    setColor(AppColors.filterActiveBg(ctx))
+                    setStroke((1 * dp).toInt(), AppColors.primary(ctx))
+                } else {
+                    setColor(AppColors.surface(ctx))
+                    setStroke((1 * dp).toInt(), AppColors.cardBorder(ctx))
+                }
+            }
             setTextColor(if (active) AppColors.primary(ctx) else AppColors.textDisabled(ctx))
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.marginEnd = (6 * dp).toInt(); layoutParams = lp

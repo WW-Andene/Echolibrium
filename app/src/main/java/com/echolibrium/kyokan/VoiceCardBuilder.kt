@@ -86,7 +86,7 @@ object VoiceCardBuilder {
             layoutParams = lp
 
             background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 10 * dp
+                cornerRadius = ctx.resources.getDimension(R.dimen.corner_radius_card)
                 if (active) {
                     setColor(AppColors.cardActiveBg(ctx))
                     setStroke((2 * dp).toInt(), accent)

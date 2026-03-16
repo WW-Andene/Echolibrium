@@ -57,6 +57,7 @@
     <string name="ready_status">ready</string>
     <string name="extracting_status">extracting…</string>
     <string name="tap_to_download">tap to download</string>
+    <string name="loading_voices">Loading voices…</string>
 
     <!-- Apps fragment -->
     <string name="app_rules_title">APP RULES</string>

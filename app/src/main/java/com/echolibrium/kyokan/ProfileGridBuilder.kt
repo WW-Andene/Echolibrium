@@ -68,7 +68,7 @@ object ProfileGridBuilder {
             gravity = Gravity.CENTER
             setPaddingRelative((8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt())
             background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 8 * dp
+                cornerRadius = ctx.resources.getDimension(R.dimen.corner_radius_profile_card)
                 if (isActive) {
                     setColor(AppColors.cardActiveBg(ctx))
                     setStroke((2 * dp).toInt(), AppColors.accentRose(ctx))

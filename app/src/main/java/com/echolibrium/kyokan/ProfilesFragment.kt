@@ -235,6 +235,8 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
 
     private fun renderVoiceGrid() {
         lastVoiceGridRender = System.currentTimeMillis()
+        // E-04: Hide loading placeholder after first render
+        view?.findViewById<View>(R.id.txt_loading_voices)?.visibility = View.GONE
         val ctx = requireContext()
         val items = mutableListOf<VoiceGridItem>()
 

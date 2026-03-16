@@ -42,6 +42,14 @@
             android:layout_height="wrap_content" android:orientation="horizontal"
             android:layout_marginBottom="@dimen/spacing_sm"/>
 
+        <!-- E-04: Loading placeholder — visible until first renderVoiceGrid() completes -->
+        <TextView android:id="@+id/txt_loading_voices"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/loading_voices" android:textColor="@color/text_muted"
+            android:textSize="@dimen/text_caption" android:fontFamily="sans-serif"
+            android:gravity="center" android:padding="@dimen/spacing_xl"
+            android:visibility="visible"/>
+
         <androidx.recyclerview.widget.RecyclerView android:id="@+id/voice_grid"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

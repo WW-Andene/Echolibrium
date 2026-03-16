@@ -22,4 +22,17 @@
     <dimen name="spacing_lg">16dp</dimen>
     <dimen name="spacing_xl">20dp</dimen>
     <dimen name="spacing_xxl">24dp</dimen>
+
+    <!-- E-03: Corner radius design tokens -->
+    <dimen name="corner_radius_card">10dp</dimen>
+    <dimen name="corner_radius_profile_card">8dp</dimen>
+    <dimen name="corner_radius_chip">20dp</dimen>
+    <dimen name="corner_radius_input">4dp</dimen>
+
+    <!-- E-03: Card dimension tokens -->
+    <dimen name="card_padding_h">10dp</dimen>
+    <dimen name="card_padding_v">14dp</dimen>
+    <dimen name="card_margin">2dp</dimen>
+    <dimen name="avatar_size">36dp</dimen>
+    <dimen name="active_bar_height">2dp</dimen>
 </resources>

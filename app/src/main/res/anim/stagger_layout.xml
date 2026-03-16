@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Brief §STAGGER: "Delay per item: 30-50ms. Total cap: 150ms."
+    Layout animation applied to RecyclerView / LinearLayout containers.
+-->
+<layoutAnimation xmlns:android="http://schemas.android.com/apk/res/android"
+    android:animation="@anim/item_enter"
+    android:delay="8%"
+    android:animationOrder="normal" />

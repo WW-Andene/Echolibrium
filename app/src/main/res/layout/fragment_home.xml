@@ -20,6 +20,14 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Brief §SIGNATURE: Waveform — the voice made visible -->
+        <com.echolibrium.kyokan.WaveformView
+            android:id="@+id/waveform"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_marginBottom="@dimen/spacing_xxl"
+            android:layout_marginTop="@dimen/spacing_sm" />
+
         <!-- L15: Onboarding hint for new users -->
         <TextView android:id="@+id/txt_onboarding" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="@dimen/spacing_lg" android:background="@drawable/bg_card"

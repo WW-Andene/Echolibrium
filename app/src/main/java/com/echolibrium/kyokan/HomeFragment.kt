@@ -159,12 +159,20 @@ class HomeFragment : Fragment() {
             )
         }
 
+        // Brief §SIGNATURE: Waveform syncs with listening state
+        val waveform = v.findViewById<WaveformView>(R.id.waveform)
+        // Set initial hue from active engine color (rose-magenta default = 345)
+        waveform.hue = 345f
+        waveform.hueEnd = 360f
+
         // Listening toggle — delegates to HomeViewModel (M28)
         val switchListening = v.findViewById<SwitchCompat>(R.id.switch_listening)
         val listeningStatus = v.findViewById<TextView>(R.id.listening_status)
         viewModel.listeningEnabled.observe(viewLifecycleOwner, Observer { enabled ->
             if (switchListening.isChecked != enabled) switchListening.isChecked = enabled
             updateListeningStatus(listeningStatus)
+            // Waveform: active when listening, flatlined when paused
+            waveform.isActive = enabled
         })
         switchListening.setOnCheckedChangeListener { _, enabled ->
             viewModel.setListeningEnabled(enabled)

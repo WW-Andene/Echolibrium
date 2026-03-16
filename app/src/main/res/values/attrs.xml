@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="WaveformView">
+        <attr name="waveform_barCount" format="integer" />
+        <attr name="waveform_active" format="boolean" />
+        <attr name="waveform_hue" format="float" />
+    </declare-styleable>
+</resources>

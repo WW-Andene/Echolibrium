@@ -73,6 +73,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
     private lateinit var btnSave: Button
     private lateinit var btnDelete: Button
     private lateinit var btnNew: Button
+    private lateinit var waveformPreview: WaveformView
     private lateinit var seekPitch: SeekBar
     private lateinit var tvPitch: TextView
     private lateinit var seekSpeed: SeekBar
@@ -117,6 +118,18 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
             activeProfileId = id
         }
 
+        // Brief §SIGNATURE: Waveform hue follows the active voice's engine color
+        viewModel.currentProfile.observe(viewLifecycleOwner) { profile ->
+            val engine = VoiceRegistry.engineFor(profile.voiceName)
+            waveformPreview.hue = when (engine) {
+                VoiceRegistry.Engine.CLOUD  -> 345f  // rose-magenta (Orpheus)
+                VoiceRegistry.Engine.KOKORO -> 175f  // teal
+                VoiceRegistry.Engine.PIPER  -> 230f  // cool blue
+                else -> 345f
+            }
+            waveformPreview.hueEnd = waveformPreview.hue + 15f
+        }
+
         // Initialize download delegate
         downloadDelegate = DownloadDelegate(this, c, viewModel) { renderVoiceGridThrottled() }
 
@@ -153,6 +166,9 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         btnSave         = v.findViewById(R.id.btn_save)
         btnDelete       = v.findViewById(R.id.btn_delete)
         btnNew          = v.findViewById(R.id.btn_new_profile)
+        waveformPreview = v.findViewById(R.id.waveform_preview)
+        waveformPreview.isActive = false  // starts inactive, activates on test play
+        waveformPreview.barCount = 20     // smaller than home waveform
         voiceGrid       = v.findViewById(R.id.voice_grid)
         genderRow       = v.findViewById(R.id.gender_filter_row)
         nationRow       = v.findViewById(R.id.nation_filter_row)
@@ -559,6 +575,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         btnTest.setOnClickListener {
             val p = readProfileFromUI()
             val text = txtPreview.text.toString().ifBlank { getString(R.string.preview_text) }
+            waveformPreview.isActive = true
             playPreview(text, p)
         }
         btnSave.setOnClickListener {
@@ -597,6 +614,7 @@ class ProfilesFragment : Fragment(), UnsavedChangesCheck {
         view?.findViewById<Button>(R.id.btn_stop)?.setOnClickListener {
             NotificationReaderService.instance?.stopSpeaking()
             c.audioPipeline.stop()
+            waveformPreview.isActive = false
         }
     }
 

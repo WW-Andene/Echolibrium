@@ -33,17 +33,17 @@
         <!-- L15: Onboarding hint for new users -->
         <TextView android:id="@+id/txt_onboarding" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="@dimen/spacing_lg" android:background="@drawable/bg_card"
-            android:fontFamily="@font/outfit" android:textSize="@dimen/text_caption" android:textColor="@color/text_secondary"
+            android:fontFamily="sans-serif" android:textSize="@dimen/text_caption" android:textColor="@color/text_secondary"
             android:lineSpacingExtra="@dimen/spacing_xs" android:layout_marginBottom="@dimen/spacing_md"
             android:visibility="gone"
             android:text="@string/onboarding_welcome"/>
 
         <Button android:id="@+id/btn_setup" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:backgroundTint="@color/primary"
-            android:textColor="@color/text_on_accent" android:fontFamily="@font/outfit" android:layout_marginBottom="@dimen/spacing_xs"/>
+            android:textColor="@color/text_on_accent" android:fontFamily="sans-serif" android:layout_marginBottom="@dimen/spacing_xs"/>
         <TextView android:id="@+id/txt_setup_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="@dimen/spacing_md" android:background="@drawable/bg_card"
-            android:fontFamily="@font/outfit" android:textSize="@dimen/text_label" android:textColor="@color/text_muted"
+            android:fontFamily="sans-serif" android:textSize="@dimen/text_label" android:textColor="@color/text_muted"
             android:layout_marginBottom="@dimen/spacing_xl"/>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -53,7 +53,7 @@
             android:layout_marginBottom="@dimen/spacing_lg">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="@string/enable_notification_reading"
-                android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="@font/outfit"/>
+                android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="sans-serif"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_enabled"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:contentDescription="@string/cd_master_switch"/>
@@ -69,7 +69,7 @@
             android:layout_marginBottom="@dimen/spacing_xl">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="@string/always_read_app_name"
-                android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="@font/outfit"/>
+                android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="sans-serif"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_read_app_name"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </LinearLayout>
@@ -80,7 +80,7 @@
             android:orientation="horizontal" android:background="@drawable/bg_section" android:padding="@dimen/spacing_lg">
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="@string/enable_quiet_hours"
-                android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="@font/outfit"/>
+                android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="sans-serif"/>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_dnd"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:contentDescription="@string/cd_dnd_toggle"/>
@@ -91,7 +91,7 @@
             android:layout_marginTop="3dp" android:visibility="gone">
             <TextView android:id="@+id/txt_dnd_start" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Silence from: 22:00"
-                android:textColor="@color/text_secondary" android:fontFamily="@font/outfit" android:textSize="@dimen/text_body_sm"
+                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="@dimen/text_body_sm"
                 android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_dnd_start" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="@color/accent_dnd"
@@ -99,7 +99,7 @@
                 android:contentDescription="Silence start hour"/>
             <TextView android:id="@+id/txt_dnd_end" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Until: 08:00"
-                android:textColor="@color/text_secondary" android:fontFamily="@font/outfit" android:textSize="@dimen/text_body_sm"
+                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="@dimen/text_body_sm"
                 android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_dnd_end" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="@color/accent_dnd"
@@ -116,10 +116,10 @@
                 android:layout_weight="1" android:orientation="vertical">
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/activate_listening"
-                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="@font/outfit"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="sans-serif"/>
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/listening_description"
-                    android:textColor="@color/text_subtitle" android:textSize="@dimen/text_caption" android:fontFamily="@font/outfit"/>
+                    android:textColor="@color/text_subtitle" android:textSize="@dimen/text_caption" android:fontFamily="sans-serif"/>
             </LinearLayout>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_listening"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -127,7 +127,7 @@
         </LinearLayout>
         <TextView android:id="@+id/listening_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="@dimen/spacing_md" android:background="@drawable/bg_card"
-            android:fontFamily="@font/outfit" android:textSize="@dimen/text_label" android:textColor="@color/text_muted"
+            android:fontFamily="sans-serif" android:textSize="@dimen/text_label" android:textColor="@color/text_muted"
             android:layout_marginBottom="@dimen/spacing_xl"
             android:text="@string/listening_off"/>
 
@@ -141,10 +141,10 @@
                 android:layout_weight="1" android:orientation="vertical">
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/theme_label"
-                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="@font/outfit"/>
+                    android:textColor="@color/text_primary" android:textSize="@dimen/text_body" android:fontFamily="sans-serif"/>
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/theme_description"
-                    android:textColor="@color/text_subtitle" android:textSize="@dimen/text_caption" android:fontFamily="@font/outfit"/>
+                    android:textColor="@color/text_subtitle" android:textSize="@dimen/text_caption" android:fontFamily="sans-serif"/>
             </LinearLayout>
             <androidx.appcompat.widget.SwitchCompat android:id="@+id/switch_dark_mode"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
@@ -153,7 +153,7 @@
         <!-- Post-setup guidance (M22) -->
         <TextView android:id="@+id/txt_guidance" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:padding="@dimen/spacing_lg" android:background="@drawable/bg_card"
-            android:fontFamily="@font/outfit" android:textSize="@dimen/text_caption" android:textColor="@color/text_section"
+            android:fontFamily="sans-serif" android:textSize="@dimen/text_caption" android:textColor="@color/text_section"
             android:visibility="gone"
             android:lineSpacingExtra="@dimen/spacing_xs"/>
 

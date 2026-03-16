@@ -53,7 +53,7 @@
         <TextView android:id="@+id/txt_loading_voices"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/loading_voices" android:textColor="@color/text_muted"
-            android:textSize="@dimen/text_caption" android:fontFamily="@font/outfit"
+            android:textSize="@dimen/text_caption" android:fontFamily="sans-serif"
             android:gravity="center" android:padding="@dimen/spacing_sm"
             android:visibility="visible"/>
 
@@ -75,13 +75,13 @@
             android:layout_marginBottom="@dimen/spacing_md_lg" android:visibility="gone">
             <TextView android:id="@+id/tv_pitch" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Pitch: 1.00"
-                android:textColor="@color/text_secondary" android:fontFamily="@font/outfit" android:textSize="@dimen/text_caption" android:layout_marginBottom="6dp"/>
+                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="@dimen/text_caption" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_pitch" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary" android:layout_marginBottom="@dimen/spacing_md_lg"
                 android:contentDescription="Voice pitch" android:labelFor="@id/tv_pitch"/>
             <TextView android:id="@+id/tv_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:text="Speed: 1.00"
-                android:textColor="@color/text_secondary" android:fontFamily="@font/outfit" android:textSize="@dimen/text_caption" android:layout_marginBottom="6dp"/>
+                android:textColor="@color/text_secondary" android:fontFamily="sans-serif" android:textSize="@dimen/text_caption" android:layout_marginBottom="6dp"/>
             <SeekBar android:id="@+id/seek_speed" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:progressTint="@color/primary" android:thumbTint="@color/primary"
                 android:contentDescription="Voice speed" android:labelFor="@id/tv_speed"/>
@@ -98,7 +98,7 @@
             android:layout_marginBottom="@dimen/spacing_md" />
         <EditText android:id="@+id/txt_preview" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:background="@drawable/bg_input"
-            android:textColor="@color/text_primary" android:fontFamily="@font/outfit" android:textSize="@dimen/text_body_sm"
+            android:textColor="@color/text_primary" android:fontFamily="sans-serif" android:textSize="@dimen/text_body_sm"
             android:padding="@dimen/spacing_md" android:layout_marginBottom="10dp"
             android:text="@string/preview_text"
             android:inputType="textMultiLine" android:minLines="2"/>
@@ -109,7 +109,7 @@
                 style="@style/KyokanButton" android:layout_marginEnd="@dimen/spacing_sm"/>
             <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="@string/btn_save"
-                android:backgroundTint="@color/btn_blue_bg" android:textColor="@color/accent_save" android:fontFamily="@font/outfit"/>
+                android:backgroundTint="@color/btn_blue_bg" android:textColor="@color/accent_save" android:fontFamily="sans-serif"/>
         </LinearLayout>
 
         <Button android:id="@+id/btn_stop" android:layout_width="match_parent"

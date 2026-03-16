@@ -80,10 +80,5 @@
             tools:node="remove" />
         <receiver android:name="com.google.android.datatransport.runtime.scheduling.jobscheduling.AlarmManagerSchedulerBroadcastReceiver"
             tools:node="remove" />
-
-        <!-- Brief §TYPOGRAPHY: Pre-download Google Fonts at install time -->
-        <meta-data
-            android:name="preloaded_fonts"
-            android:resource="@array/preloaded_fonts" />
     </application>
 </manifest>
